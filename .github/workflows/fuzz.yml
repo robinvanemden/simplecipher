@@ -1,0 +1,53 @@
+name: Fuzz (weekly)
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'  # Every Monday at 03:00 UTC
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  long-fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-19 (C23 constexpr + sanitizer runtimes)
+        run: sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev
+
+      - name: Build fuzz targets (clang + libFuzzer + ASan + UBSan)
+        run: |
+          mkdir -p build/fuzz
+          cd build/fuzz
+          CC=clang-19 cmake -DFUZZ=ON ../..
+          make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port
+
+      - name: Fuzz frame_open (10 min)
+        run: |
+          mkdir -p fuzz_out/frame_open
+          build/fuzz/fuzz_frame_open fuzz_out/frame_open tests/corpus/frame_open \
+            -max_total_time=600 -print_final_stats=1
+
+      - name: Fuzz sanitize_peer_text (5 min)
+        run: |
+          mkdir -p fuzz_out/sanitize
+          build/fuzz/fuzz_sanitize fuzz_out/sanitize tests/corpus/sanitize \
+            -max_total_time=300 -print_final_stats=1
+
+      - name: Fuzz validate_port (5 min)
+        run: |
+          mkdir -p fuzz_out/validate_port
+          build/fuzz/fuzz_validate_port fuzz_out/validate_port tests/corpus/validate_port \
+            -max_total_time=300 -print_final_stats=1
+
+      - name: Upload crash artifacts (if any)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: |
+            fuzz_out/*/crash-*
+            fuzz_out/*/leak-*
+            fuzz_out/*/timeout-*
+          retention-days: 30

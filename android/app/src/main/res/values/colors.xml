@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark background hierarchy -->
+    <color name="bg_primary">#FF0D0D0D</color>
+    <color name="bg_surface">#FF1A1A1A</color>
+    <color name="bg_input">#FF252525</color>
+
+    <!-- Text -->
+    <color name="text_primary">#FFF0F0F0</color>
+    <color name="text_secondary">#FF999999</color>
+    <color name="text_hint">#FF666666</color>
+
+    <!-- Accent — muted teal, trust/security feel -->
+    <color name="accent">#FF4DD0B0</color>
+    <color name="accent_dim">#FF2A7A66</color>
+
+    <!-- Chat bubbles -->
+    <color name="bubble_self">#FF1C3A33</color>
+    <color name="bubble_peer">#FF252525</color>
+
+    <!-- Status -->
+    <color name="status_secure">#FF4DD0B0</color>
+    <color name="status_warning">#FFFFB74D</color>
+
+    <!-- Divider -->
+    <color name="divider">#FF333333</color>
+</resources>

@@ -1,0 +1,47 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "linux-x86_64",
+      "displayName": "Linux x86_64 (musl, static)",
+      "binaryDir": "${sourceDir}/build/linux_x86_64",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/linux-x86_64.cmake"
+    },
+    {
+      "name": "linux-aarch64",
+      "displayName": "Linux aarch64 (musl, static)",
+      "binaryDir": "${sourceDir}/build/linux_aarch64",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/linux-aarch64.cmake"
+    },
+    {
+      "name": "win-x86_64",
+      "displayName": "Windows x86_64 (mingw, static)",
+      "binaryDir": "${sourceDir}/build/win_x86_64",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/win-x86_64.cmake"
+    },
+    {
+      "name": "win-aarch64",
+      "displayName": "Windows aarch64 (mingw, static)",
+      "binaryDir": "${sourceDir}/build/win_aarch64",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/win-aarch64.cmake"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-x86_64",
+      "configurePreset": "linux-x86_64"
+    },
+    {
+      "name": "linux-aarch64",
+      "configurePreset": "linux-aarch64"
+    },
+    {
+      "name": "win-x86_64",
+      "configurePreset": "win-x86_64"
+    },
+    {
+      "name": "win-aarch64",
+      "configurePreset": "win-aarch64"
+    }
+  ]
+}

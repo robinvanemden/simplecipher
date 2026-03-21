@@ -1,0 +1,48 @@
+cmake_minimum_required(VERSION 3.20)
+project(simplecipher C)
+
+# Project root is 5 levels up from this CMakeLists.txt:
+# android/app/src/main/c/ → project root
+set(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../..")
+
+add_library(simplecipher SHARED
+    jni_bridge.c
+    "${PROJECT_ROOT}/src/platform.c"
+    "${PROJECT_ROOT}/src/crypto.c"
+    "${PROJECT_ROOT}/src/protocol.c"
+    "${PROJECT_ROOT}/src/network.c"
+    "${PROJECT_ROOT}/src/tui.c"
+    "${PROJECT_ROOT}/src/tui_posix.c"
+    "${PROJECT_ROOT}/src/cli.c"
+    "${PROJECT_ROOT}/src/cli_posix.c"
+    "${PROJECT_ROOT}/lib/monocypher.c"
+)
+
+target_include_directories(simplecipher PRIVATE
+    "${PROJECT_ROOT}/src"
+    "${PROJECT_ROOT}/lib"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+# Security-hardened compile options for Android NDK (Clang)
+target_compile_options(simplecipher PRIVATE
+    -std=c23
+    -Os -ffunction-sections -fdata-sections -fmerge-all-constants -DNDEBUG
+    -D_FORTIFY_SOURCE=2
+    -fstack-protector-strong
+    -ftrivial-auto-var-init=zero
+    -fno-delete-null-pointer-checks
+    -fno-strict-overflow
+    -fno-strict-aliasing
+    -Wall -Wextra -Werror=implicit -Werror=return-type -Werror=unused-result
+)
+
+# Linker hardening: full RELRO, no lazy binding, strip symbols and unused sections
+target_link_options(simplecipher PRIVATE
+    -Wl,-z,relro,-z,now
+    -Wl,--gc-sections
+    -Wl,--as-needed
+    -Wl,-s
+)
+
+target_link_libraries(simplecipher log)

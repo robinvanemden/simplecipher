@@ -1,0 +1,27 @@
+# Build output
+build/
+cmake-build-*/
+*.o
+simplecipher
+tests/test_p2p
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MCP config (local IDE integration, not portable)
+.mcp.json
+
+# Local docs (plans, specs)
+docs/
+
+# AI tooling
+CLAUDE.md
+qodana.yaml
+android/app/.cxx/

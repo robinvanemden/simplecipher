@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:padding="32dp"
+    android:background="@color/bg_primary"
+    android:fitsSystemWindows="true">
+
+    <!-- App identity -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_primary"
+        android:letterSpacing="0.05"
+        android:layout_marginTop="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/tagline"
+        android:textSize="13sp"
+        android:textColor="@color/text_secondary"
+        android:layout_marginBottom="48dp" />
+
+    <!-- Mode toggle -->
+    <RadioGroup
+        android:id="@+id/modeGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_mode_toggle"
+        android:padding="4dp"
+        android:layout_marginBottom="20dp">
+
+        <RadioButton
+            android:id="@+id/radioListen"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:text="@string/mode_listen"
+            android:textSize="14sp"
+            android:textColor="@color/text_radio_button"
+            android:button="@null"
+            android:gravity="center"
+            android:background="@drawable/bg_radio_button"
+            android:checked="true" />
+
+        <RadioButton
+            android:id="@+id/radioConnect"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:text="@string/mode_connect"
+            android:textSize="14sp"
+            android:textColor="@color/text_radio_button"
+            android:button="@null"
+            android:gravity="center"
+            android:background="@drawable/bg_radio_button"
+            android:layout_marginStart="4dp" />
+    </RadioGroup>
+
+    <!-- Connect label (Connect mode only) -->
+    <TextView
+        android:id="@+id/connectLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Connect to remote IP"
+        android:textSize="12sp"
+        android:textColor="@color/text_hint"
+        android:paddingStart="4dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone" />
+
+    <!-- Host input (Connect mode only) -->
+    <EditText
+        android:id="@+id/hostInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/hint_host"
+        android:inputType="text"
+        android:textSize="15sp"
+        android:textColor="@color/text_primary"
+        android:textColorHint="@color/text_hint"
+        android:background="@drawable/bg_input"
+        android:visibility="gone"
+        android:layout_marginBottom="12dp" />
+
+    <!-- Local IPs (Listen mode only) -->
+    <LinearLayout
+        android:id="@+id/localIpsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginBottom="12dp" />
+
+    <!-- Port input -->
+    <EditText
+        android:id="@+id/portInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/hint_port"
+        android:inputType="number"
+        android:textSize="15sp"
+        android:textColor="@color/text_primary"
+        android:textColorHint="@color/text_hint"
+        android:background="@drawable/bg_input"
+        android:layout_marginBottom="28dp" />
+
+    <!-- Start button -->
+    <Button
+        android:id="@+id/goButton"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="@string/btn_go"
+        android:textSize="15sp"
+        android:textColor="#FF0D0D0D"
+        android:textStyle="bold"
+        android:background="@drawable/bg_button"
+        android:textAllCaps="false" />
+
+    <!-- Spacer pushes footer to bottom -->
+    <View
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Footer -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/footer"
+        android:textSize="11sp"
+        android:textColor="@color/text_hint"
+        android:layout_marginBottom="8dp" />
+
+</LinearLayout>

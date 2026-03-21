@@ -1,0 +1,302 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  test-p2p:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run P2P integration tests
+        run: |
+          mkdir -p build/native
+          cd build/native
+          cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-g -O0" ../..
+          make -j$(nproc) test_p2p
+          ./test_p2p
+
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            /opt/x-tools
+            /opt/llvm-mingw
+          key: toolchains-v3-musl-x86_64-aarch64-llvm-20260311
+
+      - name: Setup musl cross-compilers
+        run: |
+          sudo mkdir -p /opt/x-tools
+          for TRIPLE in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+            if [ ! -d /opt/x-tools/$TRIPLE ]; then
+              curl -fsSL https://github.com/robinvanemden/toolchains/releases/download/v1/$TRIPLE.tar.xz \
+                | sudo tar -xJ -C /opt/x-tools/
+            fi
+            echo "/opt/x-tools/$TRIPLE/$TRIPLE/bin" >> "$GITHUB_PATH"
+          done
+
+      - name: Setup llvm-mingw
+        run: |
+          if [ ! -d /opt/llvm-mingw ]; then
+            curl -fsSL https://github.com/mstorsjo/llvm-mingw/releases/download/20260311/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64.tar.xz \
+              | sudo tar -xJ -C /opt/
+            sudo mv /opt/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64 /opt/llvm-mingw
+          fi
+
+      - name: Patch llvm-mingw toolchain path for CI
+        run: |
+          sed -i 's|/opt/llvm-mingw-[^ )]*|/opt/llvm-mingw|' cmake/toolchains/win-x86_64.cmake cmake/toolchains/win-aarch64.cmake
+
+      - name: Build Linux x86_64 target
+        run: |
+          cmake --preset linux-x86_64
+          cmake --build --preset linux-x86_64
+
+      - name: Build Linux aarch64 target
+        run: |
+          cmake --preset linux-aarch64
+          cmake --build --preset linux-aarch64
+
+      - name: Build Windows x86_64 target
+        run: |
+          cmake --preset win-x86_64
+          cmake --build --preset win-x86_64
+
+      - name: Build Windows aarch64 target
+        run: |
+          cmake --preset win-aarch64
+          cmake --build --preset win-aarch64
+
+      - name: Upload Linux x86_64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplecipher-linux-x86_64
+          path: build/linux_x86_64/simplecipher
+
+      - name: Upload Linux aarch64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplecipher-linux-aarch64
+          path: build/linux_aarch64/simplecipher
+
+      - name: Upload Windows x86_64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplecipher-win-x86_64
+          path: build/win_x86_64/simplecipher.exe
+
+      - name: Upload Windows aarch64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplecipher-win-aarch64
+          path: build/win_aarch64/simplecipher.exe
+
+      - name: Upload test scripts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-assets
+          path: tests/
+
+  build-android:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install NDK r28
+        run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
+
+      - name: Build Android APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Validate APK
+        run: bash tests/test_android.sh android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplecipher-android
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+  test-linux:
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: simplecipher-linux-x86_64
+
+      - name: Download test assets
+        uses: actions/download-artifact@v4
+        with:
+          name: test-assets
+          path: tests
+
+      - name: Run tests
+        run: |
+          chmod +x simplecipher tests/test_linux.sh
+          bash tests/test_linux.sh ./simplecipher
+
+  test-linux-aarch64:
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-24.04-arm, ubuntu-22.04-arm]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Download Linux aarch64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: simplecipher-linux-aarch64
+
+      - name: Download test assets
+        uses: actions/download-artifact@v4
+        with:
+          name: test-assets
+          path: tests
+
+      - name: Run tests
+        run: |
+          chmod +x simplecipher tests/test_linux.sh
+          bash tests/test_linux.sh ./simplecipher
+
+  test-windows:
+    needs: build
+    strategy:
+      matrix:
+        os: [windows-2025, windows-2022]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: simplecipher-win-x86_64
+
+      - name: Download test assets
+        uses: actions/download-artifact@v4
+        with:
+          name: test-assets
+          path: tests
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          tests/test_windows.ps1 -Binary simplecipher.exe
+
+  test-windows-aarch64:
+    needs: build
+    runs-on: windows-11-arm
+
+    steps:
+      - name: Download Windows aarch64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: simplecipher-win-aarch64
+
+      - name: Download test assets
+        uses: actions/download-artifact@v4
+        with:
+          name: test-assets
+          path: tests
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          tests/test_windows.ps1 -Binary simplecipher.exe
+
+  release:
+    needs: [test-p2p, test-linux, test-linux-aarch64, test-windows, test-windows-aarch64, build-android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Linux x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: simplecipher-linux-x86_64
+          path: linux-x86_64
+
+      - name: Download Linux aarch64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: simplecipher-linux-aarch64
+          path: linux-aarch64
+
+      - name: Download Windows x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: simplecipher-win-x86_64
+          path: win-x86_64
+
+      - name: Download Windows aarch64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: simplecipher-win-aarch64
+          path: win-aarch64
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: simplecipher-android
+          path: android
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cp linux-x86_64/simplecipher release/simplecipher-linux-x86_64
+          cp linux-aarch64/simplecipher release/simplecipher-linux-aarch64
+          cp win-x86_64/simplecipher.exe release/simplecipher-win-x86_64.exe
+          cp win-aarch64/simplecipher.exe release/simplecipher-win-aarch64.exe
+          cp android/app-debug.apk release/simplecipher-android.apk
+          cd release
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Delete existing release (if re-tagging)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --cleanup-tag=false \
+            --yes 2>/dev/null || true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            release/simplecipher-linux-x86_64 \
+            release/simplecipher-linux-aarch64 \
+            release/simplecipher-win-x86_64.exe \
+            release/simplecipher-win-aarch64.exe \
+            release/simplecipher-android.apk \
+            release/SHA256SUMS.txt \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

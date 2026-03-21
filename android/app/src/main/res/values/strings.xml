@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SimpleCipher</string>
+    <string name="tagline">Encrypted peer-to-peer chat</string>
+    <string name="mode_listen">Listen</string>
+    <string name="mode_connect">Connect</string>
+    <string name="hint_host">Host or IP address</string>
+    <string name="hint_port">Port (default 7777)</string>
+    <string name="btn_go">Start</string>
+    <string name="footer">No servers. No accounts. End-to-end encrypted.</string>
+    <string name="status_connecting">Connecting\u2026</string>
+    <string name="sas_title">Verify Safety Code</string>
+    <string name="sas_instruction">Compare this code with your peer over a\nseparate channel (phone call, in person).</string>
+    <string name="sas_hint">First 4 chars</string>
+    <string name="sas_confirm">Verify</string>
+    <string name="chat_hint">Message</string>
+    <string name="btn_send">Send</string>
+    <string name="btn_send_icon">↑</string>
+</resources>
