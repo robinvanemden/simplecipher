@@ -10,6 +10,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.view.inputmethod.InputMethodManager;
 import android.view.WindowManager;
 import android.widget.Toast;
 
@@ -51,15 +52,16 @@ public class ChatActivity extends Activity implements NativeCallback {
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
     /* UI elements */
-    private TextView     statusText;
-    private LinearLayout sasLayout;
-    private TextView     sasCodeText;
-    private EditText     sasInput;
-    private Button       sasConfirmBtn;
-    private LinearLayout chatLayout;
-    private TextView     chatLog;
-    private EditText     chatInput;
-    private Button       sendBtn;
+    private TextView       statusText;
+    private LinearLayout   sasLayout;
+    private TextView       sasCodeText;
+    private EditText       sasInput;
+    private Button         sasConfirmBtn;
+    private LinearLayout   chatLayout;
+    private TextView       chatLog;
+    private EditText       chatInput;
+    private Button         sendBtn;
+    private SimpleKeyboard inAppKeyboard;
 
     /* The SAS code received from native, stored for verification. */
     private String pendingSas = null;
@@ -90,14 +92,57 @@ public class ChatActivity extends Activity implements NativeCallback {
         chatLayout    = findViewById(R.id.chatLayout);
         chatLog       = findViewById(R.id.chatLog);
         chatInput     = findViewById(R.id.chatInput);
+
+        /* Suppress the system keyboard on sensitive inputs.  Set
+         * programmatically because the XML attribute is not reliably
+         * available across all build tool versions. */
+        sasInput.setShowSoftInputOnFocus(false);
+        chatInput.setShowSoftInputOnFocus(false);
         sendBtn       = findViewById(R.id.sendBtn);
 
-        /* Tell the soft keyboard not to learn from anything the user types
-         * in this activity.  IMEs may ignore this, but it is the strongest
-         * signal Android provides short of a custom in-app keyboard. */
+        /* --- Custom in-app keyboard setup ---
+         *
+         * We use our own SimpleKeyboard instead of the system IME so that
+         * keystrokes never leave our process.  The system keyboard (Gboard,
+         * SwiftKey, etc.) runs in a separate process and may log, cache, or
+         * sync keystrokes despite IME_FLAG_NO_PERSONALIZED_LEARNING.
+         *
+         * Defence in depth: we still set the no-learn flag (some system
+         * components check it), but the real protection is that we hide the
+         * IME entirely and inject text via SimpleKeyboard. */
         int noLearn = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
         sasInput.setImeOptions(sasInput.getImeOptions() | noLearn);
         chatInput.setImeOptions(chatInput.getImeOptions() | noLearn);
+
+        /* Suppress the system soft keyboard at the window level */
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+
+        inAppKeyboard = findViewById(R.id.inAppKeyboard);
+        inAppKeyboard.setOnSendListener(this::sendMessage);
+
+        /* When the chat input gains focus, show the in-app keyboard in TEXT
+         * mode and forcibly dismiss the system IME.  The showSoftInputOnFocus
+         * XML attribute prevents the IME from appearing on touch, but we also
+         * call hideSoftInputFromWindow as belt-and-suspenders — some custom
+         * ROMs and older devices ignore the XML attribute. */
+        chatInput.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                hideSystemKeyboard(chatInput);
+                inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
+                inAppKeyboard.setTarget(chatInput);
+                inAppKeyboard.setVisibility(View.VISIBLE);
+            }
+        });
+
+        /* Same for the SAS input: show HEX keyboard when focused */
+        sasInput.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                hideSystemKeyboard(sasInput);
+                inAppKeyboard.setMode(SimpleKeyboard.MODE_HEX);
+                inAppKeyboard.setTarget(sasInput);
+                inAppKeyboard.setVisibility(View.VISIBLE);
+            }
+        });
 
         chatLog.setMovementMethod(new ScrollingMovementMethod());
 
@@ -179,6 +224,13 @@ public class ChatActivity extends Activity implements NativeCallback {
             sasCodeText.setText(code);
             sasLayout.setVisibility(View.VISIBLE);
 
+            /* Show the hex keyboard for SAS input and give it focus */
+            inAppKeyboard.setMode(SimpleKeyboard.MODE_HEX);
+            inAppKeyboard.setTarget(sasInput);
+            inAppKeyboard.setVisibility(View.VISIBLE);
+            sasInput.requestFocus();
+            hideSystemKeyboard(sasInput);
+
             /* Enter key on SAS input triggers the confirm button */
             sasInput.setOnEditorActionListener((v, a, e) -> {
                 sasConfirmBtn.performClick();
@@ -211,6 +263,12 @@ public class ChatActivity extends Activity implements NativeCallback {
                 chatLayout.setVisibility(View.VISIBLE);
                 statusText.setText("\uD83D\uDD12 Secure session active");
                 statusText.setTextColor(0xFF4DD0B0);
+
+                /* Switch keyboard to text mode for chat input */
+                inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
+                inAppKeyboard.setTarget(chatInput);
+                chatInput.requestFocus();
+                hideSystemKeyboard(chatInput);
             });
         });
     }
@@ -355,6 +413,22 @@ public class ChatActivity extends Activity implements NativeCallback {
          * (e.g. the system killed the process). */
         nativePostCommand(CMD_QUIT, null);
         super.onDestroy();
+    }
+
+    /* ---- System keyboard suppression ------------------------------------ */
+
+    /** Forcibly dismiss the system IME for the given view.
+     *
+     * We call this whenever an EditText gains focus.  Combined with
+     * setShowSoftInputOnFocus(false) and SOFT_INPUT_STATE_ALWAYS_HIDDEN
+     * on the window, this ensures the system keyboard never appears.
+     * The triple-layer approach is necessary because no single method works
+     * reliably across all Android versions and OEM ROMs. */
+    private void hideSystemKeyboard(View view) {
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+        }
     }
 
     /* ---- Utility -------------------------------------------------------- */

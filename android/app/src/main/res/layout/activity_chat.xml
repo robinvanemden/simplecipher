@@ -83,7 +83,9 @@
             android:contentDescription="Safety code"
             android:layout_marginBottom="24dp" />
 
-        <!-- SAS input -->
+        <!-- SAS input — showSoftInputOnFocus="false" prevents the system
+             keyboard from appearing; our custom SimpleKeyboard handles input
+             instead, so keystrokes never leave our process. -->
         <EditText
             android:id="@+id/sasInput"
             android:layout_width="200dp"
@@ -93,6 +95,7 @@
             android:imeOptions="actionDone"
             android:importantForAutofill="no"
             android:privateImeOptions="np"
+            android:focusableInTouchMode="true"
             android:maxLength="9"
             android:fontFamily="monospace"
             android:textSize="18sp"
@@ -122,7 +125,8 @@
     <LinearLayout
         android:id="@+id/chatLayout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:orientation="vertical"
         android:visibility="gone">
 
@@ -154,6 +158,9 @@
             android:paddingTop="8dp"
             android:paddingBottom="16dp">
 
+            <!-- showSoftInputOnFocus="false" suppresses the system keyboard;
+                 our custom SimpleKeyboard injects text directly, keeping
+                 keystrokes inside our process and away from the IME. -->
             <EditText
                 android:id="@+id/chatInput"
                 android:layout_width="0dp"
@@ -164,6 +171,7 @@
                 android:imeOptions="actionSend"
                 android:importantForAutofill="no"
                 android:privateImeOptions="np"
+                    android:focusableInTouchMode="true"
                 android:maxLines="1"
                 android:maxLength="486"
                 android:textSize="14sp"
@@ -185,5 +193,15 @@
                 android:contentDescription="Send message" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- In-app keyboard (prevents system IME keystroke logging).
+         Keystrokes go directly from this View into the EditText via
+         getText().insert(), never touching the InputMethodService pipeline.
+         See SimpleKeyboard.java for full rationale. -->
+    <com.example.simplecipher.SimpleKeyboard
+        android:id="@+id/inAppKeyboard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
 
 </LinearLayout>
