@@ -37,6 +37,8 @@
 #include <pthread.h>
 #include <unistd.h>  /* pipe, read, write, close */
 #include <poll.h>
+#include <sys/prctl.h>
+#include <sys/resource.h>
 
 /* ---- Logging ------------------------------------------------------------ */
 
@@ -516,6 +518,15 @@ cleanup:
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     g_jvm = vm;
+
+    /* Block ptrace and /proc/self/mem access — prevents memory dumping
+     * of crypto keys by a compromised app or debugger. */
+    prctl(PR_SET_DUMPABLE, 0);
+
+    /* Disable core dumps — a crash must never write key material to disk. */
+    struct rlimit z = {0, 0};
+    setrlimit(RLIMIT_CORE, &z);
+
     return JNI_VERSION_1_6;
 }
 
