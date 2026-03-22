@@ -36,15 +36,6 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        /* If App caught a crash from last run, show it before doing
-         * anything that might crash again. */
-        if (App.pendingCrashTrace != null) {
-            super.onCreate(savedInstanceState);
-            startActivity(new Intent(this, CrashReportActivity.class));
-            finish();
-            return;
-        }
-
         super.onCreate(savedInstanceState);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
                              WindowManager.LayoutParams.FLAG_SECURE);
