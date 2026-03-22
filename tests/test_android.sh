@@ -106,49 +106,80 @@ else
 fi
 
 # ---- Native library security tests ----
-echo ""
-echo "=== Native library security tests ==="
 
-# Extract the arm64 SO for inspection
+# Extract both ARM SOs for inspection
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-unzip -q -o "$APK" 'lib/arm64-v8a/libsimplecipher.so' -d "$TMPDIR" 2>/dev/null || true
-SO="$TMPDIR/lib/arm64-v8a/libsimplecipher.so"
+unzip -q -o "$APK" 'lib/arm64-v8a/libsimplecipher.so' 'lib/armeabi-v7a/libsimplecipher.so' -d "$TMPDIR" 2>/dev/null || true
 
-if [ -f "$SO" ]; then
-    # Symbol stripping: readelf should show minimal symbols
-    if command -v readelf >/dev/null 2>&1; then
-        # Stripped .so should not have a .symtab section
-        check "native .so has no .symtab (symbols stripped)" \
-            "! readelf -S '$SO' | grep -q '\.symtab'"
+# Run security checks on a single .so file.
+# $1 = ABI name (for display), $2 = path to .so
+check_so() {
+    local abi="$1" so="$2"
 
-        # RELRO check
-        check "native .so has RELRO" \
-            "readelf -l '$SO' | grep -q 'GNU_RELRO'"
+    echo ""
+    echo "=== Native library security tests ($abi) ==="
 
-        # Stack canary: dynamic .so imports __stack_chk_fail from libc
-        # Use -W (wide) so long symbol names aren't truncated by readelf
-        check "native .so has stack canary (__stack_chk_fail in dynsym)" \
-            "readelf -W --dyn-syms '$SO' | grep -q '__stack_chk_fail'"
-
-        # FORTIFY_SOURCE: should have _chk variants of libc functions (dynamic symbols survive stripping)
-        check "native .so has FORTIFY_SOURCE (_chk functions)" \
-            "readelf -s --dyn-syms '$SO' | grep -qE '__[a-z]+_chk'"
-
-        # No plaintext SAS/key strings leaked into binary
-        check "no 'SAS:' debug string in .so" \
-            "! strings '$SO' | grep -q 'SAS:'"
-
-    elif command -v objdump >/dev/null 2>&1; then
-        check "native .so has RELRO (objdump)" \
-            "objdump -p '$SO' | grep -q 'GNU_RELRO'"
-    else
-        echo "  SKIP: readelf/objdump not found, skipping .so inspection"
+    if [ ! -f "$so" ]; then
+        echo "  SKIP: could not extract $abi .so from APK"
+        return
     fi
-else
-    echo "  SKIP: could not extract arm64 .so from APK"
-fi
+
+    if ! command -v readelf >/dev/null 2>&1; then
+        echo "  SKIP: readelf not found, skipping .so inspection"
+        return
+    fi
+
+    # Stripped .so should not have a .symtab section
+    check "$abi: no .symtab (symbols stripped)" \
+        "! readelf -S '$so' | grep -q '\.symtab'"
+
+    # RELRO check
+    check "$abi: has RELRO" \
+        "readelf -l '$so' | grep -q 'GNU_RELRO'"
+
+    # Stack canary: dynamic .so imports __stack_chk_fail from libc
+    check "$abi: has stack canary (__stack_chk_fail)" \
+        "readelf -W --dyn-syms '$so' | grep -q '__stack_chk_fail'"
+
+    # FORTIFY_SOURCE: should have _chk variants of libc functions
+    check "$abi: has FORTIFY_SOURCE (_chk functions)" \
+        "readelf -W --dyn-syms '$so' | grep -qE '__[a-z]+_chk'"
+
+    # No plaintext SAS/key strings leaked into binary
+    check "$abi: no 'SAS:' debug string" \
+        "! strings '$so' | grep -q 'SAS:'"
+
+    # JNI symbol visibility: only JNI_OnLoad and Java_* should be exported.
+    # Count GLOBAL FUNC symbols that are not JNI entry points — should be zero.
+    check "$abi: only JNI symbols exported (no internal leaks)" \
+        "test \$(readelf -W --dyn-syms '$so' \
+            | awk '/GLOBAL.*FUNC/ && !/UND/ && !/JNI_OnLoad/ && !/Java_/' \
+            | wc -l) -eq 0"
+
+    # No LOGI/LOGE format strings in release (NDEBUG should suppress them)
+    check "$abi: no log format strings (NDEBUG active)" \
+        "! strings '$so' | grep -qE '(connecting to|listening on|handshake|CMD_QUIT)'"
+}
+
+# ARM64-specific hardening checks
+check_so_arm64() {
+    local so="$1"
+
+    if [ ! -f "$so" ] || ! command -v readelf >/dev/null 2>&1; then
+        return
+    fi
+
+    # GNU_PROPERTY note with PAC+BTI flags (AArch64 feature flags)
+    # The .note.gnu.property section signals PAC/BTI support to the loader.
+    check "arm64: has .note.gnu.property (PAC+BTI)" \
+        "readelf -S '$so' | grep -q '\.note\.gnu\.property'"
+}
+
+check_so "arm64-v8a" "$TMPDIR/lib/arm64-v8a/libsimplecipher.so"
+check_so_arm64       "$TMPDIR/lib/arm64-v8a/libsimplecipher.so"
+check_so "armeabi-v7a" "$TMPDIR/lib/armeabi-v7a/libsimplecipher.so"
 
 echo ""
 echo "=== Source-level security tests ==="
@@ -212,6 +243,42 @@ check "CMake enables RELRO" \
 # CMake: symbol stripping
 check "CMake strips symbols" \
     "grep -q '\-Wl,-s' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
+
+# CMake: CFI
+check "CMake enables CFI" \
+    "grep -q 'fsanitize=cfi' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
+
+# CMake: stack clash protection
+check "CMake enables stack clash protection" \
+    "grep -q 'fstack-clash-protection' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
+
+# CMake: hidden visibility
+check "CMake uses hidden symbol visibility" \
+    "grep -q 'fvisibility=hidden' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
+
+# CMake: PAC+BTI for ARM64
+check "CMake enables PAC+BTI (ARM64)" \
+    "grep -q 'mbranch-protection=standard' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
+
+# JNI exports version script exists
+check "JNI exports version script exists" \
+    "test -f '$REPO_ROOT/android/app/src/main/c/jni_exports.map'"
+
+# JNI: prctl PR_SET_DUMPABLE
+check "JNI blocks ptrace (PR_SET_DUMPABLE)" \
+    "grep -q 'PR_SET_DUMPABLE' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+
+# JNI: RLIMIT_CORE disabled
+check "JNI disables core dumps (RLIMIT_CORE)" \
+    "grep -q 'RLIMIT_CORE' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+
+# Manifest: extractNativeLibs=false
+check "Manifest disables native lib extraction" \
+    "grep -q 'extractNativeLibs.*false' '$REPO_ROOT/android/app/src/main/AndroidManifest.xml'"
+
+# Manifest: network security config
+check "Network security config exists" \
+    "test -f '$REPO_ROOT/android/app/src/main/res/xml/network_security_config.xml'"
 
 # ProGuard rules exist
 check "ProGuard rules file exists" \
