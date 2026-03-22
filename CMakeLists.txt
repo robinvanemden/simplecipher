@@ -32,7 +32,8 @@ set(COMMON_C_FLAGS "\
 -ffunction-sections -fdata-sections -fmerge-all-constants \
 -fstack-protector-strong \
 -ftrivial-auto-var-init=zero \
--DNDEBUG \
+-fvisibility=hidden \
+-DNDEBUG -DCIPHER_HARDEN \
 -fno-delete-null-pointer-checks \
 -fno-strict-overflow \
 -fno-strict-aliasing \
@@ -64,8 +65,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     #   -z,now              immediate binding (full RELRO)
     #   -z,noexecstack      non-executable stack
     #   --build-id=none     strip build-id metadata
-    # Process hardening: -DCIPHER_HARDEN enables mlockall, no core dumps, no ptrace
-    set(CMAKE_C_FLAGS_RELEASE "${COMMON_C_FLAGS} -fno-ident -DCIPHER_HARDEN")
+    set(CMAKE_C_FLAGS_RELEASE "${COMMON_C_FLAGS} -fno-ident")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto -Wl,--gc-sections -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,--build-id=none")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     # PE linker hardening:

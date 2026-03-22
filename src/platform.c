@@ -76,6 +76,23 @@ void sock_shutdown_both(socket_t s){ shutdown(s, SHUT_RDWR); }
  *   PR_SET_DUMPABLE -- blocks ptrace / /proc/self/mem access (Linux only)
  * ========================================================================= */
 #ifdef CIPHER_HARDEN
+
+#if defined(_WIN32) || defined(_WIN64)
+void harden(void){
+    /* Disable crash dumps (WER: Windows Error Reporting).
+     * Prevents key material from being written to disk on crash. */
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+
+    /* Disable WER process-level crash dumps via mitigation policy.
+     * Available on Windows 10 1709+ (build 16299). */
+    {
+        PROCESS_MITIGATION_SYSTEM_CALL_DISABLE_POLICY pol = {0};
+        /* Best-effort: older Windows versions silently ignore this. */
+        (void)SetProcessMitigationPolicy(ProcessSystemCallDisablePolicy,
+                                         &pol, sizeof pol);
+    }
+}
+#else /* POSIX */
 void harden(void){
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
         fprintf(stderr,
@@ -86,6 +103,8 @@ void harden(void){
     prctl(PR_SET_DUMPABLE, 0);
   #endif
 }
+#endif /* platform */
+
 #else
 void harden(void){}   /* no-op when CIPHER_HARDEN is not set */
 #endif

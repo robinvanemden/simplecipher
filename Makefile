@@ -1,15 +1,29 @@
 CC      ?= gcc
-CFLAGS  ?= -O2 -std=c23 -Wall -Wextra -Isrc -Ilib
-LDFLAGS ?=
+
+# Security-hardened flags matching the CMake release build.
+# Override with: make CFLAGS="..." for a custom build.
+CFLAGS  ?= -Os -std=c23 -Wall -Wextra -Isrc -Ilib \
+           -flto -ffunction-sections -fdata-sections -fmerge-all-constants \
+           -fstack-protector-strong \
+           -ftrivial-auto-var-init=zero \
+           -fvisibility=hidden \
+           -fno-delete-null-pointer-checks \
+           -fno-strict-overflow \
+           -fno-strict-aliasing \
+           -DNDEBUG -DCIPHER_HARDEN
+
+LDFLAGS ?= -flto -Wl,--gc-sections -s
 
 # Core sources (platform-independent + small inline #ifdefs)
 CORE_SRC = src/platform.c src/crypto.c src/protocol.c src/network.c \
            src/tui.c src/cli.c lib/monocypher.c
 
-# Platform-specific event loops
+# Platform-specific event loops and hardening
 UNAME := $(shell uname -s)
 ifeq ($(UNAME),Linux)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
+  CFLAGS  += -fstack-clash-protection -D_FORTIFY_SOURCE=3
+  LDFLAGS += -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack
 else ifeq ($(UNAME),Darwin)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
 else
