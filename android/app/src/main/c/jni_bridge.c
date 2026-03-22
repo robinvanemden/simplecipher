@@ -493,11 +493,20 @@ cleanup:
         close_sock(fd);
     }
 
-    /* Close pipe read end */
+    /* Wipe and close the pipe.  Write zeros to flush any plaintext
+     * command payload lingering in the kernel pipe buffer, then close
+     * both ends so the kernel frees the pages. */
+    {
+        int wr = g_pipe_wr;
+        g_pipe_wr = -1;  /* prevent races with nativePostCommand */
+        if (wr >= 0) {
+            uint8_t zeros[512];
+            memset(zeros, 0, sizeof zeros);
+            (void)write(wr, zeros, sizeof zeros);
+            close(wr);
+        }
+    }
     close(pipe_rd);
-
-    /* Reset global pipe write fd so stale nativePostCommand calls are no-ops */
-    g_pipe_wr = -1;
 
     /* Delete the JNI global ref to the callback */
     (*env)->DeleteGlobalRef(env, cb);

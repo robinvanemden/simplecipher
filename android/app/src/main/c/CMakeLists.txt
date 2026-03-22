@@ -30,12 +30,25 @@ target_compile_options(simplecipher PRIVATE
     -Os -ffunction-sections -fdata-sections -fmerge-all-constants -DNDEBUG
     -D_FORTIFY_SOURCE=2
     -fstack-protector-strong
+    -fstack-clash-protection
     -ftrivial-auto-var-init=zero
     -fno-delete-null-pointer-checks
     -fno-strict-overflow
     -fno-strict-aliasing
+    # Hide all symbols by default; only JNI exports are visible
+    -fvisibility=hidden
+    # Control Flow Integrity — prevents ROP/JOP attacks (requires LTO)
+    -fsanitize=cfi
+    -flto
     -Wall -Wextra -Werror=implicit -Werror=return-type -Werror=unused-result
 )
+
+# ARM64-only: Pointer Authentication + Branch Target Identification
+# Hardware-backed on ARMv8.3+, harmless NOPs on older ARMv8 chips.
+# Not available on 32-bit ARM (armeabi-v7a).
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    target_compile_options(simplecipher PRIVATE -mbranch-protection=standard)
+endif()
 
 # Linker hardening: full RELRO, no lazy binding, strip symbols and unused sections
 target_link_options(simplecipher PRIVATE
@@ -43,6 +56,11 @@ target_link_options(simplecipher PRIVATE
     -Wl,--gc-sections
     -Wl,--as-needed
     -Wl,-s
+    # Only export JNI entry points — everything else is hidden
+    -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jni_exports.map
+    # CFI requires LTO at link time
+    -fsanitize=cfi
+    -flto
 )
 
 target_link_libraries(simplecipher log)

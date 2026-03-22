@@ -1,0 +1,8 @@
+{
+    global:
+        JNI_OnLoad;
+        Java_com_example_simplecipher_ChatActivity_nativeStart;
+        Java_com_example_simplecipher_ChatActivity_nativePostCommand;
+    local:
+        *;
+};

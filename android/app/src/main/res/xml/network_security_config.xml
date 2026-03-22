@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Network security config for SimpleCipher.
+
+    The app uses raw TCP sockets with its own X25519 + XChaCha20-Poly1305
+    encryption — it does NOT use TLS/HTTPS.  This config is defence-in-depth:
+    if any future code path inadvertently uses HttpURLConnection or similar,
+    these rules prevent cleartext and enforce modern TLS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
