@@ -123,18 +123,18 @@ jobs:
       - name: Install NDK r28
         run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
 
-      - name: Build Android APK
+      - name: Build Android APK (release)
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleRelease
 
       - name: Validate APK
-        run: bash tests/test_android.sh android/app/build/outputs/apk/debug/app-debug.apk
+        run: bash tests/test_android.sh android/app/build/outputs/apk/release/app-release-unsigned.apk
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: simplecipher-android
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
 
   test-linux:
     needs: build
@@ -273,7 +273,7 @@ jobs:
           cp linux-aarch64/simplecipher release/simplecipher-linux-aarch64
           cp win-x86_64/simplecipher.exe release/simplecipher-win-x86_64.exe
           cp win-aarch64/simplecipher.exe release/simplecipher-win-aarch64.exe
-          cp android/app-debug.apk release/simplecipher-android.apk
+          cp android/app-release-unsigned.apk release/simplecipher-android.apk
           cd release
           sha256sum * > SHA256SUMS.txt
 

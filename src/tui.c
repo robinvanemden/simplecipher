@@ -143,7 +143,7 @@ void tui_draw_messages(void){
     int start_msg = total > msg_rows ? total - msg_rows : 0;
     int row = 4;
     int i;
-    int max_text = tui_w - 22;
+    int max_text = tui_w - 21;
 
     if (max_text < 1) max_text = 1;
 
@@ -185,7 +185,7 @@ void tui_draw_messages(void){
  * is re-shown and positioned at the end of the visible text so the user
  * can see where they are typing. */
 void tui_draw_input(const char *line, size_t len){
-    int max_input = tui_w - 6;
+    int max_input = tui_w - 5;
     int show_start = (int)len > max_input ? (int)len - max_input : 0;
     int visible_len = (int)len - show_start;
     int pad = max_input - visible_len;
@@ -197,8 +197,9 @@ void tui_draw_input(const char *line, size_t len){
            visible_len, line + show_start,
            pad, "",
            TUI_COLOR_DIM, TUI_COLOR_RESET);
-    printf("\033[?25h");
-    TUI_GOTO(tui_h, 4 + visible_len);
+    printf("\033[?25h");      /* show cursor */
+    printf("\033[1 q");       /* block cursor (more visible than line) */
+    TUI_GOTO(tui_h, 5 + visible_len);
     fflush(stdout);
 }
 
@@ -242,6 +243,70 @@ void tui_status_screen(const char *line1, const char *line2){
     fflush(stdout);
 }
 
+/* Show the listen/waiting screen with local IP addresses so the user
+ * can tell their peer which command to run. */
+void tui_listen_screen(const char *port, const char *ips){
+    int cy;
+    tui_get_size(&tui_w, &tui_h);
+    printf("\033[2J");
+    tui_draw_title();
+
+    /* Count IP lines */
+    int nips = 0;
+    if (ips && ips[0]){
+        nips = 1;
+        for (const char *c = ips; *c; c++) if (*c == '\n') nips++;
+    }
+
+    /* Center vertically: title(1) + "Listening"(1) + blank(1) + "Tell peer"(1)
+     * + ip lines + blank(1) + "Waiting..." */
+    int block_h = 4 + nips + 1;
+    cy = (tui_h - block_h) / 2;
+    if (cy < 3) cy = 3;
+
+    /* "Listening on port XXXX" */
+    {
+        char msg[80];
+        snprintf(msg, sizeof msg, "Listening on port %s", port);
+        TUI_GOTO(cy, (tui_w - (int)strlen(msg)) / 2);
+        printf("%s", msg);
+    }
+    cy += 2;
+
+    /* "Tell your peer to run:" + IP list */
+    if (nips > 0){
+        const char *label = "Tell your peer to run:";
+        TUI_GOTO(cy, (tui_w - (int)strlen(label)) / 2);
+        printf("%s%s%s", TUI_COLOR_DIM, label, TUI_COLOR_RESET);
+        cy++;
+
+        /* Print each IP as a connect command */
+        const char *p = ips;
+        while (*p){
+            const char *nl = p;
+            while (*nl && *nl != '\n') nl++;
+            char cmd[128];
+            int cmdlen = snprintf(cmd, sizeof cmd, "simplecipher connect %.*s %s",
+                                  (int)(nl - p), p, port);
+            TUI_GOTO(cy, (tui_w - cmdlen) / 2);
+            printf("%s%s%s", TUI_COLOR_CYAN, cmd, TUI_COLOR_RESET);
+            cy++;
+            p = *nl ? nl + 1 : nl;
+        }
+        cy++;
+    }
+
+    /* "Waiting for connection..." */
+    {
+        const char *wait = "Waiting for connection...";
+        TUI_GOTO(cy, (tui_w - (int)strlen(wait)) / 2);
+        printf("%s%s%s", TUI_COLOR_DIM, wait, TUI_COLOR_RESET);
+    }
+
+    tui_draw_hline(tui_h, 3, 3);
+    fflush(stdout);
+}
+
 /* ---- TUI: safety code verification screen -------------------------------
  *
  * Display the SAS (Short Authentication String) in a centred prompt and
@@ -254,28 +319,49 @@ void tui_status_screen(const char *line1, const char *line2){
  *
  * Returns 1 if the user typed a matching code, 0 on mismatch or abort. */
 int tui_sas_screen(const char *sas){
-    char typed[5] = {0};
+    int  sas_len = (int)strlen(sas);  /* 9 for "XXXX-XXXX" */
+    char typed[20] = {0};
     int  pos = 0;
     int  cy;
 
     tui_get_size(&tui_w, &tui_h);
-    cy = tui_h / 2 - 2;
+    cy = tui_h / 2 - 4;
+    if (cy < 3) cy = 3;
 
     printf("\033[2J");
     tui_draw_title();
 
-    TUI_GOTO(cy, (tui_w - 34) / 2);
-    printf("Verify safety code with your peer:");
+    {
+        const char *hdr = "SAFETY CODE";
+        TUI_GOTO(cy, (tui_w - (int)strlen(hdr)) / 2);
+        printf("%s%s%s", TUI_COLOR_GREEN, hdr, TUI_COLOR_RESET);
+    }
 
     TUI_GOTO(cy + 2, (tui_w - (int)strlen(sas)) / 2);
     printf("%s%s%s", TUI_COLOR_BCYAN, sas, TUI_COLOR_RESET);
 
-    TUI_GOTO(cy + 4, (tui_w - 38) / 2);
-    printf("Type first 4 characters to confirm: ");
+    {
+        const char *l1 = "Call or meet your peer and compare this code.";
+        const char *l2 = "If it matches, type the full code to confirm.";
+        const char *l3 = "If not, press Ctrl+C -- someone is intercepting.";
+        TUI_GOTO(cy + 4, (tui_w - (int)strlen(l1)) / 2);
+        printf("%s%s%s", TUI_COLOR_DIM, l1, TUI_COLOR_RESET);
+        TUI_GOTO(cy + 5, (tui_w - (int)strlen(l2)) / 2);
+        printf("%s%s%s", TUI_COLOR_DIM, l2, TUI_COLOR_RESET);
+        TUI_GOTO(cy + 6, (tui_w - (int)strlen(l3)) / 2);
+        printf("%s%s%s", TUI_COLOR_DIM, l3, TUI_COLOR_RESET);
+    }
+
+    {
+        const char *prompt = "Confirm: ";
+        TUI_GOTO(cy + 8, (tui_w - (int)strlen(prompt) - sas_len) / 2);
+        printf("%s", prompt);
+    }
     printf("\033[?25h");
+    printf("\033[1 q");   /* block cursor */
     fflush(stdout);
 
-    while (pos < 4 && g_running){
+    while (pos < (int)sizeof(typed) - 1 && g_running){
 #ifndef _WIN32
         struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
         int pr = poll(&pfd, 1, 250);
@@ -305,21 +391,43 @@ int tui_sas_screen(const char *sas){
             }
             continue;
         }
+        /* Enter submits whatever has been typed (must have at least 4 chars
+         * to prevent accidental empty submits). */
+        if ((ch == '\r' || ch == '\n') && pos >= 4)
+            break;
         if (ch >= 0x20 && ch <= 0x7E){
             typed[pos++] = (char)ch;
             putchar(ch);
             fflush(stdout);
         }
     }
+    typed[pos] = '\0';
 
     if (!g_running){ crypto_wipe(typed, sizeof typed); return 0; }
 
-    for (int i = 0; i < 4; i++){
-        char a = typed[i], b = sas[i];
-        if (a >= 'a' && a <= 'z') a -= 32;
-        if (b >= 'a' && b <= 'z') b -= 32;
-        if (a != b){
-            TUI_GOTO(cy + 6, (tui_w - 20) / 2);
+    /* Normalize both strings: strip dashes and uppercase, then compare.
+     * This accepts "A3F2-91BC", "A3F291BC", "a3f2-91bc" etc. — the user
+     * does not need to remember whether the dash is part of the code. */
+    {
+        char norm_typed[20] = {0}, norm_sas[20] = {0};
+        int ti = 0, si = 0;
+        for (int i = 0; typed[i] && ti < (int)sizeof(norm_typed)-1; i++){
+            char c = typed[i];
+            if (c == '-') continue;
+            if (c >= 'a' && c <= 'z') c -= 32;
+            norm_typed[ti++] = c;
+        }
+        for (int i = 0; sas[i] && si < (int)sizeof(norm_sas)-1; i++){
+            char c = sas[i];
+            if (c == '-') continue;
+            if (c >= 'a' && c <= 'z') c -= 32;
+            norm_sas[si++] = c;
+        }
+        int ok = (ti == si && memcmp(norm_typed, norm_sas, (size_t)ti) == 0);
+        crypto_wipe(norm_typed, sizeof norm_typed);
+        crypto_wipe(norm_sas,  sizeof norm_sas);
+        if (!ok){
+            TUI_GOTO(cy + 10, (tui_w - 20) / 2);
             printf("\033[31mCode mismatch!\033[0m");
             fflush(stdout);
             crypto_wipe(typed, sizeof typed);

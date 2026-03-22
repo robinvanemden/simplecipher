@@ -16,6 +16,10 @@
  * safe to write from a signal handler without data races. */
 volatile sig_atomic_t g_running = 1;
 
+#if defined(_WIN32) || defined(_WIN64)
+volatile SOCKET g_interrupt_sock = INVALID_SOCKET;
+#endif
+
 /* ---- platform init/quit ------------------------------------------------- */
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -117,6 +121,12 @@ void on_sig(int sig){
 BOOL WINAPI on_console_ctrl(DWORD event){
     (void)event;
     g_running = 0;
+    /* Close the socket the main thread is blocking on (accept, connect, recv).
+     * This forces the blocking Winsock call to return with an error so the
+     * main thread can check g_running and exit cleanly.  On POSIX, signals
+     * deliver EINTR instead; Windows has no equivalent mechanism. */
+    SOCKET s = g_interrupt_sock;
+    if (s != INVALID_SOCKET) closesocket(s);
     return TRUE;
 }
 #endif

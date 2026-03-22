@@ -27,6 +27,9 @@ android {
 
     buildTypes {
         debug {
+            /* Debug builds are never shipped.  CI and release both use
+             * assembleRelease.  Keep this block only so Gradle does not
+             * fail if someone runs assembleDebug locally for development. */
             debuggable true
         }
         release {

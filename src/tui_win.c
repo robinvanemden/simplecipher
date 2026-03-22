@@ -31,6 +31,7 @@ static UINT   tui_orig_out_cp = 0;
 
 void tui_restore_term(void){
     printf("\033[?25h");
+    printf("\033[0 q");     /* restore default cursor shape */
     printf("\033[0m");
     fflush(stdout);
     if (tui_h_out != INVALID_HANDLE_VALUE)
@@ -197,6 +198,8 @@ void tui_chat_loop(socket_t fd, session_t *sess){
                             uint16_t plen = 0;
                             if (frame_open(sess, in_frame, plain, &plen) != 0){
                                 tui_msg_add(TUI_SYSTEM, "[session error]");
+                                status = "Session error  |  Ctrl+C to exit";
+                                tui_draw_screen(status, line, line_len);
                                 crypto_wipe(plain, sizeof plain);
                                 goto win_tui_done;
                             }
@@ -215,8 +218,8 @@ void tui_chat_loop(socket_t fd, session_t *sess){
                     }
                     if (r == 0){
                         tui_msg_add(TUI_SYSTEM, "[peer disconnected]");
-                        tui_draw_messages();
-                        tui_draw_input(line, line_len);
+                        status = "Peer disconnected  |  Ctrl+C to exit";
+                        tui_draw_screen(status, line, line_len);
                         g_running = 0;
                         goto win_tui_done;
                     }
@@ -242,8 +245,8 @@ void tui_chat_loop(socket_t fd, session_t *sess){
             }
             if (ne.lNetworkEvents & FD_CLOSE){
                 tui_msg_add(TUI_SYSTEM, "[peer disconnected]");
-                tui_draw_messages();
-                tui_draw_input(line, line_len);
+                status = "Peer disconnected  |  Ctrl+C to exit";
+                tui_draw_screen(status, line, line_len);
                 break;
             }
         }

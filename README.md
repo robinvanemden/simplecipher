@@ -147,7 +147,7 @@ This hides message length from network observers. The sequence number is authent
 | **Authentication** | Commit-then-reveal SAS verified out-of-band |
 | **Forward secrecy** | Chain-key ratchet; each message key is used once then wiped |
 | **Integrity** | Poly1305 MAC detects any tampering; sequence numbers reject replays |
-| **No metadata leakage** | Fixed 512-byte frames hide message length |
+| **Message-length hiding** | Fixed 512-byte frames prevent length-based analysis |
 | **Terminal safety** | Peer messages are sanitized (non-printable bytes replaced with `.`) |
 | **Ephemeral keys** | New keypair every session; nothing stored to disk |
 
@@ -156,6 +156,7 @@ This hides message length from network observers. The sequence number is authent
 - **Post-compromise security**: if an attacker extracts the chain key from RAM mid-session, they can decrypt the rest of that session. Full protection requires continuous DH ratcheting (Signal's Double Ratchet). For short ephemeral sessions this is an acceptable trade-off.
 - **Anonymity**: IP addresses are visible on the network. For anonymity, run over Tor: `torsocks simplecipher connect ...`
 - **Identity persistence**: there are no long-term keys or contacts. Each session is independent.
+- **Android memory hygiene**: the desktop builds use `crypto_wipe()` on every buffer to ensure plaintext and keys do not linger in RAM. The Android build runs on the JVM, where Strings are immutable and garbage-collected — sensitive data cannot be reliably zeroed. The app clears widgets and blocks screenshots (`FLAG_SECURE`), but this is best-effort. For the strongest memory guarantees, use the desktop CLI or TUI.
 
 ### Security notes
 
@@ -177,7 +178,7 @@ No OpenSSL, no libsodium, no dynamic linking. The entire cryptographic stack is 
 ## FAQ
 
 **Why not just use Signal / WhatsApp / Telegram?**
-Those require accounts, phone numbers, and a central server that knows who talks to whom. SimpleCipher has no server, no accounts, no metadata. When the session ends, there is no record it ever happened.
+Those require accounts, phone numbers, and a central server that knows who talks to whom. SimpleCipher has no server and no accounts. IP addresses are visible on the network (use Tailscale or Tor to mitigate), but there is no central record of who talked to whom. When the session ends, the keys are gone.
 
 **Why not just use Tailscale / WireGuard and any chat app?**
 Tailscale solves connectivity (NAT traversal), not trust. SimpleCipher adds: ephemeral keys (nothing stored to disk), SAS verification (cryptographic proof of who you're talking to), and forward secrecy (keys wiped after each message). Even if the VPN layer were compromised, SimpleCipher's end-to-end encryption holds. They're complementary — use Tailscale for connectivity, SimpleCipher for trust.

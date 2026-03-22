@@ -9,10 +9,10 @@
     <string name="btn_go">Start</string>
     <string name="footer">No servers. No accounts. End-to-end encrypted.</string>
     <string name="status_connecting">Connecting\u2026</string>
-    <string name="sas_title">Verify Safety Code</string>
-    <string name="sas_instruction">Compare this code with your peer over a\nseparate channel (phone call, in person).</string>
-    <string name="sas_hint">First 4 chars</string>
-    <string name="sas_confirm">Verify</string>
+    <string name="sas_title">Safety Code</string>
+    <string name="sas_instruction">Compare this code with your peer over a\nseparate channel (phone call, in person).\nIf it matches, type the full code to confirm.</string>
+    <string name="sas_hint">Type full code</string>
+    <string name="sas_confirm">Confirm</string>
     <string name="chat_hint">Message</string>
     <string name="btn_send">Send</string>
     <string name="btn_send_icon">↑</string>

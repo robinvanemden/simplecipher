@@ -146,6 +146,11 @@ void tui_draw_screen(const char *status, const char *line, size_t line_len);
 /* Show a centred status message (e.g. "Connecting to host:port ..."). */
 void tui_status_screen(const char *line1, const char *line2);
 
+/* Show the listen screen with port and local IP addresses.
+ * ips is a newline-separated string of IP addresses (from get_local_ips). */
+void tui_listen_screen(const char *port, const char *ips);
+
+
 /* Display the SAS verification screen and require user to type first 4
  * characters to confirm.  Returns 1 on match, 0 on mismatch or abort. */
 int tui_sas_screen(const char *sas);

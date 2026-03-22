@@ -24,11 +24,30 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 #endif
 
-/* Session state — mirrors the desktop globals. */
+/* Session state — mirrors the desktop globals.
+ *
+ * THREADING MODEL
+ * ===============
+ * The Java side spawns separate threads for handshake, each send, receive,
+ * and disconnect (ChatActivity.java).  All of them touch the same globals
+ * below (jni_fd, jni_sess, key material).  Without serialization:
+ *   - Two send threads can read the same (chain key, seq) before either
+ *     commits the update, reusing a (key, nonce) pair.  For XChaCha20-
+ *     Poly1305 that completely breaks confidentiality.
+ *   - A disconnect thread can close jni_fd while send/receive are mid-
+ *     syscall, or wipe jni_sess while frame_build is reading it.
+ *
+ * jni_lock serializes ALL JNI calls that touch shared state.  This is
+ * coarse-grained (one lock for everything) but correct and simple.  The
+ * critical sections are short (one frame encrypt + one send syscall) so
+ * contention is negligible for a chat application. */
 static socket_t     jni_fd      = INVALID_SOCK;
 static session_t    jni_sess;
 static int          jni_we_init = 0;
 static uint8_t      jni_self_priv[KEY], jni_self_pub[KEY], jni_peer_pub[KEY];
+
+#include <pthread.h>
+static pthread_mutex_t jni_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* ---- JNI helpers -------------------------------------------------------- */
 
@@ -52,14 +71,17 @@ Java_com_example_simplecipher_ChatActivity_nativeConnect(
     snprintf(p, sizeof p, "%d", (int)port);
 
     LOGI("connecting to %s:%s", h, p);
+    pthread_mutex_lock(&jni_lock);
     jni_fd = connect_socket(h, p);
     (*env)->ReleaseStringUTFChars(env, host, h);
 
     if (jni_fd == INVALID_SOCK) {
         LOGE("connect failed");
+        pthread_mutex_unlock(&jni_lock);
         return -1;
     }
     jni_we_init = 1;
+    pthread_mutex_unlock(&jni_lock);
     LOGI("connected");
     return 0;
 }
@@ -71,13 +93,16 @@ Java_com_example_simplecipher_ChatActivity_nativeListen(
     snprintf(p, sizeof p, "%d", (int)port);
 
     LOGI("listening on port %s", p);
+    pthread_mutex_lock(&jni_lock);
     jni_fd = listen_socket(p);
 
     if (jni_fd == INVALID_SOCK) {
         LOGE("listen/accept failed");
+        pthread_mutex_unlock(&jni_lock);
         return -1;
     }
     jni_we_init = 0;
+    pthread_mutex_unlock(&jni_lock);
     LOGI("peer connected");
     return 0;
 }
@@ -89,6 +114,8 @@ Java_com_example_simplecipher_ChatActivity_nativeHandshake(
     uint8_t sas_key[KEY];
     char    sas[20];
     jstring result;
+
+    pthread_mutex_lock(&jni_lock);
 
     gen_keypair(jni_self_priv, jni_self_pub);
     make_commit(commit_self, jni_self_pub);
@@ -141,8 +168,11 @@ Java_com_example_simplecipher_ChatActivity_nativeHandshake(
     }
     crypto_wipe(jni_self_priv, sizeof jni_self_priv);
 
-    /* Set read timeout for the chat phase */
-    set_sock_timeout(jni_fd, 30);
+    /* No chat-phase timeout.  Unlike desktop (where poll() returns only
+     * when data has started arriving and SO_RCVTIMEO catches stalled partial
+     * frames), the Android JNI blocks in read_exact() directly.  A timeout
+     * here would tear down healthy idle sessions after 30 seconds of silence.
+     * The handshake timeout (set above) protects the handshake phase. */
 
     format_sas(sas, sas_key);
     crypto_wipe(sas_key, sizeof sas_key);
@@ -150,9 +180,19 @@ Java_com_example_simplecipher_ChatActivity_nativeHandshake(
     LOGI("handshake complete");
     result = jstr(env, sas);
     crypto_wipe(sas, sizeof sas);
+    pthread_mutex_unlock(&jni_lock);
     return result;
 
 fail:
+    /* Clean up fully on handshake failure: close the socket and wipe all
+     * session state.  Without this, stale keys and an open socket linger
+     * until the activity is eventually destroyed. */
+    if (jni_fd != INVALID_SOCK) {
+        sock_shutdown_both(jni_fd);
+        close_sock(jni_fd);
+        jni_fd = INVALID_SOCK;
+    }
+    session_wipe(&jni_sess);
     crypto_wipe(commit_self,   sizeof commit_self);
     crypto_wipe(commit_peer,   sizeof commit_peer);
     crypto_wipe(sas_key,       sizeof sas_key);
@@ -160,6 +200,7 @@ fail:
     crypto_wipe(jni_self_priv, sizeof jni_self_priv);
     crypto_wipe(jni_self_pub,  sizeof jni_self_pub);
     crypto_wipe(jni_peer_pub,  sizeof jni_peer_pub);
+    pthread_mutex_unlock(&jni_lock);
     return jstr(env, "");
 }
 
@@ -184,21 +225,26 @@ Java_com_example_simplecipher_ChatActivity_nativeSend(
         goto done;
     }
 
+    pthread_mutex_lock(&jni_lock);
+
     if (frame_build(jni_sess.tx, jni_sess.tx_seq,
                     (const uint8_t *)m, (uint16_t)len,
                     frame, next_tx) != 0) {
         LOGE("frame_build failed");
+        pthread_mutex_unlock(&jni_lock);
         goto done;
     }
 
     if (write_exact(jni_fd, frame, FRAME_SZ) != 0) {
         LOGE("send failed");
+        pthread_mutex_unlock(&jni_lock);
         goto done;
     }
 
     /* Commit chain advance after successful send */
     memcpy(jni_sess.tx, next_tx, KEY);
     jni_sess.tx_seq++;
+    pthread_mutex_unlock(&jni_lock);
     rc = 0;
 
 done:
@@ -215,17 +261,26 @@ Java_com_example_simplecipher_ChatActivity_nativeReceive(
     uint8_t  plain[MAX_MSG + 1];
     uint16_t plen = 0;
 
+    /* read_exact blocks waiting for a full frame.  We do NOT hold jni_lock
+     * here: that would prevent sends from proceeding while we wait.  This
+     * is safe because only one receive thread runs at a time (Java side
+     * creates a single receive loop in startReceiveLoop). */
     if (read_exact(jni_fd, frame, FRAME_SZ) != 0) {
         crypto_wipe(frame, sizeof frame);
         return NULL;  /* peer disconnected */
     }
 
+    /* Lock for frame_open: it mutates jni_sess.rx and jni_sess.rx_seq.
+     * A concurrent disconnect could wipe jni_sess mid-operation. */
+    pthread_mutex_lock(&jni_lock);
     if (frame_open(&jni_sess, frame, plain, &plen) != 0) {
         LOGE("frame_open failed (auth or sequence error)");
+        pthread_mutex_unlock(&jni_lock);
         crypto_wipe(frame, sizeof frame);
         crypto_wipe(plain, sizeof plain);
         return NULL;
     }
+    pthread_mutex_unlock(&jni_lock);
 
     plain[plen] = '\0';
     sanitize_peer_text(plain, plen);
@@ -239,6 +294,7 @@ Java_com_example_simplecipher_ChatActivity_nativeReceive(
 JNIEXPORT void JNICALL
 Java_com_example_simplecipher_ChatActivity_nativeDisconnect(
         JNIEnv *env, jobject thiz) {
+    pthread_mutex_lock(&jni_lock);
     if (jni_fd != INVALID_SOCK) {
         sock_shutdown_both(jni_fd);
         close_sock(jni_fd);
@@ -248,5 +304,6 @@ Java_com_example_simplecipher_ChatActivity_nativeDisconnect(
     crypto_wipe(jni_self_priv, sizeof jni_self_priv);
     crypto_wipe(jni_self_pub, sizeof jni_self_pub);
     crypto_wipe(jni_peer_pub, sizeof jni_peer_pub);
+    pthread_mutex_unlock(&jni_lock);
     LOGI("disconnected and wiped");
 }

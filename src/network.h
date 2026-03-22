@@ -49,8 +49,19 @@ void set_sock_opts(socket_t fd);
  * One peer only -- this is not a server. */
 [[nodiscard]] socket_t listen_socket(const char *port);
 
+/* Like listen_socket, but calls on_idle() periodically (every ~250ms)
+ * while waiting for a connection.  Allows TUI redraws on resize.
+ * on_idle receives its opaque context pointer.  */
+[[nodiscard]] socket_t listen_socket_cb(const char *port,
+                                        void (*on_idle)(void *ctx), void *ctx);
+
 /* Print non-loopback IP addresses so the user can tell their peer where
  * to connect.  Skips link-local (169.254.x.x, fe80::) and loopback. */
 void print_local_ips(const char *port);
+
+/* Collect non-loopback IPv4 addresses into buf as newline-separated strings.
+ * Returns the number of addresses found.  Each line is "ip_address".
+ * buf_sz is the total buffer size; output is null-terminated. */
+int get_local_ips(char *buf, size_t buf_sz);
 
 #endif /* SIMPLECIPHER_NETWORK_H */

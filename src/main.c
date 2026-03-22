@@ -52,27 +52,46 @@
 static socket_t  g_fd   = INVALID_SOCK;
 static session_t g_sess;
 
+/* ---- TUI listen resize callback ---------------------------------------- */
+
+/* Context for the TUI listen screen idle callback, which redraws the
+ * screen on terminal resize while waiting for a peer to connect. */
+struct listen_ctx { const char *port; const char *ips; };
+
+static void tui_listen_idle(void *ctx){
+    struct listen_ctx *lc = (struct listen_ctx *)ctx;
+    /* Check if terminal size changed; if so, redraw. */
+    int w, h;
+    tui_get_size(&w, &h);
+    if (w != tui_w || h != tui_h)
+        tui_listen_screen(lc->port, lc->ips);
+}
+
 /* ---- application -------------------------------------------------------- */
 
 /* Print usage to stderr and exit. */
 static void usage(const char *prog){
     fprintf(stderr,
-        "cipher -- small authenticated P2P encrypted chat\n\n"
-        "usage:\n"
-        "  %s [--tui] listen  [port]\n"
-        "  %s [--tui] connect <host> [port]\n\n"
-        "default port: 7777\n\n"
-        "authentication:\n"
-        "  after connecting, both sides see the same safety code.\n"
-        "  compare it out of band (phone call) before typing anything.\n\n"
-        "anonymity:\n"
-        "  for anonymity, run over Tor: torsocks %s connect ...\n"
+        "\n"
+        "  SimpleCipher -- encrypted P2P chat\n"
+        "\n"
+        "  Usage:\n"
+        "    %s listen  [port]          wait for a peer\n"
+        "    %s connect <host> [port]   connect to a peer\n"
+        "\n"
+        "  Options:\n"
+        "    --tui    split-pane terminal interface\n"
+        "    port     default: 7777\n"
+        "\n"
+        "  After connecting, compare the safety code with your peer\n"
+        "  over a separate channel (phone call, in person).\n"
 #ifdef CIPHER_HARDEN
-        "\nhardening (active):\n"
-        "  this build locks memory, disables core dumps, and blocks ptrace.\n"
-        "  if mlockall warns, run: ulimit -l unlimited\n"
+        "\n"
+        "  Hardening (active in this build):\n"
+        "    Memory locked, core dumps disabled, ptrace blocked.\n"
 #endif
-        , prog, prog, prog);
+        "\n"
+        , prog, prog);
     exit(1);
 }
 
@@ -89,7 +108,7 @@ int main(int argc, char *argv[]){
     uint8_t      commit_self[KEY], commit_peer[KEY];
     uint8_t      sas_key[KEY];
     char         sas[20];
-    char         typed_sas[8] = {0};  /* user types first 4 chars of SAS to confirm */
+    char         typed_sas[16] = {0}; /* user types the full SAS code to confirm */
     int          rc = 1;
     /* Windows console handle (h_in) and Winsock event (net_ev) are now
      * managed internally by cli_chat_loop() and tui_chat_loop(). */
@@ -158,8 +177,12 @@ int main(int argc, char *argv[]){
 
     if (tui_mode) tui_init_term();
 
-    if (!tui_mode)
-        printf("cipher  |  no server, no account, x25519 + SAS\n\n");
+    if (!tui_mode){
+        printf("\n");
+        printf("  SimpleCipher\n");
+        printf("  No server. No account. Ephemeral keys.\n");
+        printf("\n");
+    }
 
     /* ------------------------------------------------------------------
      * STEP 1: TCP connection
@@ -168,27 +191,48 @@ int main(int argc, char *argv[]){
     if (we_init){
         if (tui_mode){
             char msg[80]; snprintf(msg, sizeof msg, "Connecting to %s:%s ...", host, port);
-            tui_status_screen(msg, nullptr);
+            tui_status_screen(msg, "Ctrl+C to cancel");
         } else {
-            printf("Connecting to %s:%s ...\n", host, port); fflush(stdout);
+            printf("  Connecting to %s:%s ...", host, port); fflush(stdout);
         }
         g_fd = connect_socket(host, port);
-        if (g_fd == INVALID_SOCK){ fprintf(stderr, "connect failed\n"); goto out; }
-        if (!tui_mode) printf("Connected.\n");
+        if (g_fd == INVALID_SOCK){
+            fprintf(stderr, "\n  Connection failed. Check the address and make sure\n"
+                            "  the peer is listening on %s:%s.\n", host, port);
+            goto out;
+        }
+        if (!tui_mode) printf(" ok\n");
     } else {
         if (tui_mode){
-            char msg[80]; snprintf(msg, sizeof msg, "Waiting on port %s", port);
-            tui_status_screen(msg, "Tell your peer to connect");
+            char ipbuf[1024];
+            get_local_ips(ipbuf, sizeof ipbuf);
+            tui_listen_screen(port, ipbuf);
+            struct listen_ctx lc = { port, ipbuf };
+            g_fd = listen_socket_cb(port, tui_listen_idle, &lc);
         } else {
-            printf("Waiting on port %s — tell your peer to run:\n\n", port);
+            printf("  Listening on port %s\n\n", port);
+            printf("  Tell your peer to run:\n\n");
             print_local_ips(port);
-            printf("\n"); fflush(stdout);
+            printf("\n");
+            printf("  Waiting for connection... (Ctrl+C to cancel)"); fflush(stdout);
+            g_fd = listen_socket(port);
         }
-        g_fd = listen_socket(port);
-        if (g_fd == INVALID_SOCK){ fprintf(stderr, "listen/accept failed\n"); goto out; }
+        if (g_fd == INVALID_SOCK){
+            if (tui_mode) tui_status_screen("Connection failed", "");
+            else fprintf(stderr, "\n  Listen failed. Is port %s already in use?\n", port);
+            goto out;
+        }
         if (tui_mode) tui_status_screen("Peer connected", "Performing handshake...");
-        else printf("Peer connected.\n");
+        else printf(" ok\n");
     }
+
+    /* On Windows, register the connected socket so Ctrl+C can close it
+     * from the console handler thread, unblocking any recv/send during
+     * the handshake.  Cleared when we enter the event loop (which has
+     * its own non-blocking I/O strategy). */
+#if defined(_WIN32) || defined(_WIN64)
+    g_interrupt_sock = g_fd;
+#endif
 
     /* ------------------------------------------------------------------
      * STEP 2: Commit-then-reveal handshake
@@ -280,6 +324,10 @@ int main(int argc, char *argv[]){
 
     format_sas(sas, sas_key);
 
+#if defined(_WIN32) || defined(_WIN64)
+    g_interrupt_sock = INVALID_SOCKET;  /* event loops handle their own I/O */
+#endif
+
     if (tui_mode){
         /* tui_init_term() was already called before TCP connection */
         int sas_ok = tui_sas_screen(sas);
@@ -294,34 +342,64 @@ int main(int argc, char *argv[]){
         tui_chat_loop(g_fd, &g_sess);
     } else {
     printf("\n");
-    printf("+------------------------------------------+\n");
-    printf("|  COMPARE THIS CODE WITH YOUR PEER        |\n");
-    printf("|  before typing anything                  |\n");
-    printf("+------------------------------------------+\n");
-    printf("  Safety code:  %s\n\n", sas);
-    printf("Call the peer on a separate channel and compare the code.\n");
-    printf("If it does not match, press Ctrl+C now.\n\n");
+    printf("  +----------------------------------------------+\n");
+    printf("  |                                              |\n");
+    printf("  |              SAFETY CODE                     |\n");
+    printf("  |              %-9s                        |\n", sas);
+    printf("  |                                              |\n");
+    printf("  |  Compare this code with your peer over a     |\n");
+    printf("  |  separate channel (phone call, in person).   |\n");
+    printf("  |                                              |\n");
+    printf("  |  Match?    Type the full code below.         |\n");
+    printf("  |  Mismatch? Press Ctrl+C -- you're being      |\n");
+    printf("  |            intercepted.                      |\n");
+    printf("  |                                              |\n");
+    printf("  +----------------------------------------------+\n");
+    printf("\n");
 
-    /* Ask the user to type the first 4 characters of the safety code
-     * rather than just pressing y.  This breaks the muscle-memory habit
-     * of blindly confirming prompts and proves they actually read the code.
-     * The first 4 chars are the part before the dash, e.g. "A3F2" in "A3F2-91BC". */
-    printf("Type the first 4 characters of the code to confirm: ");
+    /* Require the user to type the full safety code (all 9 characters
+     * including the dash) rather than just the first 4.  Typing only a
+     * prefix collapses the practical verification from 32 bits to 16 bits
+     * because users tend to focus only on the part they must enter. */
+    printf("  Confirm (type full code): ");
     fflush(stdout);
 
     if (!fgets(typed_sas, sizeof typed_sas, stdin)){
         printf("Aborted.\n"); goto out;
     }
-    /* Strip trailing newline, then compare case-insensitively against sas[0..3]. */
+    /* Drain any leftover characters in stdin (e.g. user typed more than 4 chars
+     * or pasted a full string).  Without this, the extra bytes end up as the
+     * first "message" in the chat, which is confusing and leaks the SAS.
+     * Only drain if fgets didn't consume the newline (buffer was too small). */
+    if (!strchr(typed_sas, '\n')){
+        int ch; while ((ch = getchar()) != '\n' && ch != EOF);
+    }
+    /* Strip trailing newline, normalize (strip dashes, uppercase), then
+     * compare.  Accepts "A3F2-91BC", "A3F291BC", "a3f291bc" etc.  Full
+     * comparison ensures the user verifies all 32 bits, not just 16. */
     { size_t yl = strlen(typed_sas); if (yl > 0 && typed_sas[yl-1] == '\n') typed_sas[yl-1] = '\0'; }
-    if (
-#if defined(_WIN32) || defined(_WIN64)
-        _strnicmp(typed_sas, sas, 4) != 0
-#else
-        strncasecmp(typed_sas, sas, 4) != 0
-#endif
-    ){
-        printf("Code mismatch -- aborted.\n"); goto out;
+    {
+        /* Strip dashes and uppercase both strings before comparing. */
+        char nt[16] = {0}, ns[16] = {0};
+        int ti = 0, si = 0;
+        for (int i = 0; typed_sas[i] && ti < (int)sizeof(nt)-1; i++){
+            char c = typed_sas[i];
+            if (c == '-') continue;
+            if (c >= 'a' && c <= 'z') c -= 32;
+            nt[ti++] = c;
+        }
+        for (int i = 0; sas[i] && si < (int)sizeof(ns)-1; i++){
+            char c = sas[i];
+            if (c == '-') continue;
+            if (c >= 'a' && c <= 'z') c -= 32;
+            ns[si++] = c;
+        }
+        int mismatch = (ti != si || memcmp(nt, ns, (size_t)ti) != 0);
+        crypto_wipe(nt, sizeof nt);
+        crypto_wipe(ns, sizeof ns);
+        if (mismatch){
+            printf("\n  Code mismatch -- aborted.\n"); goto out;
+        }
     }
     crypto_wipe(sas_key, sizeof sas_key);
     crypto_wipe(sas,     sizeof sas);
@@ -339,8 +417,10 @@ int main(int argc, char *argv[]){
      * 250 ms WaitForMultipleObjects timeout.
      * ------------------------------------------------------------------ */
 
-    printf("\nSecure session active.  Max message: %d bytes.  "
-           "Ctrl+C to quit.\n\n", MAX_MSG);
+    printf("\n");
+    printf("  Secure session active. Ctrl+C to quit.\n");
+    printf("  Type a message and press Enter to send.\n");
+    printf("\n");
 
     cli_chat_loop(g_fd, &g_sess);
     } /* end else (CLI mode) */

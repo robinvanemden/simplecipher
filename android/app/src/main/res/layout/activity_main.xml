@@ -6,7 +6,8 @@
     android:gravity="center_horizontal"
     android:padding="32dp"
     android:background="@color/bg_primary"
-    android:fitsSystemWindows="true">
+    android:fitsSystemWindows="true"
+    android:importantForAutofill="noExcludeDescendants">
 
     <!-- App identity -->
     <TextView
@@ -77,13 +78,18 @@
         android:paddingBottom="8dp"
         android:visibility="gone" />
 
-    <!-- Host input (Connect mode only) -->
+    <!-- Host input (Connect mode only)
+         Peer IPs/hosts are sensitive metadata in this threat model:
+         they reveal who you talked to.  Suppress keyboard suggestions,
+         autofill, and prediction to avoid caching them. -->
     <EditText
         android:id="@+id/hostInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/hint_host"
-        android:inputType="text"
+        android:inputType="text|textNoSuggestions|textVisiblePassword"
+        android:importantForAutofill="no"
+        android:privateImeOptions="np"
         android:textSize="15sp"
         android:textColor="@color/text_primary"
         android:textColorHint="@color/text_hint"
@@ -99,17 +105,20 @@
         android:orientation="vertical"
         android:layout_marginBottom="12dp" />
 
-    <!-- Port input -->
+    <!-- Port input (same metadata-sensitivity as host) -->
     <EditText
         android:id="@+id/portInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/hint_port"
         android:inputType="number"
+        android:importantForAutofill="no"
+        android:maxLength="5"
         android:textSize="15sp"
         android:textColor="@color/text_primary"
         android:textColorHint="@color/text_hint"
         android:background="@drawable/bg_input"
+        android:contentDescription="Port number"
         android:layout_marginBottom="28dp" />
 
     <!-- Start button -->

@@ -25,6 +25,7 @@
         <activity
             android:name=".ChatActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:taskAffinity="com.example.simplecipher.chat" />

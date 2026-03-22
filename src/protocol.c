@@ -30,12 +30,17 @@
  *
  * An authenticated peer could embed ANSI / OSC escape sequences to rewrite
  * the screen, spoof the prompt, or access the clipboard on some terminals.
- * We allow printable ASCII (0x20-0x7E) and tab (0x09) only.
- * All other bytes -- including ESC (0x1B) -- become '.'. */
+ * We allow printable ASCII (0x20-0x7E) ONLY.
+ * All other bytes -- including ESC (0x1B) and tab (0x09) -- become '.'.
+ *
+ * Tab was previously allowed, but it is still an active terminal control
+ * character: it advances the cursor to the next tab stop, which an
+ * attacker can use to distort layout and spoof visual structure (e.g.
+ * fake timestamps, fake sender labels, or alignment tricks). */
 void sanitize_peer_text(uint8_t *buf, uint16_t len){
     uint16_t i;
     for (i = 0; i < len; i++)
-        if (buf[i] != 0x09 && (buf[i] < 0x20 || buf[i] > 0x7E))
+        if (buf[i] < 0x20 || buf[i] > 0x7E)
             buf[i] = '.';
 }
 

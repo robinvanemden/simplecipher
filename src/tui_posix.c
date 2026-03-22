@@ -33,6 +33,7 @@ static void tui_sigwinch(int sig){ (void)sig; tui_resize_flag = 1; }
  * is not left with invisible text or dim colours after exit. */
 void tui_restore_term(void){
     printf("\033[?25h");    /* show cursor */
+    printf("\033[0 q");     /* restore default cursor shape */
     printf("\033[0m");      /* reset colors */
     fflush(stdout);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &tui_orig_termios);
@@ -124,15 +125,15 @@ void tui_chat_loop(socket_t fd, session_t *sess){
         if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)){
             if (read_exact(fd, frame, FRAME_SZ) != 0){
                 tui_msg_add(TUI_SYSTEM, "[peer disconnected]");
-                tui_draw_messages();
-                tui_draw_input(line, line_len);
+                status = "Peer disconnected  |  Ctrl+C to exit";
+                tui_draw_screen(status, line, line_len);
                 break;
             }
             plen = 0;
             if (frame_open(sess, frame, plain, &plen) != 0){
                 tui_msg_add(TUI_SYSTEM, "[session error]");
-                tui_draw_messages();
-                tui_draw_input(line, line_len);
+                status = "Session error  |  Ctrl+C to exit";
+                tui_draw_screen(status, line, line_len);
                 break;
             }
             plain[plen] = '\0';

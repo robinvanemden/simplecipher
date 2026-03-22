@@ -107,6 +107,14 @@
  * safe to write from a signal handler without data races. */
 extern volatile sig_atomic_t g_running;
 
+#if defined(_WIN32) || defined(_WIN64)
+/* g_interrupt_sock is set to the currently blocking socket (accept, connect,
+ * recv) so the Windows console control handler can closesocket() it from
+ * its separate thread, forcing the blocking call to return with an error.
+ * On POSIX this is unnecessary: signals deliver EINTR to blocking calls. */
+extern volatile SOCKET g_interrupt_sock;
+#endif
+
 /* Platform initialization and cleanup.
  * plat_init() starts Winsock on Windows; no-op on POSIX.
  * plat_quit() calls WSACleanup on Windows; no-op on POSIX. */

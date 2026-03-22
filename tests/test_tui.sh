@@ -65,7 +65,7 @@ sleep 1
 
 SCREEN_L="$(capture "$SESSION_L")"
 check "listener shows title" "echo '$SCREEN_L' | grep -q 'SimpleCipher'"
-check "listener shows waiting" "echo '$SCREEN_L' | grep -q 'Waiting on port'"
+check "listener shows waiting" "echo '$SCREEN_L' | grep -q 'Listening on port'"
 
 # --- Step 2: Start connector ---
 tmux new-session -d -s "$SESSION_C" -x 80 -y 24 "$BIN --tui connect 127.0.0.1 $PORT"
@@ -74,8 +74,8 @@ sleep 2
 # --- Step 3: Both should show SAS screen ---
 SCREEN_L="$(capture "$SESSION_L")"
 SCREEN_C="$(capture "$SESSION_C")"
-check "listener shows SAS screen" "echo '$SCREEN_L' | grep -q 'Verify safety code'"
-check "connector shows SAS screen" "echo '$SCREEN_C' | grep -q 'Verify safety code'"
+check "listener shows SAS screen" "echo '$SCREEN_L' | grep -q 'SAFETY CODE'"
+check "connector shows SAS screen" "echo '$SCREEN_C' | grep -q 'SAFETY CODE'"
 
 # Extract SAS code from listener screen (format: XXXX-XXXX)
 SAS="$(echo "$SCREEN_L" | grep -oE '[A-F0-9]{4}-[A-F0-9]{4}' | head -1)"
@@ -86,19 +86,23 @@ if [ -z "$SAS" ]; then
     echo "=== Results: $PASS passed, $FAIL failed ==="
     exit 1
 fi
-SAS_PREFIX="${SAS:0:4}"
-check "SAS code extracted" "test -n '$SAS_PREFIX'"
+check "SAS code extracted" "test -n '$SAS'"
 
 # Verify same SAS on both sides
 SAS_C="$(echo "$SCREEN_C" | grep -oE '[A-F0-9]{4}-[A-F0-9]{4}' | head -1)"
 check "SAS codes match" "test '$SAS' = '$SAS_C'"
 
-# --- Step 4: Type SAS code on both sides ---
-for ch in $(echo "$SAS_PREFIX" | grep -o .); do
-    tmux send-keys -t "$SESSION_L" "$ch"
-    tmux send-keys -t "$SESSION_C" "$ch"
+# --- Step 4: Type full SAS code on both sides ---
+# Use -l (literal) to prevent tmux from interpreting the dash in
+# "A3F2-91BC" as a flag.  Type each character individually.
+for ch in $(echo "$SAS" | grep -o .); do
+    tmux send-keys -t "$SESSION_L" -l "$ch"
+    tmux send-keys -t "$SESSION_C" -l "$ch"
     sleep 0.1
 done
+# Press Enter to submit the code
+tmux send-keys -t "$SESSION_L" Enter
+tmux send-keys -t "$SESSION_C" Enter
 sleep 1
 
 # --- Step 5: Both should enter chat screen ---

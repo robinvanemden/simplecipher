@@ -384,10 +384,11 @@ static void test_sanitize(void) {
     sanitize_peer_text(buf1, (uint16_t)(sizeof buf1 - 1));
     TEST("printable ASCII unchanged", strcmp((char *)buf1, "Hello, World!") == 0);
 
-    /* Tab allowed */
+    /* Tab replaced (tab is a terminal control character that can distort
+     * layout; an authenticated peer could use it to spoof visual structure) */
     uint8_t buf2[] = "a\tb";
     sanitize_peer_text(buf2, 3);
-    TEST("tab preserved", buf2[1] == '\t');
+    TEST("tab replaced", buf2[1] == '.');
 
     /* ESC and control chars replaced */
     uint8_t buf3[] = {0x1B, '[', '2', 'J', 0x00};
@@ -1073,13 +1074,9 @@ static void test_sanitize_edge_cases(void) {
     sanitize_peer_text(all_ctrl, 16);
     int ctrl_ok = 1;
     for (int i = 0; i < 16; i++) {
-        if (i == 0x09) {  /* tab is allowed */
-            if (all_ctrl[i] != 0x09) ctrl_ok = 0;
-        } else {
-            if (all_ctrl[i] != '.') ctrl_ok = 0;
-        }
+        if (all_ctrl[i] != '.') ctrl_ok = 0;
     }
-    TEST("all control chars replaced (except tab)", ctrl_ok);
+    TEST("all control chars replaced (including tab)", ctrl_ok);
 
     /* Boundary bytes: 0x1F (last control), 0x20 (first printable),
      * 0x7E (last printable), 0x7F (DEL) */

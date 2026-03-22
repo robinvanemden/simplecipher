@@ -39,6 +39,8 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
                              WindowManager.LayoutParams.FLAG_SECURE);
+        if (android.os.Build.VERSION.SDK_INT >= 31)
+            getWindow().setHideOverlayWindows(true);
         setContentView(R.layout.activity_main);
 
         modeGroup        = findViewById(R.id.modeGroup);
@@ -48,7 +50,21 @@ public class MainActivity extends Activity {
         localIpsContainer = findViewById(R.id.localIpsContainer);
         Button goButton  = findViewById(R.id.goButton);
 
+        /* Suppress keyboard learning on all inputs — peer IPs and ports
+         * are sensitive metadata that should not enter IME dictionaries. */
+        int noLearn = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
+        hostInput.setImeOptions(hostInput.getImeOptions() | noLearn);
+        portInput.setImeOptions(portInput.getImeOptions() | noLearn);
+
         showLocalIps();
+
+        /* Refresh IP commands when port changes so the displayed
+         * connect commands always show the correct port number. */
+        portInput.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            public void afterTextChanged(android.text.Editable s) { showLocalIps(); }
+        });
 
         modeGroup.setOnCheckedChangeListener((group, checkedId) -> {
             boolean isConnect = checkedId == R.id.radioConnect;
@@ -105,14 +121,18 @@ public class MainActivity extends Activity {
 
         /* Label */
         TextView label = new TextView(this);
-        label.setText(ips.size() == 1 ? "Your local IP" : "Your local IPs");
+        label.setText("Tell your peer to run:");
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         label.setTextColor(0xFF666666);
         label.setPadding(dp(4), 0, 0, dp(8));
         localIpsContainer.addView(label);
 
+        String portStr = portInput.getText().toString().trim();
+        if (portStr.isEmpty()) portStr = "7777";
+
         for (int i = 0; i < ips.size(); i++) {
             String ip = ips.get(i);
+            String cmd = "simplecipher connect " + ip + " " + portStr;
 
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -120,13 +140,15 @@ public class MainActivity extends Activity {
             row.setPadding(dp(16), dp(12), dp(12), dp(12));
             row.setBackgroundResource(R.drawable.bg_ip_row);
 
-            /* IP text */
+            /* Command text */
             TextView ipText = new TextView(this);
-            ipText.setText(ip);
-            ipText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            ipText.setText(cmd);
+            ipText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
             ipText.setTextColor(0xFFF0F0F0);
             ipText.setTypeface(android.graphics.Typeface.MONOSPACE);
-            ipText.setLetterSpacing(0.03f);
+            ipText.setLetterSpacing(0.02f);
+            ipText.setSingleLine(true);
+            ipText.setEllipsize(android.text.TextUtils.TruncateAt.END);
             LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
             ipText.setLayoutParams(textParams);
@@ -142,8 +164,16 @@ public class MainActivity extends Activity {
             copyBtn.setPadding(dp(12), dp(6), dp(4), dp(6));
             copyBtn.setOnClickListener(v -> {
                 ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                cm.setPrimaryClip(ClipData.newPlainText("IP address", ip));
-                Toast.makeText(this, "Copied " + ip, Toast.LENGTH_SHORT).show();
+                ClipData clip = ClipData.newPlainText("connect command", cmd);
+                /* Mark as sensitive so the OS hides the preview in clipboard
+                 * UI and other apps cannot snoop it via ClipboardManager. */
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    android.os.PersistableBundle extras = new android.os.PersistableBundle();
+                    extras.putBoolean("android.content.extra.IS_SENSITIVE", true);
+                    clip.getDescription().setExtras(extras);
+                }
+                cm.setPrimaryClip(clip);
+                Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
                 /* Auto-clear clipboard after 30 seconds */
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     cm.setPrimaryClip(ClipData.newPlainText("", ""));
@@ -166,18 +196,25 @@ public class MainActivity extends Activity {
     }
 
     private List<String> getLocalIps() {
-        List<String> ips = new ArrayList<>();
+        List<String> ipv4 = new ArrayList<>();
+        List<String> ipv6 = new ArrayList<>();
         try {
             for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
                 if (!ni.isUp() || ni.isLoopback()) continue;
                 for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
                     if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()) continue;
                     String ip = addr.getHostAddress();
-                    if (addr instanceof Inet6Address) ip = ip.replaceAll("%.*", "");
-                    ips.add(ip);
+                    if (addr instanceof Inet6Address) {
+                        ip = ip.replaceAll("%.*", "");
+                        ipv6.add(ip);
+                    } else {
+                        ipv4.add(ip);
+                    }
                 }
             }
         } catch (Exception ignored) {}
-        return ips;
+        /* Prefer IPv4 -- shorter, easier to read aloud and type.
+         * Only show IPv6 if no IPv4 addresses are available. */
+        return ipv4.isEmpty() ? ipv6 : ipv4;
     }
 }

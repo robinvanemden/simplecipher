@@ -26,9 +26,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
     sanitize_peer_text(buf, (uint16_t)size);
 
-    /* Post-condition: every byte must be printable ASCII or tab */
+    /* Post-condition: every byte must be printable ASCII (0x20-0x7E) */
     for (uint16_t i = 0; i < (uint16_t)size; i++) {
-        if (buf[i] != 0x09 && (buf[i] < 0x20 || buf[i] > 0x7E))
+        if (buf[i] < 0x20 || buf[i] > 0x7E)
             __builtin_trap();  /* sanitize missed a byte */
     }
 

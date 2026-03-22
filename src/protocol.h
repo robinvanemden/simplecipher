@@ -98,8 +98,8 @@ void session_wipe(session_t *s);
  *
  * An authenticated peer could embed ANSI / OSC escape sequences to rewrite
  * the screen, spoof the prompt, or access the clipboard on some terminals.
- * We allow printable ASCII (0x20-0x7E) and tab (0x09) only.
- * All other bytes -- including ESC (0x1B) -- become '.'. */
+ * Only printable ASCII (0x20-0x7E) passes through.
+ * All other bytes -- including ESC (0x1B) and tab (0x09) -- become '.'. */
 void sanitize_peer_text(uint8_t *buf, uint16_t len);
 
 #endif /* SIMPLECIPHER_PROTOCOL_H */

@@ -167,9 +167,11 @@ check "MainActivity has FLAG_SECURE" \
 check "ChatActivity wipes UI in onPause" \
     "grep -A5 'onPause' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'setText'"
 
-# Memory wipe on destroy
-check "ChatActivity wipes UI in onDestroy" \
-    "grep -A5 'onDestroy' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'setText'"
+# Session end on stop (backgrounding = session end)
+check "ChatActivity disconnects in onStop" \
+    "grep -A10 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'disconnect'"
+check "ChatActivity wipes UI in onStop" \
+    "grep -A20 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'setText'"
 
 # SAS wiped after confirmation
 check "SAS code cleared after confirm" \
