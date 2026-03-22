@@ -227,18 +227,26 @@ jobs:
       - name: Install NDK r28
         run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
 
+      - name: Ensure debug keystore exists
+        run: |
+          mkdir -p ~/.android
+          [ -f ~/.android/debug.keystore ] || keytool -genkeypair \
+            -keystore ~/.android/debug.keystore -storepass android \
+            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
+
       - name: Build Android APK
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleRelease
 
       - name: Validate APK
-        run: bash tests/test_android.sh android/app/build/outputs/apk/debug/app-debug.apk
+        run: bash tests/test_android.sh android/app/build/outputs/apk/release/app-release.apk
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: simplecipher-android
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
 
   test-android-emulator:
     runs-on: ubuntu-24.04
@@ -266,9 +274,17 @@ jobs:
       - name: Install NDK r28
         run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
 
+      - name: Ensure debug keystore exists
+        run: |
+          mkdir -p ~/.android
+          [ -f ~/.android/debug.keystore ] || keytool -genkeypair \
+            -keystore ~/.android/debug.keystore -storepass android \
+            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
+
       - name: Build APK with x86_64 for emulator
         working-directory: android
-        run: ./gradlew assembleDebug -PextraAbi=x86_64
+        run: ./gradlew assembleRelease -PextraAbi=x86_64
 
       - name: Emulator smoke test
         uses: reactivecircus/android-emulator-runner@v2
@@ -276,7 +292,7 @@ jobs:
           api-level: 28
           arch: x86_64
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: bash tests/test_android_emulator.sh android/app/build/outputs/apk/debug/app-debug.apk
+          script: bash tests/test_android_emulator.sh android/app/build/outputs/apk/release/app-release.apk
 
   test-linux:
     needs: build

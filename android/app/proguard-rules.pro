@@ -10,14 +10,25 @@
 # Keep the NativeCallback interface and all its methods.
 # The native thread calls these via JNI GetMethodID by name —
 # if R8 renames or strips them, the native code crashes.
+# All 7 callbacks: onConnected, onConnectionFailed, onSasReady,
+# onHandshakeFailed, onMessageReceived, onSendResult, onDisconnected.
 -keep interface com.example.simplecipher.NativeCallback { *; }
 
-# Keep SimpleKeyboard (referenced programmatically from ChatActivity
-# and potentially from activity_chat.xml via class name)
+# Keep SimpleKeyboard — inflated from activity_chat.xml via class name
+# (LayoutInflater uses reflection: Class.forName + Constructor(Context, AttributeSet))
 -keep public class com.example.simplecipher.SimpleKeyboard { *; }
 
-# Remove debug logging in release builds
+# Keep inner/anonymous/synthetic classes (lambdas, listeners).
+# Parent { *; } implicitly covers these, but explicit rules defend
+# against R8 edge cases in a security-critical app.
+-keep class com.example.simplecipher.ChatActivity$* { *; }
+-keep class com.example.simplecipher.MainActivity$* { *; }
+-keep class com.example.simplecipher.SimpleKeyboard$* { *; }
+
+# Remove ALL logging in release builds — no log output should leak
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
     public static *** v(...);
+    public static *** i(...);
+    public static *** w(...);
 }
