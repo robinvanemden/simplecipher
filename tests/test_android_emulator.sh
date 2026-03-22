@@ -32,8 +32,9 @@ check_no_crash() {
 # Tap a UI element by its resource ID using uiautomator
 tap_by_id() {
     local rid="$1"
+    adb shell uiautomator dump /sdcard/ui.xml 2>/dev/null
     local bounds
-    bounds=$(adb shell uiautomator dump /dev/stdout 2>/dev/null \
+    bounds=$(adb shell cat /sdcard/ui.xml \
         | grep -oP "resource-id=\"${rid}\"[^>]*bounds=\"\K[^\"]+") || return 1
     local x1 y1 x2 y2
     x1=$(echo "$bounds" | grep -oP '\d+' | sed -n 1p)
