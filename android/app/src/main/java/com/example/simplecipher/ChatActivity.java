@@ -312,10 +312,14 @@ public class ChatActivity extends Activity implements NativeCallback {
         String ts = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
         String line = "[" + ts + "] " + who + ": " + msg + "\n";
         chatLog.append(line);
-        /* Auto-scroll to bottom */
-        int scrollAmount = chatLog.getLayout().getLineTop(chatLog.getLineCount())
-                           - chatLog.getHeight();
-        if (scrollAmount > 0) chatLog.scrollTo(0, scrollAmount);
+        /* Auto-scroll to bottom — layout may be null before the first
+         * measure pass or after onPause() clears the text. */
+        android.text.Layout layout = chatLog.getLayout();
+        if (layout != null) {
+            int scrollAmount = layout.getLineTop(chatLog.getLineCount())
+                               - chatLog.getHeight();
+            if (scrollAmount > 0) chatLog.scrollTo(0, scrollAmount);
+        }
     }
 
     /* ---- Local IPs ------------------------------------------------------ */
