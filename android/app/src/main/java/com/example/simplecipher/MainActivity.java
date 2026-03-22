@@ -19,9 +19,14 @@ import android.widget.TextView;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -37,6 +42,44 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        /* Install crash handler so the next launch can display what went wrong.
+         * Writes the stack trace to crash.txt in the app's private directory. */
+        final File crashFile = new File(getFilesDir(), "crash.txt");
+        final Thread.UncaughtExceptionHandler defaultHandler =
+                Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+            try {
+                StringWriter sw = new StringWriter();
+                e.printStackTrace(new PrintWriter(sw));
+                FileWriter fw = new FileWriter(crashFile);
+                fw.write(sw.toString());
+                fw.close();
+            } catch (Exception ignored) {}
+            if (defaultHandler != null) defaultHandler.uncaughtException(t, e);
+        });
+
+        /* If there is a crash report from a previous run, show it. */
+        if (crashFile.exists()) {
+            try {
+                String trace = new String(Files.readAllBytes(crashFile.toPath()));
+                crashFile.delete();
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Crash report (previous run)")
+                    .setMessage(trace)
+                    .setPositiveButton("Copy", (d, w) -> {
+                        ClipboardManager cm = (ClipboardManager)
+                                getSystemService(Context.CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(ClipData.newPlainText("crash", trace));
+                        Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNegativeButton("Dismiss", null)
+                    .show();
+            } catch (Exception ignored) {
+                crashFile.delete();
+            }
+        }
+
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
                              WindowManager.LayoutParams.FLAG_SECURE);
         if (android.os.Build.VERSION.SDK_INT >= 31)
