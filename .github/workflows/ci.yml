@@ -241,17 +241,11 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
   test-android-emulator:
-    needs: build-android
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download Android APK
-        uses: actions/download-artifact@v4
-        with:
-          name: simplecipher-android
 
       - name: Enable KVM
         run: |
@@ -266,13 +260,23 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install NDK r28
+        run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
+
+      - name: Build APK with x86_64 for emulator
+        working-directory: android
+        run: ./gradlew assembleDebug -PextraAbi=x86_64
+
       - name: Emulator smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 28
           arch: x86_64
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: bash tests/test_android_emulator.sh app-debug.apk
+          script: bash tests/test_android_emulator.sh android/app/build/outputs/apk/debug/app-debug.apk
 
   test-linux:
     needs: build
