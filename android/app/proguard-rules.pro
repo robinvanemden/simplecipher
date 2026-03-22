@@ -3,6 +3,9 @@
     native <methods>;
 }
 
+# Keep Application subclass (referenced from AndroidManifest.xml)
+-keep public class com.example.simplecipher.App { *; }
+
 # Keep Activity classes and all their members (JNI calls back into these)
 -keep public class com.example.simplecipher.MainActivity { *; }
 -keep public class com.example.simplecipher.ChatActivity { *; }
