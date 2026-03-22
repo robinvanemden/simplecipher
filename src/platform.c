@@ -80,17 +80,11 @@ void sock_shutdown_both(socket_t s){ shutdown(s, SHUT_RDWR); }
 #if defined(_WIN32) || defined(_WIN64)
 void harden(void){
     /* Disable crash dumps (WER: Windows Error Reporting).
-     * Prevents key material from being written to disk on crash. */
+     * SEM_FAILCRITICALERRORS: suppress hard-error dialog boxes
+     * SEM_NOGPFAULTERRORBOX: suppress WER crash dialogs + dump files
+     * Together these prevent key material from being written to disk
+     * via crash dump files when the process terminates abnormally. */
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
-
-    /* Disable WER process-level crash dumps via mitigation policy.
-     * Available on Windows 10 1709+ (build 16299). */
-    {
-        PROCESS_MITIGATION_SYSTEM_CALL_DISABLE_POLICY pol = {0};
-        /* Best-effort: older Windows versions silently ignore this. */
-        (void)SetProcessMitigationPolicy(ProcessSystemCallDisablePolicy,
-                                         &pol, sizeof pol);
-    }
 }
 #else /* POSIX */
 void harden(void){
