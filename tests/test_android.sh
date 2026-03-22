@@ -68,9 +68,9 @@ if command -v aapt2 >/dev/null 2>&1; then
     check "ChatActivity has taskAffinity" \
         "echo '$XMLTREE_MANIFEST' | grep -q 'taskAffinity'"
 
-    # Permission check: only INTERNET, nothing dangerous
-    check "only INTERNET permission declared" \
-        "echo '$XMLTREE_MANIFEST' | grep 'uses-permission' | grep -c 'permission' | grep -q '^1$'"
+    # Permission check: only INTERNET + HIDE_OVERLAY_WINDOWS, nothing dangerous
+    check "exactly two permissions declared" \
+        "echo '$XMLTREE_MANIFEST' | grep 'uses-permission' | grep -c 'permission' | grep -q '^2$'"
 
     # Debuggable check (should not be present or should be false in release)
     check "not debuggable" \
