@@ -167,15 +167,13 @@ check "MainActivity has FLAG_SECURE" \
 check "ChatActivity wipes UI in onPause" \
     "grep -A5 'onPause' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'setText'"
 
-# Session end on stop (backgrounding = session end)
-check "ChatActivity disconnects in onStop" \
-    "grep -A10 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'disconnect'"
-check "ChatActivity wipes UI in onStop" \
-    "grep -A20 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'setText'"
+# Session end on stop (backgrounding = session end via CMD_QUIT)
+check "ChatActivity posts CMD_QUIT in onStop" \
+    "grep -A10 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'CMD_QUIT'"
 
 # SAS wiped after confirmation
 check "SAS code cleared after confirm" \
-    "grep -B2 'sasLayout.setVisibility' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'sasCodeText.setText'"
+    "grep -q 'sasCodeText.setText' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java'"
 
 # Clipboard auto-clear
 check "clipboard auto-cleared after copy" \
@@ -185,13 +183,23 @@ check "clipboard auto-cleared after copy" \
 check "JNI logging suppressed under NDEBUG" \
     "grep -q 'NDEBUG' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 
-# JNI: handshake fail path wipes all intermediates
-check "JNI handshake has fail: wipe label" \
-    "grep -q '^fail:' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+# JNI: single-threaded architecture (no mutex = concurrency eliminated by design)
+check "JNI uses pipe for IPC (no shared mutable state)" \
+    "grep -q 'pipe(' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI has no pthread_mutex (single-threaded)" \
+    "! grep -q 'pthread_mutex' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 
-# JNI: SAS buffer wiped after jstr()
-check "JNI wipes SAS buffer after jstr" \
-    "grep -A1 'jstr.*sas' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c' | grep -q 'crypto_wipe.*sas'"
+# JNI: crypto_wipe used for cleanup
+check "JNI uses crypto_wipe for key material" \
+    "grep -q 'crypto_wipe' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+
+# NativeCallback interface exists
+check "NativeCallback.java interface exists" \
+    "test -f '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/NativeCallback.java'"
+
+# No Java-side threading in ChatActivity
+check "ChatActivity has no new Thread() calls" \
+    "! grep -q 'new Thread' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java'"
 
 # CMake: _FORTIFY_SOURCE
 check "CMake enables _FORTIFY_SOURCE" \

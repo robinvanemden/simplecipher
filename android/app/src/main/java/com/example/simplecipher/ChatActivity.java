@@ -13,6 +13,7 @@ import android.widget.TextView;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import java.io.UnsupportedEncodingException;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -23,46 +24,62 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
-public class ChatActivity extends Activity {
+/**
+ * Chat screen for SimpleCipher.
+ *
+ * Communicates with the native session thread via two JNI methods:
+ *   - nativeStart(mode, host, port, callback) — spawns the thread
+ *   - nativePostCommand(cmd, payload) — writes to the command pipe
+ *
+ * All results come back through the NativeCallback interface methods,
+ * which are called FROM the native thread — every callback posts its
+ * UI work to the main thread via uiHandler.
+ */
+public class ChatActivity extends Activity implements NativeCallback {
 
     static { System.loadLibrary("simplecipher"); }
 
-    /* JNI methods */
-    private native int     nativeInit();
-    private native int     nativeConnect(String host, int port);
-    private native int     nativeListen(int port);
-    private native String  nativeHandshake();
-    private native int     nativeConfirmSas();
-    private native int     nativeSend(String msg);
-    private native String  nativeReceive();
-    private native void    nativeDisconnect();
+    /* Only two native methods — everything goes through the pipe. */
+    private native int  nativeStart(int mode, String host, int port, NativeCallback callback);
+    private native void nativePostCommand(int cmd, byte[] payload);
+
+    /* Command constants — must match jni_bridge.c */
+    private static final int CMD_SEND        = 0x01;
+    private static final int CMD_CONFIRM_SAS = 0x02;
+    private static final int CMD_QUIT        = 0x03;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
     /* UI elements */
-    private TextView    statusText;
+    private TextView     statusText;
     private LinearLayout sasLayout;
-    private TextView    sasCodeText;
-    private EditText    sasInput;
-    private Button      sasConfirmBtn;
+    private TextView     sasCodeText;
+    private EditText     sasInput;
+    private Button       sasConfirmBtn;
     private LinearLayout chatLayout;
-    private TextView    chatLog;
-    private EditText    chatInput;
-    private Button      sendBtn;
+    private TextView     chatLog;
+    private EditText     chatInput;
+    private Button       sendBtn;
 
-    private volatile boolean running = true;
-    private volatile boolean paused  = false;
-    private Thread networkThread;
+    /* The SAS code received from native, stored for verification. */
+    private String pendingSas = null;
+
+    /* Pause flag: when true, appendChat() drops messages to avoid
+     * leaking plaintext into the Java heap while the app is backgrounded. */
+    private boolean paused = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        /* FLAG_SECURE prevents screenshots and screen recording. */
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
                              WindowManager.LayoutParams.FLAG_SECURE);
         /* HIDE_OVERLAY_WINDOWS prevents other apps from drawing on top of
          * this activity (tapjacking, screen recording overlays). */
         if (android.os.Build.VERSION.SDK_INT >= 31)
             getWindow().setHideOverlayWindows(true);
+
         setContentView(R.layout.activity_chat);
 
         statusText    = findViewById(R.id.statusText);
@@ -102,124 +119,137 @@ public class ChatActivity extends Activity {
             }
         }
 
-        nativeInit();
-
-        /* Connection + handshake on background thread */
-        networkThread = new Thread(() -> {
-            int rc;
-            if (isConnect) {
-                rc = nativeConnect(host, port);
-            } else {
-                rc = nativeListen(port);
-            }
-
-            if (rc != 0) {
-                uiHandler.post(() -> {
-                    statusText.setText("Connection failed");
-                    Toast.makeText(this, "Connection failed", Toast.LENGTH_LONG).show();
-                });
-                return;
-            }
-
-            uiHandler.post(() -> statusText.setText("Connected. Performing handshake..."));
-
-            String sas = nativeHandshake();
-            if (sas == null || sas.isEmpty()) {
-                uiHandler.post(() -> {
-                    statusText.setText("Handshake failed");
-                    Toast.makeText(this, "Handshake failed", Toast.LENGTH_LONG).show();
-                });
-                return;
-            }
-
-            /* Show SAS verification UI */
-            uiHandler.post(() -> {
-                statusText.setText("Verify safety code with your peer");
-                sasCodeText.setText(sas);
-                sasLayout.setVisibility(View.VISIBLE);
-
-                /* Enter key on SAS input triggers verify */
-                sasInput.setOnEditorActionListener((v2, a, e) -> {
-                    sasConfirmBtn.performClick();
-                    return true;
-                });
-
-                sasConfirmBtn.setOnClickListener(v -> {
-                    /* Normalize: strip dashes and uppercase.  Accepts "A3F2-91BC",
-                     * "A3F291BC", "a3f291bc" etc.  Full comparison ensures the user
-                     * verifies all 32 bits of the SAS, not just the first 16. */
-                    String typed = sasInput.getText().toString().trim()
-                            .replace("-", "").toUpperCase(Locale.ROOT);
-                    String expected = sas.replace("-", "").toUpperCase(Locale.ROOT);
-                    if (!typed.equals(expected)) {
-                        Toast.makeText(this, "Code mismatch - aborting",
-                                       Toast.LENGTH_LONG).show();
-                        disconnect();
-                        finish();
-                        return;
-                    }
-
-                    nativeConfirmSas();
-                    sasInput.setText("");
-                    sasCodeText.setText("");
-                    sasLayout.setVisibility(View.GONE);
-                    chatLayout.setVisibility(View.VISIBLE);
-                    statusText.setText("\uD83D\uDD12 Secure session active");
-                    statusText.setTextColor(0xFF4DD0B0);
-
-                    /* Start receive loop */
-                    startReceiveLoop();
-
-                    /* Wire send button + Enter key */
-                    sendBtn.setOnClickListener(sv -> sendMessage());
-                    chatInput.setOnEditorActionListener((tv, actionId, event) -> {
-                        sendMessage();
-                        return true;
-                    });
-                });
-            });
+        /* Wire send button + Enter key (they post CMD_SEND to the pipe) */
+        sendBtn.setOnClickListener(v -> sendMessage());
+        chatInput.setOnEditorActionListener((tv, actionId, event) -> {
+            sendMessage();
+            return true;
         });
-        networkThread.start();
+
+        /* Start the native session thread.
+         * mode: 0 = listen, 1 = connect.  Returns immediately. */
+        int nativeMode = isConnect ? 1 : 0;
+        int rc = nativeStart(nativeMode, host, port, this);
+        if (rc != 0) {
+            Toast.makeText(this, "Failed to start session", Toast.LENGTH_LONG).show();
+            finish();
+        }
     }
+
+    /* ---- Send message --------------------------------------------------- */
 
     private void sendMessage() {
         String msg = chatInput.getText().toString().trim();
         if (msg.isEmpty()) return;
         chatInput.setText("");
 
-        new Thread(() -> {
-            int rc = nativeSend(msg);
-            uiHandler.post(() -> {
-                if (rc == 0) {
-                    appendChat("me", msg);
-                } else {
-                    appendChat("system", "[send failed]");
-                }
-            });
-        }).start();
+        /* Show the message immediately in the chat log (optimistic) */
+        appendChat("me", msg);
+
+        try {
+            byte[] payload = msg.getBytes("UTF-8");
+            nativePostCommand(CMD_SEND, payload);
+        } catch (UnsupportedEncodingException e) {
+            appendChat("system", "[encoding error]");
+        }
     }
 
-    private void startReceiveLoop() {
-        new Thread(() -> {
-            while (running) {
-                String msg = nativeReceive();
-                if (msg == null) {
-                    uiHandler.post(() -> {
-                        appendChat("system", "[peer disconnected]");
-                        sendBtn.setEnabled(false);
-                    });
-                    break;
-                }
-                uiHandler.post(() -> appendChat("peer", msg));
-            }
-        }).start();
+    /* ---- NativeCallback implementation ---------------------------------- */
+    /* All methods are called FROM the native thread.  UI work is posted
+     * to the main thread via uiHandler. */
+
+    @Override
+    public void onConnected() {
+        uiHandler.post(() -> statusText.setText("Connected. Performing handshake..."));
     }
+
+    @Override
+    public void onConnectionFailed(String reason) {
+        uiHandler.post(() -> {
+            Toast.makeText(this, reason, Toast.LENGTH_LONG).show();
+            finish();
+        });
+    }
+
+    @Override
+    public void onSasReady(String code) {
+        uiHandler.post(() -> {
+            pendingSas = code;
+            statusText.setText("Verify safety code with your peer");
+            sasCodeText.setText(code);
+            sasLayout.setVisibility(View.VISIBLE);
+
+            /* Enter key on SAS input triggers the confirm button */
+            sasInput.setOnEditorActionListener((v, a, e) -> {
+                sasConfirmBtn.performClick();
+                return true;
+            });
+
+            sasConfirmBtn.setOnClickListener(v -> {
+                /* Normalize: strip dashes and uppercase.  Accepts "A3F2-91BC",
+                 * "A3F291BC", "a3f291bc" etc.  Full comparison ensures the user
+                 * verifies all 32 bits of the SAS, not just the first 16. */
+                String typed = sasInput.getText().toString().trim()
+                        .replace("-", "").toUpperCase(Locale.ROOT);
+                String expected = pendingSas.replace("-", "").toUpperCase(Locale.ROOT);
+
+                if (!typed.equals(expected)) {
+                    Toast.makeText(this, "Code mismatch \u2014 aborting",
+                                   Toast.LENGTH_LONG).show();
+                    nativePostCommand(CMD_QUIT, null);
+                    finish();
+                    return;
+                }
+
+                /* SAS verified — tell native thread, transition to chat UI */
+                nativePostCommand(CMD_CONFIRM_SAS, null);
+
+                sasInput.setText("");
+                sasCodeText.setText("");
+                pendingSas = null;
+                sasLayout.setVisibility(View.GONE);
+                chatLayout.setVisibility(View.VISIBLE);
+                statusText.setText("\uD83D\uDD12 Secure session active");
+                statusText.setTextColor(0xFF4DD0B0);
+            });
+        });
+    }
+
+    @Override
+    public void onHandshakeFailed(String reason) {
+        uiHandler.post(() -> {
+            Toast.makeText(this, "Handshake failed: " + reason, Toast.LENGTH_LONG).show();
+            finish();
+        });
+    }
+
+    @Override
+    public void onMessageReceived(String text) {
+        uiHandler.post(() -> appendChat("peer", text));
+    }
+
+    @Override
+    public void onSendResult(boolean ok) {
+        if (!ok) {
+            uiHandler.post(() -> appendChat("system", "[send failed]"));
+        }
+    }
+
+    @Override
+    public void onDisconnected(String reason) {
+        uiHandler.post(() -> {
+            appendChat("system", reason);
+            sendBtn.setEnabled(false);
+        });
+    }
+
+    /* ---- Chat log ------------------------------------------------------- */
 
     private void appendChat(String who, String msg) {
         /* Do not write plaintext to the UI while paused.  onPause() wipes
-         * the widgets; allowing the receive thread to repopulate chatLog
-         * after the wipe would leak plaintext into the Java heap while
-         * the app is backgrounded. */
+         * the widgets; allowing callbacks to repopulate chatLog after the
+         * wipe would leak plaintext into the Java heap while the app is
+         * backgrounded. */
         if (paused) return;
         String ts = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
         String line = "[" + ts + "] " + who + ": " + msg + "\n";
@@ -229,6 +259,8 @@ public class ChatActivity extends Activity {
                            - chatLog.getHeight();
         if (scrollAmount > 0) chatLog.scrollTo(0, scrollAmount);
     }
+
+    /* ---- Local IPs ------------------------------------------------------ */
 
     private String getLocalIps() {
         int port = getIntent().getIntExtra("port", 7777);
@@ -259,19 +291,7 @@ public class ChatActivity extends Activity {
         return sb.toString();
     }
 
-    private void disconnect() {
-        running = false;
-        new Thread(this::nativeDisconnect).start();
-    }
-
-    @Override
-    public void onBackPressed() {
-        /* Clean disconnect when the user presses the back button.
-         * Without this, the network thread keeps running and the
-         * native session is not wiped. */
-        disconnect();
-        super.onBackPressed();
-    }
+    /* ---- Lifecycle ------------------------------------------------------- */
 
     @Override
     protected void onResume() {
@@ -314,7 +334,7 @@ public class ChatActivity extends Activity {
          * is a target for memory-dumping attacks.  Ending the session on
          * stop reduces the exposure window to only the time the user is
          * actively looking at the screen. */
-        disconnect();
+        nativePostCommand(CMD_QUIT, null);
         if (sasInput != null) sasInput.setText("");
         if (sasCodeText != null) sasCodeText.setText("");
         if (chatLog != null) chatLog.setText("");
@@ -323,10 +343,23 @@ public class ChatActivity extends Activity {
     }
 
     @Override
+    public void onBackPressed() {
+        /* Clean disconnect when the user presses the back button. */
+        nativePostCommand(CMD_QUIT, null);
+        super.onBackPressed();
+    }
+
+    @Override
     protected void onDestroy() {
-        /* Belt-and-suspenders: wipe again in case onStop didn't run
+        /* Belt-and-suspenders: post quit again in case onStop didn't run
          * (e.g. the system killed the process). */
-        disconnect();
+        nativePostCommand(CMD_QUIT, null);
         super.onDestroy();
+    }
+
+    /* ---- Utility -------------------------------------------------------- */
+
+    private int dp(int dp) {
+        return (int) (dp * getResources().getDisplayMetrics().density + 0.5f);
     }
 }

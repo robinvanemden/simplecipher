@@ -369,6 +369,20 @@ git tag v0.3.0
 git push origin v0.3.0
 ```
 
+### Verifying release binaries
+
+Every release binary has a [Sigstore](https://www.sigstore.dev/) build provenance attestation. This cryptographically proves the binary was built by this repository's CI — not by a third party. Even if the CI environment were compromised, the attestation is signed by Sigstore's transparency log and cannot be forged.
+
+To verify a downloaded binary:
+
+```bash
+gh attestation verify simplecipher-linux-x86_64 --repo robinvanemden/simplecipher
+```
+
+This checks that the binary's SHA256 digest matches an attestation signed by GitHub Actions for this repository. If verification fails, do not use the binary.
+
+SHA256 checksums are also provided in `SHA256SUMS.txt` for quick integrity checks, but note that checksums alone do not prove authenticity — they are produced in the same CI job as the binaries.
+
 ## License
 
 [MIT](LICENSE) — Monocypher is [BSD-2-Clause / CC0](lib/monocypher.h).
