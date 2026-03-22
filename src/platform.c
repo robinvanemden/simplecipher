@@ -88,10 +88,9 @@ void harden(void){
 }
 #else /* POSIX */
 void harden(void){
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
-        fprintf(stderr,
-            "[warn] mlockall failed -- keys may appear in swap.\n"
-            "       fix: run as root, or: ulimit -l unlimited\n");
+    /* Best-effort: succeeds as root or with ulimit -l unlimited,
+     * silently fails for unprivileged users (expected, not fatal). */
+    (void)mlockall(MCL_CURRENT | MCL_FUTURE);
     { struct rlimit z = {0,0}; setrlimit(RLIMIT_CORE, &z); }
   #ifdef __linux__
     prctl(PR_SET_DUMPABLE, 0);
