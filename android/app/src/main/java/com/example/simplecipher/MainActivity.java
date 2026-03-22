@@ -19,11 +19,9 @@ import android.widget.TextView;
 import android.view.WindowManager;
 import android.widget.Toast;
 
-import java.io.File;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -38,30 +36,16 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        /* If there is a crash report from a previous run, show it. */
-        File crashFile = new File(getFilesDir(), "crash.txt");
-        if (crashFile.exists()) {
-            try {
-                String trace = new String(Files.readAllBytes(crashFile.toPath()));
-                crashFile.delete();
-                new android.app.AlertDialog.Builder(this)
-                    .setTitle("Crash report (previous run)")
-                    .setMessage(trace)
-                    .setPositiveButton("Copy", (d, w) -> {
-                        ClipboardManager cm = (ClipboardManager)
-                                getSystemService(Context.CLIPBOARD_SERVICE);
-                        cm.setPrimaryClip(ClipData.newPlainText("crash", trace));
-                        Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
-                    })
-                    .setNegativeButton("Dismiss", null)
-                    .show();
-            } catch (Exception ignored) {
-                crashFile.delete();
-            }
+        /* If App caught a crash from last run, show it before doing
+         * anything that might crash again. */
+        if (App.pendingCrashTrace != null) {
+            super.onCreate(savedInstanceState);
+            startActivity(new Intent(this, CrashReportActivity.class));
+            finish();
+            return;
         }
 
+        super.onCreate(savedInstanceState);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
                              WindowManager.LayoutParams.FLAG_SECURE);
         if (android.os.Build.VERSION.SDK_INT >= 31)
