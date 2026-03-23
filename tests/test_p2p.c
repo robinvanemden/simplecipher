@@ -3630,6 +3630,161 @@ static void test_fingerprint_domain_separation(void) {
  *   tor &  # start Tor
  *   simplecipher connect --socks5 127.0.0.1:9050 <onion-address> */
 
+/* SOCKS5 input validation (hostname > 255, port 0/65536) happens after
+ * connecting to the proxy — not testable without a running SOCKS5 server.
+ * Functional testing: tor & simplecipher connect --socks5 127.0.0.1:9050 ... */
+
+/* ---- test: fingerprint known-answer vector ------------------------------ */
+
+static void test_fingerprint_known_vector(void) {
+    printf("\n=== fingerprint known vector ===\n");
+
+    /* Use the same fixed keys as test_deterministic_session_vector */
+    uint8_t alice_priv[KEY], alice_pub[KEY];
+    memset(alice_priv, 0x01, KEY);
+    crypto_x25519_public_key(alice_pub, alice_priv);
+
+    char fp[20];
+    format_fingerprint(fp, alice_pub);
+    printf("  INFO: fixed-key (0x01) fingerprint = %s\n", fp);
+
+    /* Hardcoded KAT — catches accidental label or hash changes */
+    TEST("KAT alice (0x01) fingerprint",
+         strcmp(fp, "0690-D95C-0C03-8E3B") == 0);
+
+    /* Same key produces same fingerprint (redundant but cheap) */
+    char fp2[20];
+    format_fingerprint(fp2, alice_pub);
+    TEST("fixed-key fingerprint deterministic", strcmp(fp, fp2) == 0);
+
+    /* Bob's key */
+    uint8_t bob_priv[KEY], bob_pub[KEY];
+    memset(bob_priv, 0x02, KEY);
+    crypto_x25519_public_key(bob_pub, bob_priv);
+
+    char bfp[20];
+    format_fingerprint(bfp, bob_pub);
+    printf("  INFO: fixed-key (0x02) fingerprint = %s\n", bfp);
+    TEST("KAT bob (0x02) fingerprint",
+         strcmp(bfp, "D4A1-A0C9-D29A-9B2A") == 0);
+
+    TEST("alice and bob fingerprints differ", strcmp(fp, bfp) != 0);
+
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test: fingerprint comparison edge cases ---------------------------- */
+
+/* Replicate the strip-dashes + uppercase + memcmp logic from main.c
+ * (lines 398-413) to verify it handles all cases correctly. */
+static int fp_compare(const char *expected, const char *actual) {
+    char ne[20] = {0}, np[20] = {0};
+    int ei = 0, pi = 0;
+    for (int i = 0; expected[i] && ei < (int)sizeof(ne)-1; i++){
+        char c = expected[i];
+        if (c == '-') continue;
+        if (c >= 'a' && c <= 'z') c -= 32;
+        ne[ei++] = c;
+    }
+    for (int i = 0; actual[i] && pi < (int)sizeof(np)-1; i++){
+        char c = actual[i];
+        if (c == '-') continue;
+        if (c >= 'a' && c <= 'z') c -= 32;
+        np[pi++] = c;
+    }
+    int match = (ei == pi && memcmp(ne, np, (size_t)ei) == 0);
+    crypto_wipe(ne, sizeof ne);
+    crypto_wipe(np, sizeof np);
+    return match;
+}
+
+static void test_fingerprint_comparison_cases(void) {
+    printf("\n=== fingerprint comparison cases ===\n");
+
+    const char *canonical = "A3F2-91BC-D4E5-F678";
+
+    /* Case 1: exact match */
+    TEST("exact match",
+         fp_compare(canonical, "A3F2-91BC-D4E5-F678"));
+
+    /* Case 2: lowercase match */
+    TEST("lowercase match",
+         fp_compare(canonical, "a3f2-91bc-d4e5-f678"));
+
+    /* Case 3: no dashes match */
+    TEST("no dashes match",
+         fp_compare(canonical, "A3F291BCD4E5F678"));
+
+    /* Case 4: lowercase no dashes */
+    TEST("lowercase no dashes",
+         fp_compare(canonical, "a3f291bcd4e5f678"));
+
+    /* Case 5: mixed case */
+    TEST("mixed case",
+         fp_compare(canonical, "a3F2-91Bc-d4e5-F678"));
+
+    /* Case 6: wrong value */
+    TEST("wrong value rejected",
+         !fp_compare(canonical, "0000-0000-0000-0000"));
+
+    /* Case 7: too short */
+    TEST("too short rejected",
+         !fp_compare(canonical, "A3F2-91BC"));
+
+    /* Case 8: empty string */
+    TEST("empty rejected",
+         !fp_compare(canonical, ""));
+
+    /* Case 9: expected is empty */
+    TEST("empty expected rejected",
+         !fp_compare("", canonical));
+
+    /* Case 10: both empty */
+    TEST("both empty matches (vacuous)",
+         fp_compare("", ""));
+
+    /* Case 11: extra dashes only */
+    TEST("extra dashes still match",
+         fp_compare(canonical, "A3-F2-91-BC-D4-E5-F6-78"));
+
+    /* Case 12: single char difference */
+    TEST("single char diff rejected",
+         !fp_compare(canonical, "A3F2-91BC-D4E5-F679"));
+}
+
+/* ---- test: fingerprint wipe --------------------------------------------- */
+
+static void test_fingerprint_wipe(void) {
+    printf("\n=== fingerprint wipe ===\n");
+
+    /* format_fingerprint creates a 32-byte hash internally and wipes it.
+     * We can't inspect the internal buffer directly, but we CAN verify
+     * the function works correctly after being called (no corruption)
+     * and that calling it twice with the same input produces the same
+     * output (no stale state). */
+    uint8_t pub[KEY];
+    fill_random(pub, KEY);
+
+    char fp1[20], fp2[20], fp3[20];
+    format_fingerprint(fp1, pub);
+    format_fingerprint(fp2, pub);
+    format_fingerprint(fp3, pub);
+    TEST("fingerprint consistent after 3 calls",
+         strcmp(fp1, fp2) == 0 && strcmp(fp2, fp3) == 0);
+
+    /* Different key after same key — no stale state */
+    uint8_t pub2[KEY];
+    fill_random(pub2, KEY);
+    char fp4[20];
+    format_fingerprint(fp4, pub2);
+    TEST("different key after same key produces different fp",
+         strcmp(fp1, fp4) != 0);
+
+    crypto_wipe(pub, KEY);
+    crypto_wipe(pub2, KEY);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -3699,6 +3854,9 @@ int main(void) {
     test_deterministic_session_vector();
     test_format_fingerprint();
     test_fingerprint_domain_separation();
+    test_fingerprint_known_vector();
+    test_fingerprint_comparison_cases();
+    test_fingerprint_wipe();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);
