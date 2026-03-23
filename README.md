@@ -339,11 +339,12 @@ bash tests/test_binary.sh
 - Proves absence of buffer overflow, out-of-bounds access, null pointer dereference, and signed integer overflow for ALL possible inputs (38,279 properties verified)
 - Run: `python3 tests/cbmc_harness.py`
 
-**Constant-time verification** (manual, requires x86_64):
-- [dudect](https://github.com/oreparaz/dudect) statistical timing analysis on 8 functions: `is_zero32`, `verify_commit`, `domain_hash`, `expand`, `chain_step`, `crypto_x25519`, `frame_build`, `frame_open`
-- 7/7 secret-handling functions verified constant-time (~2M measurements each)
-- Known-accept: `frame_open` shows timing variance due to Monocypher's intentional MAC-fail fast path (not exploitable — see `test_constant_time.c` for details)
-- Run: `gcc -std=c23 -O2 -Isrc -Ilib -Itests tests/test_constant_time.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c lib/monocypher.c -lm -o test_ct && taskset -c 0 ./test_ct`
+**Constant-time verification** (manual, two complementary approaches):
+- **Timecop/Valgrind** (`tests/test_timecop.c`): marks secret data as "uninitialized" using Valgrind's memcheck, then detects any conditional branch or memory index that depends on the secret. Deterministic — one run, exact source location if a leak exists. All 7 secret-handling functions pass with 0 errors.
+  - Run: `gcc -std=c23 -g -O1 -Isrc -Ilib tests/test_timecop.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c lib/monocypher.c -lm -o test_timecop && valgrind --track-origins=yes ./test_timecop`
+- **dudect** (`tests/test_constant_time.c`): [statistical timing analysis](https://github.com/oreparaz/dudect) — runs each function millions of times with different inputs, applies Welch's t-test to detect execution time differences that correlate with secret values. Catches hardware-level timing leaks (cache, CPU instruction latency) that Valgrind's software model cannot see.
+  - Run: `gcc -std=c23 -O2 -Isrc -Ilib -Itests tests/test_constant_time.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c lib/monocypher.c -lm -o test_ct && taskset -c 0 ./test_ct`
+- Known-accept: `frame_open` shows timing variance in dudect due to Monocypher's intentional MAC-fail fast path (not exploitable — see source for details)
 
 **Platform tests** (run natively on GitHub-hosted runners):
 
