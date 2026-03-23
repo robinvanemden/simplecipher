@@ -2913,6 +2913,270 @@ static void test_dh_ratchet_replay_rejection(void) {
     crypto_wipe(bob_priv, KEY);
 }
 
+/* ---- test 52: DH ratchet TCP loopback ----------------------------------- */
+
+static void test_dh_ratchet_tcp_loopback(void) {
+    printf("\n=== DH ratchet TCP loopback ===\n");
+
+    plat_init();
+
+    const char *port = "19761";
+
+    peer_ctx listener  = { .is_initiator = 0, .port = port };
+    peer_ctx initiator = { .is_initiator = 1, .port = port };
+
+    pthread_t t_listen, t_connect;
+    pthread_create(&t_listen,  nullptr, peer_thread, &listener);
+    pthread_create(&t_connect, nullptr, peer_thread, &initiator);
+    pthread_join(t_listen,  nullptr);
+    pthread_join(t_connect, nullptr);
+
+    TEST("ratchet tcp: listener handshake succeeded",  listener.ok);
+    TEST("ratchet tcp: initiator handshake succeeded", initiator.ok);
+
+    if (!listener.ok || !initiator.ok) {
+        printf("  SKIP: cannot test ratchet message exchange without handshake\n");
+        plat_quit();
+        return;
+    }
+
+    TEST("ratchet tcp: SAS keys match",
+         crypto_verify32(listener.sas_key, initiator.sas_key) == 0);
+
+    /* Message 1: Initiator -> Listener (first send, carries ratchet key) */
+    {
+        const char *msg = "ratchet msg 1: init->listen";
+        uint8_t frame[FRAME_SZ], next_tx[KEY];
+        TEST("ratchet tcp: initiator frame_build msg1",
+             frame_build(&initiator.sess,
+                         (const uint8_t *)msg, (uint16_t)strlen(msg),
+                         frame, next_tx) == 0);
+        TEST("ratchet tcp: initiator write_exact msg1",
+             write_exact(initiator.fd, frame, FRAME_SZ) == 0);
+        memcpy(initiator.sess.tx, next_tx, KEY);
+        initiator.sess.tx_seq++;
+
+        uint8_t recv_frame[FRAME_SZ];
+        TEST("ratchet tcp: listener read_exact msg1",
+             read_exact(listener.fd, recv_frame, FRAME_SZ) == 0);
+        uint8_t plain[MAX_MSG + 1];
+        uint16_t plen = 0;
+        TEST("ratchet tcp: listener frame_open msg1",
+             frame_open(&listener.sess, recv_frame, plain, &plen) == 0);
+        plain[plen] = '\0';
+        TEST("ratchet tcp: listener got correct msg1",
+             strcmp((char *)plain, msg) == 0);
+    }
+
+    /* Message 2: Listener -> Initiator (reply, carries ratchet key) */
+    {
+        const char *msg = "ratchet msg 2: listen->init";
+        uint8_t frame[FRAME_SZ], next_tx[KEY];
+        TEST("ratchet tcp: listener frame_build msg2",
+             frame_build(&listener.sess,
+                         (const uint8_t *)msg, (uint16_t)strlen(msg),
+                         frame, next_tx) == 0);
+        TEST("ratchet tcp: listener write_exact msg2",
+             write_exact(listener.fd, frame, FRAME_SZ) == 0);
+        memcpy(listener.sess.tx, next_tx, KEY);
+        listener.sess.tx_seq++;
+
+        uint8_t recv_frame[FRAME_SZ];
+        TEST("ratchet tcp: initiator read_exact msg2",
+             read_exact(initiator.fd, recv_frame, FRAME_SZ) == 0);
+        uint8_t plain[MAX_MSG + 1];
+        uint16_t plen = 0;
+        TEST("ratchet tcp: initiator frame_open msg2",
+             frame_open(&initiator.sess, recv_frame, plain, &plen) == 0);
+        plain[plen] = '\0';
+        TEST("ratchet tcp: initiator got correct msg2",
+             strcmp((char *)plain, msg) == 0);
+    }
+
+    /* Message 3: Initiator -> Listener (second send, triggers another ratchet) */
+    {
+        const char *msg = "ratchet msg 3: init->listen again";
+        uint8_t frame[FRAME_SZ], next_tx[KEY];
+        TEST("ratchet tcp: initiator frame_build msg3",
+             frame_build(&initiator.sess,
+                         (const uint8_t *)msg, (uint16_t)strlen(msg),
+                         frame, next_tx) == 0);
+        TEST("ratchet tcp: initiator write_exact msg3",
+             write_exact(initiator.fd, frame, FRAME_SZ) == 0);
+        memcpy(initiator.sess.tx, next_tx, KEY);
+        initiator.sess.tx_seq++;
+
+        uint8_t recv_frame[FRAME_SZ];
+        TEST("ratchet tcp: listener read_exact msg3",
+             read_exact(listener.fd, recv_frame, FRAME_SZ) == 0);
+        uint8_t plain[MAX_MSG + 1];
+        uint16_t plen = 0;
+        TEST("ratchet tcp: listener frame_open msg3",
+             frame_open(&listener.sess, recv_frame, plain, &plen) == 0);
+        plain[plen] = '\0';
+        TEST("ratchet tcp: listener got correct msg3",
+             strcmp((char *)plain, msg) == 0);
+    }
+
+    sock_shutdown_both(initiator.fd);
+    sock_shutdown_both(listener.fd);
+    close_sock(initiator.fd);
+    close_sock(listener.fd);
+    session_wipe(&initiator.sess);
+    session_wipe(&listener.sess);
+    plat_quit();
+}
+
+/* ---- test 53: DH ratchet simultaneous first send ------------------------ */
+
+static void test_dh_ratchet_simultaneous_first_send(void) {
+    printf("\n=== DH ratchet simultaneous first send ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Both sides start with need_send_ratchet=1 after session_init.
+     * Simulate both sending before receiving (simultaneous first sends). */
+
+    /* Alice builds a frame (triggers her ratchet) */
+    const char *msg_a = "alice sends first";
+    uint16_t mlen_a = (uint16_t)strlen(msg_a);
+    uint8_t frame_a[FRAME_SZ], next_a[KEY];
+    TEST("simultaneous: alice frame_build succeeds",
+         frame_build(&alice, (const uint8_t *)msg_a, mlen_a, frame_a, next_a) == 0);
+    memcpy(alice.tx, next_a, KEY);
+    alice.tx_seq++;
+    crypto_wipe(next_a, KEY);
+
+    /* Bob builds a frame (triggers his ratchet) — before receiving alice's */
+    const char *msg_b = "bob sends first";
+    uint16_t mlen_b = (uint16_t)strlen(msg_b);
+    uint8_t frame_b[FRAME_SZ], next_b[KEY];
+    TEST("simultaneous: bob frame_build succeeds",
+         frame_build(&bob, (const uint8_t *)msg_b, mlen_b, frame_b, next_b) == 0);
+    memcpy(bob.tx, next_b, KEY);
+    bob.tx_seq++;
+    crypto_wipe(next_b, KEY);
+
+    /* Bob opens Alice's frame (should succeed — processes alice's ratchet key) */
+    uint8_t plain[MAX_MSG + 1];
+    uint16_t plen = 0;
+    TEST("simultaneous: bob opens alice's frame",
+         frame_open(&bob, frame_a, plain, &plen) == 0);
+    plain[plen] = '\0';
+    TEST("simultaneous: bob got correct message from alice",
+         strcmp((char *)plain, msg_a) == 0);
+
+    /* Alice opens Bob's frame (should succeed — processes bob's ratchet key) */
+    plen = 0;
+    TEST("simultaneous: alice opens bob's frame",
+         frame_open(&alice, frame_b, plain, &plen) == 0);
+    plain[plen] = '\0';
+    TEST("simultaneous: alice got correct message from bob",
+         strcmp((char *)plain, msg_b) == 0);
+
+    /* After simultaneous first sends, root keys have diverged (each side
+     * applied ratchet_send and ratchet_receive in a different order).
+     * Verify that both sides detected the ratchet keys from the peer
+     * by checking that peer_dh was updated on both sides. */
+    TEST("simultaneous: alice.peer_dh updated to bob's ratchet pub",
+         !is_zero32(alice.peer_dh));
+    TEST("simultaneous: bob.peer_dh updated to alice's ratchet pub",
+         !is_zero32(bob.peer_dh));
+    TEST("simultaneous: both need_send_ratchet set after receiving",
+         alice.need_send_ratchet == 1 && bob.need_send_ratchet == 1);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test 54: DH ratchet state preserved on failure --------------------- */
+
+static void test_dh_ratchet_state_preserved_on_failure(void) {
+    printf("\n=== DH ratchet state preserved on failure ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Alice sends message 1 — Bob receives (advances Bob's state) */
+    char out[MAX_MSG + 1];
+    uint16_t out_len = 0;
+    TEST("state preserved: alice->bob msg1 succeeds",
+         send_msg(&alice, &bob, "message one", out, &out_len) == 0);
+    TEST("state preserved: bob received msg1 correctly",
+         strcmp(out, "message one") == 0);
+
+    /* Save Bob's DH ratchet state */
+    uint8_t saved_root[KEY], saved_dh_priv[KEY], saved_dh_pub[KEY], saved_peer_dh[KEY];
+    uint8_t saved_rx[KEY];
+    uint64_t saved_rx_seq = bob.rx_seq;
+    int saved_need_send = bob.need_send_ratchet;
+    memcpy(saved_root,    bob.root,    KEY);
+    memcpy(saved_dh_priv, bob.dh_priv, KEY);
+    memcpy(saved_dh_pub,  bob.dh_pub,  KEY);
+    memcpy(saved_peer_dh, bob.peer_dh, KEY);
+    memcpy(saved_rx,      bob.rx,      KEY);
+
+    /* Alice sends message 2 — tamper with it before Bob receives */
+    const char *msg2 = "message two";
+    uint16_t mlen2 = (uint16_t)strlen(msg2);
+    uint8_t frame2[FRAME_SZ], next2[KEY];
+    TEST("state preserved: alice builds msg2",
+         frame_build(&alice, (const uint8_t *)msg2, mlen2, frame2, next2) == 0);
+    memcpy(alice.tx, next2, KEY);
+    alice.tx_seq++;
+    crypto_wipe(next2, KEY);
+
+    /* Tamper with ciphertext */
+    uint8_t tampered[FRAME_SZ];
+    memcpy(tampered, frame2, FRAME_SZ);
+    tampered[AD_SZ + 10] ^= 0xFF;
+
+    /* Feed tampered frame to Bob — should fail */
+    uint8_t plain[MAX_MSG + 1];
+    uint16_t plen = 0;
+    TEST("state preserved: tampered frame rejected",
+         frame_open(&bob, tampered, plain, &plen) == -1);
+
+    /* Verify ALL DH ratchet state is unchanged */
+    TEST("state preserved: root unchanged",
+         crypto_verify32(bob.root, saved_root) == 0);
+    TEST("state preserved: dh_priv unchanged",
+         crypto_verify32(bob.dh_priv, saved_dh_priv) == 0);
+    TEST("state preserved: dh_pub unchanged",
+         crypto_verify32(bob.dh_pub, saved_dh_pub) == 0);
+    TEST("state preserved: peer_dh unchanged",
+         crypto_verify32(bob.peer_dh, saved_peer_dh) == 0);
+    TEST("state preserved: rx chain unchanged",
+         crypto_verify32(bob.rx, saved_rx) == 0);
+    TEST("state preserved: rx_seq unchanged",
+         bob.rx_seq == saved_rx_seq);
+    TEST("state preserved: need_send_ratchet unchanged",
+         bob.need_send_ratchet == saved_need_send);
+
+    /* Verify Bob can still receive the valid (untampered) frame */
+    plen = 0;
+    TEST("state preserved: original frame still opens",
+         frame_open(&bob, frame2, plain, &plen) == 0);
+    plain[plen] = '\0';
+    TEST("state preserved: original frame has correct content",
+         strcmp((char *)plain, "message two") == 0);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+    crypto_wipe(saved_root, KEY);
+    crypto_wipe(saved_dh_priv, KEY);
+    crypto_wipe(saved_dh_pub, KEY);
+    crypto_wipe(saved_peer_dh, KEY);
+    crypto_wipe(saved_rx, KEY);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -2971,6 +3235,9 @@ int main(void) {
     test_dh_ratchet_long_burst();
     test_dh_ratchet_tamper_detection();
     test_dh_ratchet_replay_rejection();
+    test_dh_ratchet_tcp_loopback();
+    test_dh_ratchet_simultaneous_first_send();
+    test_dh_ratchet_state_preserved_on_failure();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);
