@@ -37,8 +37,12 @@ set(COMMON_C_FLAGS "\
 -fno-delete-null-pointer-checks \
 -fno-strict-overflow \
 -fno-strict-aliasing \
+-fstrict-flex-arrays=3 \
 -fno-unwind-tables -fno-asynchronous-unwind-tables \
--Wall -Wextra -Werror=implicit -Werror=return-type -Werror=unused-result \
+-Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough \
+-Wbidi-chars=any \
+-Werror=implicit -Werror=return-type -Werror=unused-result \
+-Werror=format-security -Werror=incompatible-pointer-types -Werror=int-conversion \
 ")
 
 # Platform-specific compiler hardening (not universally supported)
@@ -66,7 +70,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     #   -z,noexecstack      non-executable stack
     #   --build-id=none     strip build-id metadata
     set(CMAKE_C_FLAGS_RELEASE "${COMMON_C_FLAGS} -fno-ident")
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto -Wl,--gc-sections -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,--build-id=none")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto -Wl,--gc-sections -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,nodlopen -Wl,--build-id=none")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     # PE linker hardening:
     #   --gc-sections       remove unreferenced code/data
@@ -101,6 +105,9 @@ if(WIN32)
 else()
     set(PLATFORM_SRC src/tui_posix.c src/cli_posix.c)
 endif()
+
+# Suppress -Wconversion for vendored Monocypher (upstream code, do not modify).
+set_source_files_properties(lib/monocypher.c PROPERTIES COMPILE_FLAGS -Wno-conversion)
 
 add_executable(simplecipher src/main.c ${CORE_SRC} ${PLATFORM_SRC})
 target_include_directories(simplecipher PRIVATE src lib)

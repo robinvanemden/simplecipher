@@ -2,7 +2,10 @@ CC      ?= gcc
 
 # Security-hardened flags matching the CMake release build.
 # Override with: make CFLAGS="..." for a custom build.
-CFLAGS  ?= -Os -std=c23 -Wall -Wextra -Isrc -Ilib \
+CFLAGS  ?= -Os -std=c23 -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough \
+           -Wbidi-chars=any \
+           -Werror=format-security -Werror=incompatible-pointer-types -Werror=int-conversion \
+           -Isrc -Ilib \
            -flto -ffunction-sections -fdata-sections -fmerge-all-constants \
            -fstack-protector-strong \
            -ftrivial-auto-var-init=zero \
@@ -10,6 +13,7 @@ CFLAGS  ?= -Os -std=c23 -Wall -Wextra -Isrc -Ilib \
            -fno-delete-null-pointer-checks \
            -fno-strict-overflow \
            -fno-strict-aliasing \
+           -fstrict-flex-arrays=3 \
            -DNDEBUG -DCIPHER_HARDEN
 
 LDFLAGS ?= -flto -Wl,--gc-sections -s
@@ -23,7 +27,7 @@ UNAME := $(shell uname -s)
 ifeq ($(UNAME),Linux)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
   CFLAGS  += -fstack-clash-protection -D_FORTIFY_SOURCE=3
-  LDFLAGS += -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack
+  LDFLAGS += -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,nodlopen
 else ifeq ($(UNAME),Darwin)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
 else
@@ -39,6 +43,10 @@ simplecipher: $(OBJ)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+# Suppress -Wconversion for vendored Monocypher (upstream code, do not modify)
+lib/monocypher.o: lib/monocypher.c
+	$(CC) $(CFLAGS) -Wno-conversion -c -o $@ $<
 
 test: tests/test_p2p
 	./tests/test_p2p

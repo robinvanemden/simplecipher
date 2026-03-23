@@ -25,6 +25,9 @@ target_include_directories(simplecipher PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
+# Suppress -Wconversion for vendored Monocypher (upstream code, do not modify)
+set_source_files_properties("${PROJECT_ROOT}/lib/monocypher.c" PROPERTIES COMPILE_FLAGS -Wno-conversion)
+
 # Security-hardened compile options for Android NDK (Clang)
 target_compile_options(simplecipher PRIVATE
     -std=c23
@@ -36,12 +39,16 @@ target_compile_options(simplecipher PRIVATE
     -fno-delete-null-pointer-checks
     -fno-strict-overflow
     -fno-strict-aliasing
+    -fstrict-flex-arrays=3
     # Hide all symbols by default; only JNI exports are visible
     -fvisibility=hidden
     # Control Flow Integrity — prevents ROP/JOP attacks (requires LTO)
     -fsanitize=cfi
     -flto
-    -Wall -Wextra -Werror=implicit -Werror=return-type -Werror=unused-result
+    -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough
+    -Wbidi-chars=any
+    -Werror=implicit -Werror=return-type -Werror=unused-result
+    -Werror=format-security -Werror=incompatible-pointer-types -Werror=int-conversion
 )
 
 # ARM64-only: Pointer Authentication + Branch Target Identification
