@@ -58,8 +58,8 @@ void tui_init_term(void){
     atexit(tui_restore_term);
 
     raw = tui_orig_termios;
-    raw.c_lflag &= ~(ECHO | ICANON | ISIG);
-    raw.c_iflag &= ~(IXON | ICRNL);
+    raw.c_lflag &= (tcflag_t)~(ECHO | ICANON | ISIG);
+    raw.c_iflag &= (tcflag_t)~(IXON | ICRNL);
     raw.c_cc[VMIN] = 0;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);

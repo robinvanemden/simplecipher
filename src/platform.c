@@ -98,8 +98,135 @@ void harden(void){
 }
 #endif /* platform */
 
+/* ---- seccomp-BPF syscall sandboxing (Linux only) ----------------------
+ *
+ * After the handshake completes and the chat loop is about to start,
+ * the process only needs a handful of syscalls: read, write, poll, close,
+ * exit, signal return, and timestamps.  Everything else (execve, fork,
+ * connect, open, socket, etc.) is unnecessary and represents attack surface.
+ *
+ * Seccomp-BPF installs a kernel-level filter that kills the process if a
+ * disallowed syscall is attempted.  Even if an attacker achieves code
+ * execution (e.g. via a buffer overflow in a future bug), they cannot
+ * spawn a shell, connect to another host, or read files.
+ *
+ * This is the same technique used by OpenSSH, Chrome, and Android.
+ *
+ * The filter is a BPF (Berkeley Packet Filter) program that examines each
+ * syscall number and returns ALLOW or KILL_PROCESS. */
+#if defined(__linux__)
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <linux/audit.h>
+#include <sys/syscall.h>
+
+/* Detect the correct audit architecture for the BPF filter.
+ * The seccomp filter checks the arch field to prevent syscall confusion
+ * on multi-arch kernels (e.g. 32-bit compat on 64-bit). */
+#if defined(__x86_64__)
+  #define SECCOMP_AUDIT_ARCH AUDIT_ARCH_X86_64
+#elif defined(__aarch64__)
+  #define SECCOMP_AUDIT_ARCH AUDIT_ARCH_AARCH64
+#else
+  #undef SECCOMP_AUDIT_ARCH  /* skip seccomp on unknown arch */
+#endif
+
+#ifdef SECCOMP_AUDIT_ARCH
+static void install_seccomp(void){
+    /* BPF filter: allow only the syscalls needed for the chat loop.
+     *
+     * Architecture check first — reject any syscall from a different arch
+     * (prevents 32-bit compat syscall confusion attacks).
+     *
+     * Allowed syscalls (the minimum for poll-based encrypted chat):
+     *   read/write       — socket and terminal I/O
+     *   poll/ppoll       — event loop (wait for socket or stdin)
+     *   close            — socket cleanup on exit
+     *   exit_group       — process termination
+     *   rt_sigreturn     — return from signal handler (required by kernel)
+     *   rt_sigaction     — installing signal handlers (already done, but
+     *                      glibc may re-issue during signal delivery)
+     *   clock_gettime    — timestamps for chat messages (via time())
+     *   ioctl            — terminal mode changes (tcsetattr for TUI/CLI)
+     *   mmap/munmap      — glibc/musl internal allocator (printf, etc.)
+     *   mprotect         — glibc/musl internal use
+     *   brk              — heap management (musl uses this)
+     *   sendto/recvfrom  — some libc implementations use these for TCP
+     *   futex            — glibc internal locking (printf, malloc)
+     *   newfstatat/fstat — glibc internal use (stdout detection)
+     *   getrandom        — fill_random for ratchet keypair generation
+     *   writev           — some libc printf implementations use this
+     *   sigaltstack      — signal stack setup (glibc)
+     *   prlimit64        — getrlimit/setrlimit (musl)
+     *   rseq             — restartable sequences (glibc 2.35+)
+     */
+    struct sock_filter filter[] = {
+        /* Load the syscall architecture */
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
+        /* Kill if wrong architecture */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SECCOMP_AUDIT_ARCH, 1, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+
+        /* Load the syscall number */
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
+
+        /* Allow each permitted syscall */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_read,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_write,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_writev,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_poll,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_close,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_exit_group,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigreturn,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigaction,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mmap,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_munmap,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mprotect,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_brk,           0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sendto,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_recvfrom,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_futex,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_newfstatat,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_fstat,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getrandom,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sigaltstack,   0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prlimit64,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rseq,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_shutdown,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+        /* Default: kill the process on any disallowed syscall */
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+    };
+
+    struct sock_fprog prog = {
+        .len    = (unsigned short)(sizeof filter / sizeof filter[0]),
+        .filter = filter,
+    };
+
+    /* PR_SET_NO_NEW_PRIVS is required before installing a seccomp filter
+     * without CAP_SYS_ADMIN.  It prevents the process (and children)
+     * from gaining new privileges via execve (setuid bits are ignored). */
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) return;
+
+    /* Best-effort: if the kernel doesn't support seccomp-BPF, continue
+     * without it.  The chat still works; it just has a wider syscall surface. */
+    (void)prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog);
+}
+#endif /* SECCOMP_AUDIT_ARCH */
+#endif /* __linux__ */
+
+void sandbox(void){
+#if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
+    install_seccomp();
+#endif
+}
+
 #else
 void harden(void){}   /* no-op when CIPHER_HARDEN is not set */
+void sandbox(void){}
 #endif
 
 /* ---- signal handling ---------------------------------------------------- */

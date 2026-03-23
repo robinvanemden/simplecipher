@@ -339,6 +339,7 @@ int main(int argc, char *argv[]){
             goto out;
         }
 
+        sandbox();  /* restrict syscalls before entering chat loop */
         tui_chat_loop(g_fd, &g_sess);
     } else {
     printf("\n");
@@ -422,6 +423,7 @@ int main(int argc, char *argv[]){
     printf("  Type a message and press Enter to send.\n");
     printf("\n");
 
+    sandbox();  /* restrict syscalls before entering chat loop */
     cli_chat_loop(g_fd, &g_sess);
     } /* end else (CLI mode) */
 

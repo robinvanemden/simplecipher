@@ -132,6 +132,14 @@ void sock_shutdown_both(socket_t s);
  * Enabled by compiling with -DCIPHER_HARDEN. No-op otherwise. */
 void harden(void);
 
+/* Optional syscall sandboxing (seccomp-BPF on Linux).
+ * Call AFTER network setup and handshake, BEFORE the chat loop.
+ * Restricts the process to only the syscalls needed for encrypted chat:
+ * read, write, poll, close, exit, signal handling, timestamps.
+ * If the process is exploited, the attacker cannot exec, fork, connect,
+ * or open files.  No-op on non-Linux or when CIPHER_HARDEN is not set. */
+void sandbox(void);
+
 /* Signal handler: set the stop flag so the main loop exits on its next
  * iteration.  See platform.c for details on POSIX vs Windows behavior. */
 void on_sig(int sig);
