@@ -73,9 +73,26 @@ simplecipher connect 100.x.y.z 9000
 # Split-pane terminal UI with scrolling messages and fixed input line
 simplecipher --tui listen
 simplecipher --tui connect 100.x.y.z
+
+# Connect through a SOCKS5 proxy (e.g. Tor on 127.0.0.1:9050)
+simplecipher connect --socks5 127.0.0.1:9050 <onion-address>
+
+# Interactive mode: omit host to avoid leaking it to shell history
+simplecipher connect
+#   Host: 100.70.179.3
+#   Port [7777]:
+
+# Verify peer identity with a pre-shared fingerprint
+simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678 100.x.y.z
 ```
 
 TUI mode works on Linux, macOS, and Windows 10+. No dependencies — pure ANSI escape sequences.
+
+**SOCKS5 proxy** (`--socks5`): tunnels the connection through any SOCKS5 proxy. Essential for Tor — the proxy resolves DNS, so `.onion` addresses work and no DNS queries leak from your machine.
+
+**Interactive connect**: running `simplecipher connect` without a host prompts for it on stdin. The target address never appears in `argv`, shell history, or `/proc/*/cmdline`.
+
+**Peer fingerprint** (`--peer-fingerprint`): the listener's fingerprint is shown on the listen screen. Share it out-of-band (paper, QR code, Signal message), then the connector passes it as a flag. After the handshake, the peer's public key is hashed and compared — mismatch aborts the connection. This is optional additional verification on top of the SAS code, useful when you can pre-share a fingerprint but can't make a phone call.
 
 On Android, the same flow happens through the app UI: choose Listen or Connect, enter the host/port, verify the safety code, and chat.
 
