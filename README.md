@@ -531,6 +531,18 @@ gh attestation verify simplecipher-linux-x86_64 --repo robinvanemden/simpleciphe
 
 This checks that the binary's SHA256 digest matches an attestation signed by GitHub Actions for this repository. If verification fails, do not use the binary.
 
+For offline verification (no network access to GitHub):
+
+```bash
+# 1. Download the attestation bundle alongside the binary:
+gh attestation download simplecipher-linux-x86_64 --repo robinvanemden/simplecipher
+
+# 2. Verify offline using the downloaded bundle:
+gh attestation verify simplecipher-linux-x86_64 \
+  --repo robinvanemden/simplecipher \
+  --bundle ./simplecipher-linux-x86_64.sigstore.json
+```
+
 SHA256 checksums are also provided in `SHA256SUMS.txt` for quick integrity checks, but note that checksums alone do not prove authenticity — they are produced in the same CI job as the binaries.
 
 ## License

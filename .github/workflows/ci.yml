@@ -152,23 +152,45 @@ jobs:
             /opt/llvm-mingw
           key: toolchains-v3-musl-x86_64-aarch64-llvm-20260311
 
-      - name: Setup musl cross-compilers
+      - name: Setup musl cross-compilers (with checksum verification)
         run: |
+          # Hardcoded SHA256 digests — update when upgrading toolchains.
+          declare -A EXPECTED_SHA=(
+            [x86_64-unknown-linux-musl]="47a4db19648a82d2597c7df75f886530a55056df01e8775dd4440c3cfdce9f36"
+            [aarch64-unknown-linux-musl]="bcb60ab89918911001f7a7501f4f6caec6fdface129f44c99b692f97d7b54235"
+          )
           sudo mkdir -p /opt/x-tools
           for TRIPLE in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
             if [ ! -d /opt/x-tools/$TRIPLE ]; then
-              curl -fsSL https://github.com/robinvanemden/toolchains/releases/download/v1/$TRIPLE.tar.xz \
-                | sudo tar -xJ -C /opt/x-tools/
+              ARCHIVE="/tmp/$TRIPLE.tar.xz"
+              curl -fsSL -o "$ARCHIVE" \
+                "https://github.com/robinvanemden/toolchains/releases/download/v1/$TRIPLE.tar.xz"
+              ACTUAL=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+              if [ "$ACTUAL" != "${EXPECTED_SHA[$TRIPLE]}" ]; then
+                echo "::error::Checksum mismatch for $TRIPLE (got $ACTUAL)"
+                exit 1
+              fi
+              sudo tar -xJf "$ARCHIVE" -C /opt/x-tools/
+              rm -f "$ARCHIVE"
             fi
             echo "/opt/x-tools/$TRIPLE/$TRIPLE/bin" >> "$GITHUB_PATH"
           done
 
-      - name: Setup llvm-mingw
+      - name: Setup llvm-mingw (with checksum verification)
         run: |
+          EXPECTED="7c091479d08b13d72aa75acce0ba85cadbc7e066f340afea42849eaf5a5a6cad"
           if [ ! -d /opt/llvm-mingw ]; then
-            curl -fsSL https://github.com/mstorsjo/llvm-mingw/releases/download/20260311/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64.tar.xz \
-              | sudo tar -xJ -C /opt/
+            ARCHIVE="/tmp/llvm-mingw.tar.xz"
+            curl -fsSL -o "$ARCHIVE" \
+              "https://github.com/mstorsjo/llvm-mingw/releases/download/20260311/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64.tar.xz"
+            ACTUAL=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+            if [ "$ACTUAL" != "$EXPECTED" ]; then
+              echo "::error::Checksum mismatch for llvm-mingw (got $ACTUAL)"
+              exit 1
+            fi
+            sudo tar -xJf "$ARCHIVE" -C /opt/
             sudo mv /opt/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64 /opt/llvm-mingw
+            rm -f "$ARCHIVE"
           fi
 
       - name: Patch llvm-mingw toolchain path for CI
