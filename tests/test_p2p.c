@@ -2308,6 +2308,278 @@ static void test_harden_codepath(void) {
 #endif
 }
 
+/* ---- test 41: DH ratchet basic roundtrip -------------------------------- */
+
+/* Helper: create a matched session pair for ratchet tests. */
+static void make_session_pair(session_t *alice, session_t *bob,
+                              uint8_t alice_priv[KEY], uint8_t bob_priv[KEY]) {
+    uint8_t alice_pub[KEY], bob_pub[KEY], sas_a[KEY], sas_b[KEY];
+    gen_keypair(alice_priv, alice_pub);
+    gen_keypair(bob_priv, bob_pub);
+    (void)session_init(alice, 1, alice_priv, alice_pub, bob_pub, sas_a);
+    (void)session_init(bob,   0, bob_priv,  bob_pub,  alice_pub, sas_b);
+}
+
+/* Helper: send a message from src to dst (frame_build + commit + frame_open). */
+static int send_msg(session_t *src, session_t *dst,
+                    const char *msg, char *out, uint16_t *out_len) {
+    uint16_t mlen = (uint16_t)strlen(msg);
+    uint8_t frame[FRAME_SZ], next[KEY];
+    if (frame_build(src, (const uint8_t *)msg, mlen, frame, next) != 0)
+        return -1;
+    memcpy(src->tx, next, KEY);
+    src->tx_seq++;
+    crypto_wipe(next, KEY);
+    uint8_t plain[MAX_MSG + 1];
+    if (frame_open(dst, frame, plain, out_len) != 0)
+        return -1;
+    plain[*out_len] = '\0';
+    if (out) memcpy(out, plain, *out_len + 1);
+    return 0;
+}
+
+static void test_dh_ratchet_basic_roundtrip(void) {
+    printf("\n=== DH ratchet basic roundtrip ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Alice sends (first message carries ratchet key via FLAG_RATCHET) */
+    char out[MAX_MSG + 1];
+    uint16_t out_len = 0;
+    TEST("alice->bob send succeeds",
+         send_msg(&alice, &bob, "hello bob", out, &out_len) == 0);
+    TEST("bob received correct message",
+         strcmp(out, "hello bob") == 0);
+
+    /* Bob receives, then sends back (his first send also ratchets) */
+    TEST("bob->alice send succeeds",
+         send_msg(&bob, &alice, "hello alice", out, &out_len) == 0);
+    TEST("alice received correct message",
+         strcmp(out, "hello alice") == 0);
+
+    /* Alice sends again (direction switch -> ratchet) */
+    TEST("alice->bob second send succeeds",
+         send_msg(&alice, &bob, "round two", out, &out_len) == 0);
+    TEST("bob received round two",
+         strcmp(out, "round two") == 0);
+
+    /* Bob replies again */
+    TEST("bob->alice second send succeeds",
+         send_msg(&bob, &alice, "acknowledged", out, &out_len) == 0);
+    TEST("alice received acknowledged",
+         strcmp(out, "acknowledged") == 0);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test 42: DH ratchet multiple cycles -------------------------------- */
+
+static void test_dh_ratchet_multiple_cycles(void) {
+    printf("\n=== DH ratchet multiple cycles ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    int all_ok = 1;
+    for (int i = 0; i < 10; i++) {
+        char msg_ab[64], msg_ba[64], out[MAX_MSG + 1];
+        uint16_t out_len = 0;
+
+        snprintf(msg_ab, sizeof msg_ab, "alice->bob cycle %d", i);
+        if (send_msg(&alice, &bob, msg_ab, out, &out_len) != 0 ||
+            strcmp(out, msg_ab) != 0) {
+            all_ok = 0; break;
+        }
+
+        snprintf(msg_ba, sizeof msg_ba, "bob->alice cycle %d", i);
+        if (send_msg(&bob, &alice, msg_ba, out, &out_len) != 0 ||
+            strcmp(out, msg_ba) != 0) {
+            all_ok = 0; break;
+        }
+    }
+    TEST("10 back-and-forth DH ratchet cycles all decrypt correctly", all_ok);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test 43: DH ratchet consecutive sends ------------------------------ */
+
+static void test_dh_ratchet_consecutive_sends(void) {
+    printf("\n=== DH ratchet consecutive sends ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Alice sends 3 messages in a row (only first carries ratchet) */
+    char out[MAX_MSG + 1];
+    uint16_t out_len = 0;
+
+    TEST("alice msg 1 (ratcheted)",
+         send_msg(&alice, &bob, "msg1", out, &out_len) == 0);
+    TEST("bob.need_send_ratchet == 1 after receiving",
+         bob.need_send_ratchet == 1);
+
+    TEST("alice msg 2 (no ratchet)",
+         send_msg(&alice, &bob, "msg2", out, &out_len) == 0);
+    TEST("alice msg 3 (no ratchet)",
+         send_msg(&alice, &bob, "msg3", out, &out_len) == 0);
+
+    /* Bob replies — his first send triggers ratchet */
+    uint8_t alice_peer_dh_before[KEY];
+    memcpy(alice_peer_dh_before, alice.peer_dh, KEY);
+
+    TEST("bob reply succeeds",
+         send_msg(&bob, &alice, "reply", out, &out_len) == 0);
+    TEST("bob.need_send_ratchet == 0 after send",
+         bob.need_send_ratchet == 0);
+    TEST("alice.peer_dh changed after receiving bob's ratchet",
+         crypto_verify32(alice.peer_dh, alice_peer_dh_before) != 0);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test 44: DH ratchet reserved flags --------------------------------- */
+
+static void test_dh_ratchet_reserved_flags(void) {
+    printf("\n=== DH ratchet reserved flags ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Build a valid frame and verify it opens */
+    const char *msg = "valid frame";
+    uint16_t mlen = (uint16_t)strlen(msg);
+    uint8_t frame[FRAME_SZ], next[KEY];
+    TEST("valid frame builds",
+         frame_build(&alice, (const uint8_t *)msg, mlen, frame, next) == 0);
+    memcpy(alice.tx, next, KEY);
+    alice.tx_seq++;
+
+    uint8_t plain[MAX_MSG + 1];
+    uint16_t plen = 0;
+    TEST("valid frame opens", frame_open(&bob, frame, plain, &plen) == 0);
+
+    /* Now craft a frame with reserved flag bit 0x02 set.
+     * Use chain_step + crypto_aead_lock directly to control the plaintext. */
+    uint8_t chain_copy[KEY];
+    memcpy(chain_copy, alice.tx, KEY);
+
+    uint8_t mk[KEY], next2[KEY], nonce[NONCE_SZ], pt[CT_SZ];
+    chain_step(chain_copy, mk, next2);
+
+    uint8_t ad[AD_SZ];
+    le64_store(ad, alice.tx_seq);
+    make_nonce(nonce, alice.tx_seq);
+
+    memset(pt, 0, sizeof pt);
+    pt[0] = 0x02;  /* reserved flag bit set */
+    pt[1] = (uint8_t)(mlen & 0xff);
+    pt[2] = (uint8_t)(mlen >> 8);
+    memcpy(pt + 3, msg, mlen);
+
+    uint8_t bad_frame[FRAME_SZ];
+    memcpy(bad_frame, ad, AD_SZ);
+    crypto_aead_lock(bad_frame + AD_SZ,
+                     bad_frame + AD_SZ + CT_SZ,
+                     mk, nonce, ad, AD_SZ, pt, CT_SZ);
+
+    TEST("frame with reserved flag 0x02 is rejected",
+         frame_open(&bob, bad_frame, plain, &plen) == -1);
+
+    crypto_wipe(mk, sizeof mk);
+    crypto_wipe(pt, sizeof pt);
+    crypto_wipe(nonce, sizeof nonce);
+    crypto_wipe(chain_copy, sizeof chain_copy);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test 45: DH ratchet post-compromise security ----------------------- */
+
+static void test_dh_ratchet_pcs(void) {
+    printf("\n=== DH ratchet PCS (post-compromise security) ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Alice sends, Bob receives */
+    char out[MAX_MSG + 1];
+    uint16_t out_len = 0;
+    TEST("alice->bob initial send",
+         send_msg(&alice, &bob, "setup", out, &out_len) == 0);
+
+    /* Attacker copies Bob's current rx chain */
+    uint8_t stolen_rx[KEY];
+    memcpy(stolen_rx, bob.rx, KEY);
+
+    /* Bob replies (triggers ratchet), Alice receives */
+    TEST("bob->alice reply",
+         send_msg(&bob, &alice, "reply", out, &out_len) == 0);
+
+    /* Alice sends again (triggers another ratchet — 2 ratchets total) */
+    TEST("alice->bob second send",
+         send_msg(&alice, &bob, "after ratchet", out, &out_len) == 0);
+
+    /* Verify stolen rx chain is now different from Bob's current rx */
+    TEST("stolen rx differs from bob's current rx (PCS)",
+         crypto_verify32(stolen_rx, bob.rx) != 0);
+
+    /* Bob can still open the latest frame */
+    TEST("bob received correct post-ratchet message",
+         strcmp(out, "after ratchet") == 0);
+
+    crypto_wipe(stolen_rx, sizeof stolen_rx);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test 46: DH ratchet session wipe ----------------------------------- */
+
+static void test_dh_ratchet_session_wipe(void) {
+    printf("\n=== DH ratchet session wipe ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Verify DH ratchet fields are non-zero after init */
+    TEST("root is non-zero",    !is_zero32(alice.root));
+    TEST("dh_priv is non-zero", !is_zero32(alice.dh_priv));
+    TEST("dh_pub is non-zero",  !is_zero32(alice.dh_pub));
+    TEST("peer_dh is non-zero", !is_zero32(alice.peer_dh));
+
+    /* Wipe and verify entire session is zeroed */
+    session_wipe(&alice);
+
+    uint8_t zero[sizeof(session_t)];
+    memset(zero, 0, sizeof zero);
+    TEST("session fully zeroed after wipe",
+         memcmp(&alice, zero, sizeof(session_t)) == 0);
+
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -2355,6 +2627,12 @@ int main(void) {
     test_partial_frame_rejection();
     test_signal_handler();
     test_harden_codepath();
+    test_dh_ratchet_basic_roundtrip();
+    test_dh_ratchet_multiple_cycles();
+    test_dh_ratchet_consecutive_sends();
+    test_dh_ratchet_reserved_flags();
+    test_dh_ratchet_pcs();
+    test_dh_ratchet_session_wipe();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);
