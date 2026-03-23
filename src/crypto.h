@@ -49,22 +49,53 @@ static constexpr int MAC_SZ        = 16;           /* Poly1305 MAC (Message
  * are wiped immediately.  This is forward secrecy -- a compromised chain
  * key today cannot decrypt past messages because those keys are gone.
  *
- * What this does NOT provide: post-compromise security (sometimes called
- * "backward secrecy" or "future secrecy").  If an attacker extracts the
- * current chain key from RAM mid-session, they can decrypt all future
- * messages in that session.  Full protection against this requires mixing
- * in fresh Diffie-Hellman entropy continuously (Signal's Double Ratchet).
- * For a tool with short ephemeral sessions this is an acceptable trade-off:
- * the session ends, the keys are wiped, and a new session starts fresh.
+ * POST-COMPROMISE SECURITY (DH ratchet, see ratchet.h)
+ *
+ * The symmetric ratchet alone cannot recover if an attacker extracts a
+ * chain key — the chain only goes forward deterministically.  The DH
+ * ratchet (ratchet.c) fixes this: on each conversation direction switch,
+ * fresh X25519 entropy is mixed into a root key, and new chain keys are
+ * derived.  After one ratchet step, stolen keys are useless.
+ *
+ * Together, the symmetric ratchet + DH ratchet form a "Double Ratchet"
+ * (the same model Signal uses): forward secrecy + post-compromise security.
  *
  * tx_seq / rx_seq are the expected sequence numbers.  Any frame with a
  * different sequence number is rejected as a replay or reorder.
  * ========================================================================= */
 typedef struct {
-    uint8_t  tx[KEY];    /* sending chain key              */
-    uint8_t  rx[KEY];    /* receiving chain key            */
-    uint64_t tx_seq;     /* next outgoing sequence number  */
-    uint64_t rx_seq;     /* next expected incoming seq num */
+    uint8_t  tx[KEY];           /* sending chain key              */
+    uint8_t  rx[KEY];           /* receiving chain key            */
+    uint64_t tx_seq;            /* next outgoing sequence number  */
+    uint64_t rx_seq;            /* next expected incoming seq num */
+
+    /* DH ratchet state — provides post-compromise security.
+     *
+     * The symmetric chain ratchet (chain_step in crypto.c) gives forward
+     * secrecy: past message keys are wiped and unrecoverable.  But if an
+     * attacker extracts the current chain key, they can derive all future
+     * message keys in that chain — the chain only goes forward.
+     *
+     * The DH ratchet fixes this.  When the conversation direction switches
+     * (Alice was receiving, now she sends), she generates a fresh X25519
+     * keypair, computes a new shared secret with the peer's latest public
+     * key, and mixes that into the root key to derive a new chain.  The
+     * attacker's old chain key is now useless — the new chain depends on
+     * a DH secret they don't have.
+     *
+     * root         — root key, used only to derive new chain keys.  Never
+     *                used directly for encryption.
+     * dh_priv/pub  — our current ratchet keypair (rotated on each send
+     *                ratchet step).
+     * peer_dh      — the peer's latest ratchet public key (updated when
+     *                we receive a frame with FLAG_RATCHET set).
+     * need_send_ratchet — set to 1 after receiving a message; when we
+     *                next send, this triggers a DH ratchet step. */
+    uint8_t  root[KEY];
+    uint8_t  dh_priv[KEY];
+    uint8_t  dh_pub[KEY];
+    uint8_t  peer_dh[KEY];
+    int      need_send_ratchet;
 } session_t;
 
 /* ---- crypto function declarations --------------------------------------- */

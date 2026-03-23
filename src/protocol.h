@@ -8,7 +8,12 @@
  *   [ seq : 8 ][ ciphertext : 488 ][ mac : 16 ]
  *   seq is authenticated additional data (not encrypted, but tamper-proof).
  *
- * Plaintext slot: [ len(2) | message(<=486) | zero padding ]
+ * Plaintext slot (v2):
+ *   Normal:  [ flags(1) | len(2) | message(≤485) | zero padding ]
+ *   Ratchet: [ flags(1) | ratchet_pub(32) | len(2) | message(≤453) | zero padding ]
+ *
+ * flags bit 0 (FLAG_RATCHET): a 32-byte X25519 ratchet public key follows.
+ * Reserved bits 1-7 must be zero; frames with reserved bits set are rejected.
  *
  * Session key derivation (see session_init in protocol.c):
  *   ikm      = dh_shared_secret || initiator_pub || responder_pub
@@ -30,23 +35,20 @@
 
 /* ---- frame constants ---------------------------------------------------- */
 
-static constexpr int FRAME_SZ             = 512;   /* every frame is exactly this  */
-static constexpr int AD_SZ                = 8;     /* additional data = seq number */
-static constexpr int CT_SZ                = FRAME_SZ - AD_SZ - MAC_SZ; /* ciphertext slot = 488 bytes */
-static constexpr int MAX_MSG              = CT_SZ - 2;    /* 2 bytes reserved for length */
-static constexpr int PROTOCOL_VERSION     = 1;     /* increment if frame layout or KDF labels change;
-                                                     * both sides exchange this first so a version skew
-                                                     * gives a clear "version mismatch" error          */
-static constexpr int HANDSHAKE_TIMEOUT_S  = 30;    /* abort if peer stalls during the handshake       */
-static constexpr int FRAME_TIMEOUT_S      = 30;    /* abort if a started frame does not complete in
-                                                    * this many seconds (POSIX: SO_RCVTIMEO;
-                                                    * Windows: GetTickCount64 timer in FD_READ)        */
-
-/* Frame layout: [ seq(8) | ciphertext(488) | mac(16) ] = 512 bytes     */
-/* Plaintext slot: [ len(2) | message(<=486) | zero padding ]           */
+static constexpr int FRAME_SZ             = 512;
+static constexpr int AD_SZ                = 8;
+static constexpr int CT_SZ                = FRAME_SZ - AD_SZ - MAC_SZ;
+static constexpr int HEADER_SZ            = 1;     /* flags byte in plaintext slot  */
+static constexpr int MAX_MSG              = CT_SZ - 2 - HEADER_SZ;  /* 485 bytes    */
+static constexpr int MAX_MSG_RATCHET      = MAX_MSG - KEY;           /* 453 bytes    */
+static constexpr uint8_t FLAG_RATCHET     = 0x01;  /* bit 0: ratchet key follows    */
+static constexpr int PROTOCOL_VERSION     = 2;
+static constexpr int HANDSHAKE_TIMEOUT_S  = 30;
+static constexpr int FRAME_TIMEOUT_S      = 30;
 
 static_assert(FRAME_SZ == AD_SZ + CT_SZ + MAC_SZ);
-static_assert(MAX_MSG == CT_SZ - 2);
+static_assert(MAX_MSG == 485);
+static_assert(MAX_MSG_RATCHET == 453);
 static_assert(KEY == 32);
 static_assert(NONCE_SZ == 24);
 static_assert(MAC_SZ == 16);
