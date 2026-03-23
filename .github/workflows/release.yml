@@ -135,14 +135,20 @@ jobs:
         working-directory: android
         run: ./gradlew assembleRelease
 
+      - name: Find APK
+        id: apk
+        run: |
+          APK=$(ls android/app/build/outputs/apk/release/app-release*.apk 2>/dev/null | head -1)
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+
       - name: Validate APK
-        run: bash tests/test_android.sh android/app/build/outputs/apk/release/app-release.apk
+        run: bash tests/test_android.sh ${{ steps.apk.outputs.path }}
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: simplecipher-android
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: ${{ steps.apk.outputs.path }}
 
   test-linux:
     needs: build
@@ -283,7 +289,7 @@ jobs:
           cp linux-aarch64/simplecipher release/simplecipher-linux-aarch64
           cp win-x86_64/simplecipher.exe release/simplecipher-win-x86_64.exe
           cp win-aarch64/simplecipher.exe release/simplecipher-win-aarch64.exe
-          cp android/app-release.apk release/simplecipher-android.apk
+          cp android/app-release*.apk release/simplecipher-android.apk
           cd release
           sha256sum * > SHA256SUMS.txt
 
