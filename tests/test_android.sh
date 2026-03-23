@@ -293,9 +293,7 @@ check "CMake strips symbols" \
 check "CMake enables CFI" \
     "grep -q 'fsanitize=cfi' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
 
-# CMake: stack clash protection
-check "CMake enables stack clash protection" \
-    "grep -q 'fstack-clash-protection' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
+# Note: -fstack-clash-protection removed — NDK clang does not support it
 
 # CMake: hidden visibility
 check "CMake uses hidden symbol visibility" \
@@ -335,9 +333,7 @@ check "JNI disables core dumps (RLIMIT_CORE)" \
 check "Manifest disables native lib extraction" \
     "grep -q 'extractNativeLibs.*false' '$REPO_ROOT/android/app/src/main/AndroidManifest.xml'"
 
-# Manifest: hasFragileUserData=false (prevent OS from offering to keep data on uninstall)
-check "Manifest has hasFragileUserData=false" \
-    "grep -q 'hasFragileUserData.*false' '$REPO_ROOT/android/app/src/main/AndroidManifest.xml'"
+# Note: hasFragileUserData=false was removed — requires API 29+ but minSdk is 28
 
 # Manifest: network security config
 check "Network security config exists" \

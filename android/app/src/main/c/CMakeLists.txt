@@ -34,19 +34,16 @@ target_compile_options(simplecipher PRIVATE
     -Os -ffunction-sections -fdata-sections -fmerge-all-constants -DNDEBUG
     -D_FORTIFY_SOURCE=2
     -fstack-protector-strong
-    -fstack-clash-protection
     -ftrivial-auto-var-init=zero
     -fno-delete-null-pointer-checks
     -fno-strict-overflow
     -fno-strict-aliasing
-    -fstrict-flex-arrays=3
     # Hide all symbols by default; only JNI exports are visible
     -fvisibility=hidden
     # Control Flow Integrity — prevents ROP/JOP attacks (requires LTO)
     -fsanitize=cfi
     -flto
     -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough
-    -Wbidi-chars=any
     -Werror=implicit -Werror=return-type -Werror=unused-result
     -Werror=format-security -Werror=incompatible-pointer-types -Werror=int-conversion
 )
