@@ -51,12 +51,17 @@ simplecipher connect 192.168.1.42
 
 ### Other ways to connect
 
-| Method | When to use |
-|--------|-------------|
-| **Tailscale** (recommended) | Different networks, easiest setup |
-| **WireGuard** | Manual VPN tunnel between devices |
-| **Port forwarding** | Forward port 7777 on your router, share your public IP |
-| **Tor** | `torsocks simplecipher connect <onion-address>` for anonymity + NAT traversal |
+SimpleCipher encrypts your messages, but your IP address is still visible to the network. The transport you choose determines who can see that you're connecting:
+
+| Method | When to use | Who sees your IP |
+|--------|-------------|------------------|
+| **LAN / Wi-Fi** | Same network | Nobody outside the network |
+| **Tailscale** (easiest) | Different networks, quick setup | Tailscale's coordination server sees both endpoints |
+| **WireGuard** | Manual VPN tunnel between devices | Your VPN peer only |
+| **Port forwarding** | Forward port 7777 on your router | Anyone who knows the IP can attempt a connection |
+| **Tor** | Anonymity matters | Neither side learns the other's IP; network observers see Tor traffic but not the destination |
+
+**If you need anonymity** — not just encryption — use Tor. Install Tor, then: `torsocks simplecipher listen` and `torsocks simplecipher connect <onion-address>`. This also solves NAT traversal (no port forwarding needed).
 
 ### Options
 
@@ -114,9 +119,13 @@ Verify:   H(revealed_key) == commitment             (both sides)
 
 A short authentication string (SAS) is derived from the shared secret and displayed as `XXXX-XXXX`. Both people compare this code out-of-band (phone call, in person). A 32-bit code space is sufficient because the commitment scheme prevents brute-force search.
 
-### 4. Encrypted messaging with forward secrecy
+### 4. Encrypted messaging with forward secrecy and post-compromise security
 
-Messages are encrypted with XChaCha20-Poly1305 using a chain-key ratchet:
+Messages are encrypted with XChaCha20-Poly1305 using a two-layer ratchet:
+
+**Layer 1 — Symmetric chain ratchet (forward secrecy):**
+
+Each message derives a fresh encryption key from the current chain key, then the chain steps forward and the old key is wiped. Compromising one key reveals nothing about past messages.
 
 ```
 chain[0]  -->  message_key[0]  (encrypt message 0, then wipe)
@@ -126,7 +135,17 @@ chain[1]  -->  message_key[1]  (encrypt message 1, then wipe)
 chain[2]  -->  ...
 ```
 
-Each message derives a fresh encryption key from the current chain key, then the chain steps forward and the old key is wiped. Compromising one key reveals nothing about past or future messages.
+**Layer 2 — DH ratchet (post-compromise security):**
+
+When the conversation direction switches (Alice was listening, now she replies), the sender generates a fresh X25519 keypair and mixes the new shared secret into a root key. This derives a completely new chain that an attacker cannot predict, even if they stole the old chain key.
+
+```
+Alice sends  ──►  DH ratchet  ──►  new tx chain  ──►  symmetric ratchet
+Bob replies  ──►  DH ratchet  ──►  new tx chain  ──►  symmetric ratchet
+Alice sends  ──►  DH ratchet  ──►  new tx chain  ──►  symmetric ratchet
+```
+
+Together, this is the same "Double Ratchet" architecture that Signal uses: forward secrecy (past messages stay safe) plus post-compromise security (future messages recover after key theft).
 
 ### 5. Fixed-size framing
 
@@ -149,20 +168,59 @@ This hides message length from network observers. The sequence number is authent
 | **Integrity** | Poly1305 MAC detects any tampering; sequence numbers reject replays |
 | **Message-length hiding** | Fixed 512-byte frames prevent length-based analysis |
 | **Terminal safety** | Peer messages are sanitized (non-printable bytes replaced with `.`) |
+| **Post-compromise security** | DH ratchet mixes fresh X25519 entropy on each direction switch |
 | **Ephemeral keys** | New keypair every session; nothing stored to disk |
 
 ### What it does NOT provide
 
-- **Post-compromise security**: if an attacker extracts the chain key from RAM mid-session, they can decrypt the rest of that session. Full protection requires continuous DH ratcheting (Signal's Double Ratchet). For short ephemeral sessions this is an acceptable trade-off.
+- **Post-compromise security is per-session**: the DH ratchet recovers from key theft within a session, but there is no cross-session recovery. Each session starts fresh — if an attacker is present at session start, the entire session is compromised. This is inherent to the ephemeral design.
 - **Anonymity**: IP addresses are visible on the network. For anonymity, run over Tor: `torsocks simplecipher connect ...`
-- **Identity persistence**: there are no long-term keys or contacts. Each session is independent.
+- **Identity persistence**: there are no long-term keys or contacts. Each session is independent. This is deliberate — a stored identity key is a forensic artifact (proof you use the tool, and a target for impersonation if seized). The SAS verification on every connect *is* the identity model: human-verified, not key-pinned, and it leaves nothing on disk. If you need persistent contacts with key pinning, use Signal.
 - **Android memory hygiene**: the desktop builds use `crypto_wipe()` on every buffer to ensure plaintext and keys do not linger in RAM. The Android build runs on the JVM, where Strings are immutable and garbage-collected — sensitive data cannot be reliably zeroed. The app clears widgets and blocks screenshots (`FLAG_SECURE`), but this is best-effort. For the strongest memory guarantees, use the desktop CLI or TUI.
 
 ### Security notes
 
 - **Keys are ephemeral.** If your device is seized after a session, past messages cannot be decrypted because the private key is already gone.
 - **The handshake has a 30-second timeout.** A peer who stalls during key exchange is disconnected automatically.
-- **Optional hardening** (Linux): compile with `-DCIPHER_HARDEN` to enable `mlockall` (prevent key pages from swapping to disk), disable core dumps, and block ptrace.
+- **Runtime hardening** is enabled in all release builds (`-DCIPHER_HARDEN`). See the table below.
+
+### Platform hardening
+
+Every release binary includes compile-time and runtime hardening. Nothing is optional or requires special flags — this is what ships.
+
+| Technique | Linux | Windows | Android |
+|-----------|:-----:|:-------:|:-------:|
+| **Compiler** | | | |
+| Stack canaries (`-fstack-protector-strong`) | yes | yes | yes |
+| Stack clash protection | yes | — | yes |
+| Zero-init all locals (`-ftrivial-auto-var-init=zero`) | yes | yes | yes |
+| Buffer overflow detection (`_FORTIFY_SOURCE`) | 3 | — | 2 |
+| Control-flow integrity | CET (x86), BTI (arm64) | CET (x86), BTI (arm64) | CFI + BTI (arm64) |
+| Hidden symbol visibility | yes | yes | yes + JNI export whitelist |
+| LTO (whole-program optimization) | yes | yes | yes |
+| **Linker** | | | |
+| Full RELRO (read-only GOT) | yes | — | yes |
+| Non-executable stack | yes | — | yes |
+| ASLR | OS default | high-entropy | OS default |
+| DEP (W^X) | OS default | yes | OS default |
+| Fully static binary | yes (musl) | yes | N/A (shared JNI lib) |
+| Stripped symbols | yes | yes | yes |
+| **Runtime** (`-DCIPHER_HARDEN`) | | | |
+| Lock memory (prevent swap) | `mlockall` | — | — |
+| Disable core dumps | `RLIMIT_CORE=0` | `SetErrorMode` (WER off) | — |
+| Block ptrace / memory inspection | `PR_SET_DUMPABLE=0` | — | — |
+| **Key management** | | | |
+| Wipe all keys after use (`crypto_wipe`) | yes | yes | yes (native layer) |
+| Ephemeral keys only (nothing on disk) | yes | yes | yes |
+| **Android-specific** | | | |
+| Block screenshots / screen recording | — | — | `FLAG_SECURE` |
+| Block overlay windows (tapjacking) | — | — | `setHideOverlayWindows` |
+| Custom in-app keyboard (no IME logging) | — | — | yes |
+| Wipe UI widgets on background | — | — | yes |
+| Kill session on app switch / lock | — | — | yes |
+| Exclude from recent apps | — | — | yes |
+| Disable backup / data extraction | — | — | yes |
+| Strip all log calls in release | — | — | ProGuard/R8 |
 
 ## Cryptographic library
 
@@ -178,7 +236,7 @@ No OpenSSL, no libsodium, no dynamic linking. The entire cryptographic stack is 
 ## FAQ
 
 **Why not just use Signal / WhatsApp / Telegram?**
-Those require accounts, phone numbers, and a central server that knows who talks to whom. SimpleCipher has no server and no accounts. IP addresses are visible on the network (use Tailscale or Tor to mitigate), but there is no central record of who talked to whom. When the session ends, the keys are gone.
+Those require accounts, phone numbers, and a central server that knows who talks to whom. SimpleCipher has no server, no accounts, and no keys stored to disk. There is no central record of who talked to whom, and no local forensic trace that a conversation ever happened. When the session ends, the keys are gone. Use Signal when you need persistent contacts and key continuity. Use SimpleCipher when leaving no trace matters more.
 
 **Why not just use Tailscale / WireGuard and any chat app?**
 Tailscale solves connectivity (NAT traversal), not trust. SimpleCipher adds: ephemeral keys (nothing stored to disk), SAS verification (cryptographic proof of who you're talking to), and forward secrecy (keys wiped after each message). Even if the VPN layer were compromised, SimpleCipher's end-to-end encryption holds. They're complementary — use Tailscale for connectivity, SimpleCipher for trust.
