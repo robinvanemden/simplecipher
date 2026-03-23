@@ -95,7 +95,41 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 4. Force-stop and cold re-launch
+# 4. Navigate to ChatActivity via Connect mode
+#    (Switch radio to Connect, enter localhost, tap Go)
+# ------------------------------------------------------------------
+echo ""
+echo "=== Navigating to ChatActivity (connect mode) ==="
+adb shell am force-stop "$PKG"
+sleep 1
+adb logcat -c
+adb shell am start -n "$PKG/$MAIN" -W
+sleep 3
+
+# Switch to Connect mode
+if tap_by_id "${PKG}:id/radioConnect"; then
+    sleep 1
+    # Enter a dummy host (will fail to connect, but should not crash)
+    adb shell input text "127.0.0.1"
+    sleep 1
+    # Tap Go
+    if tap_by_id "${PKG}:id/goButton"; then
+        sleep 5
+        check_no_crash "ChatActivity (connect via UI): no crash"
+        # Go back
+        adb logcat -c
+        adb shell input keyevent KEYCODE_BACK
+        sleep 2
+        check_no_crash "Back from connect: no crash"
+    else
+        fail "Could not find Go button for connect mode"
+    fi
+else
+    fail "Could not find Connect radio button"
+fi
+
+# ------------------------------------------------------------------
+# 5. Force-stop and cold re-launch
 # ------------------------------------------------------------------
 echo ""
 echo "=== Cold start test ==="
