@@ -10,7 +10,7 @@ jobs:
   test-p2p:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Build and run P2P integration tests
         run: |
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install tmux
         run: sudo apt-get install -y --no-install-recommends tmux
@@ -51,7 +51,7 @@ jobs:
   fuzz:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install clang-19 (C23 constexpr + sanitizer runtimes)
         run: sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install clang-19
         run: sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev
@@ -121,7 +121,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install clang-tidy-19
         run: sudo apt-get install -y --no-install-recommends clang-19 clang-tidy-19
@@ -142,10 +142,10 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Cache toolchains
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             /opt/x-tools
@@ -199,31 +199,31 @@ jobs:
           cmake --build --preset win-aarch64
 
       - name: Upload Linux x86_64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-linux-x86_64
           path: build/linux_x86_64/simplecipher
 
       - name: Upload Linux aarch64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-linux-aarch64
           path: build/linux_aarch64/simplecipher
 
       - name: Upload Windows x86_64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-win-x86_64
           path: build/win_x86_64/simplecipher.exe
 
       - name: Upload Windows aarch64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-win-aarch64
           path: build/win_aarch64/simplecipher.exe
 
       - name: Upload test scripts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-assets
           path: tests/
@@ -232,16 +232,16 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
 
       - name: Install NDK r28
         run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
@@ -262,7 +262,7 @@ jobs:
         run: bash tests/test_android.sh android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload Android APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-android
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -272,7 +272,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Enable KVM
         run: |
@@ -282,13 +282,13 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
 
       - name: Install NDK r28
         run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
@@ -306,7 +306,7 @@ jobs:
         run: ./gradlew assembleDebug -PextraAbi=x86_64
 
       - name: Emulator smoke test
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@70f4dee990796918b78d040e3278474bdbd348a7 # v2
         with:
           api-level: 28
           arch: x86_64
@@ -322,12 +322,12 @@ jobs:
 
     steps:
       - name: Download Linux binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-linux-x86_64
 
       - name: Download test assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: test-assets
           path: tests
@@ -346,12 +346,12 @@ jobs:
 
     steps:
       - name: Download Linux aarch64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-linux-aarch64
 
       - name: Download test assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: test-assets
           path: tests
@@ -370,12 +370,12 @@ jobs:
 
     steps:
       - name: Download Windows binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-win-x86_64
 
       - name: Download test assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: test-assets
           path: tests
@@ -391,12 +391,12 @@ jobs:
 
     steps:
       - name: Download Windows aarch64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-win-aarch64
 
       - name: Download test assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: test-assets
           path: tests

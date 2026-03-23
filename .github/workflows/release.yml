@@ -8,7 +8,7 @@ jobs:
   test-p2p:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Build and run P2P integration tests
         run: |
@@ -22,10 +22,10 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Cache toolchains
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             /opt/x-tools
@@ -76,31 +76,31 @@ jobs:
           cmake --build --preset win-aarch64
 
       - name: Upload Linux x86_64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-linux-x86_64
           path: build/linux_x86_64/simplecipher
 
       - name: Upload Linux aarch64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-linux-aarch64
           path: build/linux_aarch64/simplecipher
 
       - name: Upload Windows x86_64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-win-x86_64
           path: build/win_x86_64/simplecipher.exe
 
       - name: Upload Windows aarch64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-win-aarch64
           path: build/win_aarch64/simplecipher.exe
 
       - name: Upload test scripts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-assets
           path: tests/
@@ -109,16 +109,16 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
 
       - name: Install NDK r28
         run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
@@ -139,13 +139,26 @@ jobs:
         id: apk
         run: |
           APK=$(ls android/app/build/outputs/apk/release/app-release*.apk 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then echo "::error::No release APK found"; exit 1; fi
           echo "path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Verify APK is signed (fail-closed for releases)
+        run: |
+          # Tagged releases MUST produce a signed APK.  An unsigned APK means
+          # signing secrets are missing — fail the release rather than publish
+          # an unverifiable artifact.
+          if ! java -jar "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | tail -1)/lib/apksigner.jar" verify \
+               --print-certs "${{ steps.apk.outputs.path }}" 2>/dev/null; then
+            echo "::error::APK is not signed — release signing secrets may be missing"
+            exit 1
+          fi
+          echo "APK signature verified"
 
       - name: Validate APK
         run: bash tests/test_android.sh ${{ steps.apk.outputs.path }}
 
       - name: Upload Android APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-android
           path: ${{ steps.apk.outputs.path }}
@@ -159,12 +172,12 @@ jobs:
 
     steps:
       - name: Download Linux binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-linux-x86_64
 
       - name: Download test assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: test-assets
           path: tests
@@ -183,12 +196,12 @@ jobs:
 
     steps:
       - name: Download Linux aarch64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-linux-aarch64
 
       - name: Download test assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: test-assets
           path: tests
@@ -207,12 +220,12 @@ jobs:
 
     steps:
       - name: Download Windows binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-win-x86_64
 
       - name: Download test assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: test-assets
           path: tests
@@ -228,12 +241,12 @@ jobs:
 
     steps:
       - name: Download Windows aarch64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-win-aarch64
 
       - name: Download test assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: test-assets
           path: tests
@@ -253,31 +266,31 @@ jobs:
 
     steps:
       - name: Download Linux x86_64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-linux-x86_64
           path: linux-x86_64
 
       - name: Download Linux aarch64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-linux-aarch64
           path: linux-aarch64
 
       - name: Download Windows x86_64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-win-x86_64
           path: win-x86_64
 
       - name: Download Windows aarch64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-win-aarch64
           path: win-aarch64
 
       - name: Download Android APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-android
           path: android
@@ -294,7 +307,7 @@ jobs:
           sha256sum * > SHA256SUMS.txt
 
       - name: Attest build provenance (Sigstore)
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
         with:
           subject-path: |
             release/simplecipher-linux-x86_64
