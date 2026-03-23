@@ -3330,6 +3330,224 @@ static void test_dh_ratchet_bootstrap_chain_symmetry(void) {
     crypto_wipe(sas_b, KEY);
 }
 
+/* ---- test: KDF known-answer vectors ------------------------------------- */
+
+static void test_kdf_known_answer_vectors(void) {
+    printf("\n=== KDF known-answer vectors ===\n");
+
+    uint8_t out1[KEY], out2[KEY];
+
+    /* --- determinism: same inputs produce same output --- */
+    uint8_t msgAA[32];
+    memset(msgAA, 0xAA, 32);
+    domain_hash(out1, "cipher commit v1", msgAA, 32);
+    domain_hash(out2, "cipher commit v1", msgAA, 32);
+    TEST("domain_hash deterministic (same inputs)",
+         crypto_verify32(out1, out2) == 0);
+
+    /* --- domain separation: different labels, same data --- */
+    domain_hash(out2, "cipher ratchet v2", msgAA, 32);
+    TEST("domain_hash domain separation (different labels)",
+         crypto_verify32(out1, out2) != 0);
+
+    /* --- expand domain separation: same PRK, different labels --- */
+    uint8_t prk[KEY];
+    memset(prk, 0x42, KEY);
+
+    uint8_t exp_sas[KEY], exp_root[KEY], exp_chain[KEY];
+    expand(exp_sas,   prk, "sas");
+    expand(exp_root,  prk, "root");
+    expand(exp_chain, prk, "chain");
+
+    TEST("expand: sas != root",   crypto_verify32(exp_sas, exp_root) != 0);
+    TEST("expand: sas != chain",  crypto_verify32(exp_sas, exp_chain) != 0);
+    TEST("expand: root != chain", crypto_verify32(exp_root, exp_chain) != 0);
+
+    /* --- chain_step: mk != next, both != input --- */
+    uint8_t chain_in[KEY], mk[KEY], next[KEY];
+    memset(chain_in, 0x42, KEY);
+    chain_step(chain_in, mk, next);
+    TEST("chain_step: mk != next",      crypto_verify32(mk, next) != 0);
+    TEST("chain_step: mk != input",     crypto_verify32(mk, chain_in) != 0);
+    TEST("chain_step: next != input",   crypto_verify32(next, chain_in) != 0);
+
+    /* --- true KAT: domain_hash with all-zero input --- */
+    uint8_t zero32[32] = {0};
+    domain_hash(out1, "cipher commit v1", zero32, 32);
+    TEST("KAT domain_hash(\"cipher commit v1\", zeros) byte 0",
+         out1[0] == 0x6a);
+    TEST("KAT domain_hash(\"cipher commit v1\", zeros) byte 1",
+         out1[1] == 0x48);
+    TEST("KAT domain_hash(\"cipher commit v1\", zeros) byte 2",
+         out1[2] == 0xb5);
+    TEST("KAT domain_hash(\"cipher commit v1\", zeros) byte 3",
+         out1[3] == 0x87);
+
+    /* --- KAT: domain_hash with 0xAA input --- */
+    domain_hash(out1, "cipher commit v1", msgAA, 32);
+    TEST("KAT domain_hash(\"cipher commit v1\", 0xAA*32) byte 0",
+         out1[0] == 0x24);
+    TEST("KAT domain_hash(\"cipher commit v1\", 0xAA*32) byte 1",
+         out1[1] == 0xe6);
+    TEST("KAT domain_hash(\"cipher commit v1\", 0xAA*32) byte 2",
+         out1[2] == 0xe2);
+    TEST("KAT domain_hash(\"cipher commit v1\", 0xAA*32) byte 3",
+         out1[3] == 0xb7);
+
+    /* --- KAT: expand("sas") with 0x42 PRK --- */
+    TEST("KAT expand(0x42*32, \"sas\") byte 0", exp_sas[0] == 0x22);
+    TEST("KAT expand(0x42*32, \"sas\") byte 1", exp_sas[1] == 0x5d);
+    TEST("KAT expand(0x42*32, \"sas\") byte 2", exp_sas[2] == 0xa9);
+    TEST("KAT expand(0x42*32, \"sas\") byte 3", exp_sas[3] == 0xb2);
+
+    /* --- KAT: expand("root") with 0x42 PRK --- */
+    TEST("KAT expand(0x42*32, \"root\") byte 0", exp_root[0] == 0xc4);
+    TEST("KAT expand(0x42*32, \"root\") byte 1", exp_root[1] == 0x74);
+    TEST("KAT expand(0x42*32, \"root\") byte 2", exp_root[2] == 0xee);
+    TEST("KAT expand(0x42*32, \"root\") byte 3", exp_root[3] == 0x79);
+
+    /* --- KAT: domain_hash("cipher ratchet v2", 0xAA*64) --- */
+    uint8_t msg64[64];
+    memset(msg64, 0xAA, 64);
+    domain_hash(out1, "cipher ratchet v2", msg64, 64);
+    TEST("KAT domain_hash(\"cipher ratchet v2\", 0xAA*64) byte 0",
+         out1[0] == 0x46);
+    TEST("KAT domain_hash(\"cipher ratchet v2\", 0xAA*64) byte 1",
+         out1[1] == 0xcc);
+    TEST("KAT domain_hash(\"cipher ratchet v2\", 0xAA*64) byte 2",
+         out1[2] == 0xe2);
+    TEST("KAT domain_hash(\"cipher ratchet v2\", 0xAA*64) byte 3",
+         out1[3] == 0x3e);
+
+    crypto_wipe(out1, KEY);
+    crypto_wipe(out2, KEY);
+    crypto_wipe(prk, KEY);
+    crypto_wipe(exp_sas, KEY);
+    crypto_wipe(exp_root, KEY);
+    crypto_wipe(exp_chain, KEY);
+    crypto_wipe(chain_in, KEY);
+    crypto_wipe(mk, KEY);
+    crypto_wipe(next, KEY);
+}
+
+/* ---- test: chain_step aliasing safety ----------------------------------- */
+
+static void test_chain_step_aliasing_safety(void) {
+    printf("\n=== Chain step aliasing safety ===\n");
+
+    uint8_t chain[KEY];
+    memset(chain, 0x55, KEY);
+
+    uint8_t original[KEY];
+    memcpy(original, chain, KEY);
+
+    uint8_t mk[KEY], next[KEY];
+    uint8_t mk_0[KEY], mk_50[KEY], mk_99[KEY];
+
+    for (int i = 0; i < 100; i++) {
+        chain_step(chain, mk, next);
+
+        /* mk and next must always differ */
+        TEST("chain_step iteration: mk != next",
+             crypto_verify32(mk, next) != 0);
+
+        /* Save samples at specific indices */
+        if (i == 0)  memcpy(mk_0,  mk, KEY);
+        if (i == 50) memcpy(mk_50, mk, KEY);
+        if (i == 99) memcpy(mk_99, mk, KEY);
+
+        /* Feed next back as chain input */
+        memcpy(chain, next, KEY);
+    }
+
+    /* Chain after 100 steps differs from original */
+    TEST("chain after 100 steps differs from original",
+         crypto_verify32(chain, original) != 0);
+
+    /* All sampled mk values differ from each other */
+    TEST("mk[0] != mk[50]",  crypto_verify32(mk_0, mk_50) != 0);
+    TEST("mk[0] != mk[99]",  crypto_verify32(mk_0, mk_99) != 0);
+    TEST("mk[50] != mk[99]", crypto_verify32(mk_50, mk_99) != 0);
+
+    crypto_wipe(chain, KEY);
+    crypto_wipe(original, KEY);
+    crypto_wipe(mk, KEY);
+    crypto_wipe(next, KEY);
+    crypto_wipe(mk_0, KEY);
+    crypto_wipe(mk_50, KEY);
+    crypto_wipe(mk_99, KEY);
+}
+
+/* ---- test: deterministic session vector --------------------------------- */
+
+static void test_deterministic_session_vector(void) {
+    printf("\n=== Deterministic session vector ===\n");
+
+    /* Fixed private keys */
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    memset(alice_priv, 0x01, KEY);
+    memset(bob_priv,   0x02, KEY);
+
+    /* Derive public keys */
+    uint8_t alice_pub[KEY], bob_pub[KEY];
+    crypto_x25519_public_key(alice_pub, alice_priv);
+    crypto_x25519_public_key(bob_pub,   bob_priv);
+
+    /* First run */
+    session_t sa1, sb1;
+    uint8_t sas_a1[KEY], sas_b1[KEY];
+    TEST("session_init alice (run 1) succeeds",
+         session_init(&sa1, 1, alice_priv, alice_pub, bob_pub, sas_a1) == 0);
+    TEST("session_init bob (run 1) succeeds",
+         session_init(&sb1, 0, bob_priv, bob_pub, alice_pub, sas_b1) == 0);
+
+    /* SAS keys match */
+    TEST("SAS keys match (run 1)",
+         crypto_verify32(sas_a1, sas_b1) == 0);
+
+    /* Bootstrap chain symmetry */
+    TEST("alice.rx == bob.tx (run 1)",
+         crypto_verify32(sa1.rx, sb1.tx) == 0);
+    TEST("alice.tx == bob.rx (run 1)",
+         crypto_verify32(sa1.tx, sb1.rx) == 0);
+
+    /* Second run: verify determinism */
+    session_t sa2, sb2;
+    uint8_t sas_a2[KEY], sas_b2[KEY];
+    TEST("session_init alice (run 2) succeeds",
+         session_init(&sa2, 1, alice_priv, alice_pub, bob_pub, sas_a2) == 0);
+    TEST("session_init bob (run 2) succeeds",
+         session_init(&sb2, 0, bob_priv, bob_pub, alice_pub, sas_b2) == 0);
+
+    TEST("SAS deterministic across runs",
+         crypto_verify32(sas_a1, sas_a2) == 0);
+    TEST("alice.tx deterministic across runs",
+         crypto_verify32(sa1.tx, sa2.tx) == 0);
+    TEST("alice.rx deterministic across runs",
+         crypto_verify32(sa1.rx, sa2.rx) == 0);
+    TEST("alice.root deterministic across runs",
+         crypto_verify32(sa1.root, sa2.root) == 0);
+
+    /* True KAT: verify the exact SAS string */
+    char sas_str[20];
+    format_sas(sas_str, sas_a1);
+    TEST("KAT SAS string is \"9052-EF29\"",
+         strcmp(sas_str, "9052-EF29") == 0);
+
+    session_wipe(&sa1);
+    session_wipe(&sb1);
+    session_wipe(&sa2);
+    session_wipe(&sb2);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(alice_pub, KEY);
+    crypto_wipe(bob_priv, KEY);
+    crypto_wipe(bob_pub, KEY);
+    crypto_wipe(sas_a1, KEY);
+    crypto_wipe(sas_b1, KEY);
+    crypto_wipe(sas_a2, KEY);
+    crypto_wipe(sas_b2, KEY);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -3394,6 +3612,9 @@ int main(void) {
     test_dh_ratchet_long_stress();
     test_dh_ratchet_deep_pcs();
     test_dh_ratchet_bootstrap_chain_symmetry();
+    test_kdf_known_answer_vectors();
+    test_chain_step_aliasing_safety();
+    test_deterministic_session_vector();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);
