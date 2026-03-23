@@ -135,6 +135,16 @@ int main(void) {
     return 0;
 }
 """,
+    "format_fingerprint": """
+extern uint8_t nondet_uint8(void);
+int main(void) {
+    uint8_t pub[32];
+    for (int i = 0; i < 32; i++) pub[i] = nondet_uint8();
+    char out[20];
+    format_fingerprint(out, pub);
+    return 0;
+}
+""",
     "session_init": """
 extern uint8_t nondet_uint8(void);
 extern int nondet_int(void);
