@@ -3548,6 +3548,88 @@ static void test_deterministic_session_vector(void) {
     crypto_wipe(sas_b2, KEY);
 }
 
+/* ---- test: format_fingerprint ------------------------------------------- */
+
+static void test_format_fingerprint(void) {
+    printf("\n=== format_fingerprint ===\n");
+
+    /* Deterministic: same key always produces same fingerprint */
+    uint8_t pub[KEY];
+    fill_random(pub, KEY);
+    char fp1[20], fp2[20];
+    format_fingerprint(fp1, pub);
+    format_fingerprint(fp2, pub);
+    TEST("fingerprint is deterministic", strcmp(fp1, fp2) == 0);
+
+    /* Format: XXXX-XXXX-XXXX-XXXX (19 chars + null) */
+    TEST("fingerprint length is 19", strlen(fp1) == 19);
+    TEST("dash at position 4", fp1[4] == '-');
+    TEST("dash at position 9", fp1[9] == '-');
+    TEST("dash at position 14", fp1[14] == '-');
+
+    /* Only uppercase hex + dashes */
+    int valid = 1;
+    for (int i = 0; i < 19; i++) {
+        char c = fp1[i];
+        if (i == 4 || i == 9 || i == 14) {
+            if (c != '-') valid = 0;
+        } else {
+            if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) valid = 0;
+        }
+    }
+    TEST("fingerprint contains only hex + dashes", valid);
+
+    /* Different keys produce different fingerprints */
+    uint8_t pub2[KEY];
+    fill_random(pub2, KEY);
+    char fp3[20];
+    format_fingerprint(fp3, pub2);
+    TEST("different keys produce different fingerprints", strcmp(fp1, fp3) != 0);
+
+    /* Known-answer test: all-zero key */
+    uint8_t zero_pub[KEY];
+    memset(zero_pub, 0, KEY);
+    char zero_fp[20];
+    format_fingerprint(zero_fp, zero_pub);
+    format_fingerprint(fp1, zero_pub);
+    TEST("all-zero key fingerprint is deterministic", strcmp(zero_fp, fp1) == 0);
+
+    /* KAT: verify the all-zero fingerprint against a hardcoded value */
+    TEST("KAT all-zero key fingerprint is \"DF09-4475-CD8C-D059\"",
+         strcmp(zero_fp, "DF09-4475-CD8C-D059") == 0);
+    printf("  INFO: all-zero key fingerprint = %s\n", zero_fp);
+
+    crypto_wipe(pub, KEY);
+    crypto_wipe(pub2, KEY);
+}
+
+/* ---- test: fingerprint domain separation -------------------------------- */
+
+static void test_fingerprint_domain_separation(void) {
+    printf("\n=== fingerprint domain separation ===\n");
+
+    uint8_t key[KEY];
+    fill_random(key, KEY);
+
+    char sas[20], fp[20];
+    format_sas(sas, key);
+    format_fingerprint(fp, key);
+
+    /* SAS is 9 chars (XXXX-XXXX), fingerprint is 19 chars (XXXX-XXXX-XXXX-XXXX) */
+    TEST("SAS and fingerprint differ in length", strlen(sas) != strlen(fp));
+
+    /* Even comparing just the first 9 chars, they should differ because
+     * format_sas uses raw key bytes while format_fingerprint hashes first */
+    TEST("SAS and fingerprint first 9 chars differ", memcmp(sas, fp, 9) != 0);
+
+    crypto_wipe(key, KEY);
+}
+
+/* SOCKS5 (connect_socket_socks5) is not unit-tested here because it
+ * requires a running SOCKS5 proxy. Functional testing:
+ *   tor &  # start Tor
+ *   simplecipher connect --socks5 127.0.0.1:9050 <onion-address> */
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -3615,6 +3697,8 @@ int main(void) {
     test_kdf_known_answer_vectors();
     test_chain_step_aliasing_safety();
     test_deterministic_session_vector();
+    test_format_fingerprint();
+    test_fingerprint_domain_separation();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);
