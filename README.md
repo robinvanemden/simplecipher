@@ -257,6 +257,12 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Exclude from recent apps | — | — | yes |
 | Disable backup / data extraction | — | — | yes |
 | Strip all log calls in release | — | — | ProGuard/R8 |
+| **Supply chain** | | | |
+| CI actions pinned to commit SHAs | yes | yes | yes |
+| Toolchain downloads verified by SHA256 | yes | yes | N/A (NDK from SDK manager) |
+| Release APK signature verified before publish | — | — | yes (`apksigner verify`) |
+| Sigstore build provenance attestation | yes | yes | yes |
+| Vendored Monocypher integrity (SHA256 in CI) | yes | yes | yes |
 
 ## Cryptographic library
 
