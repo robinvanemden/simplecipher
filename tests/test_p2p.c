@@ -3177,6 +3177,159 @@ static void test_dh_ratchet_state_preserved_on_failure(void) {
     crypto_wipe(saved_rx, KEY);
 }
 
+/* ---- test: DH ratchet long stress --------------------------------------- */
+
+static void test_dh_ratchet_long_stress(void) {
+    printf("\n=== DH ratchet long stress (200 messages) ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    int ok = 1;
+    char out[MAX_MSG + 1];
+    uint16_t out_len;
+
+    for (int i = 0; i < 100 && ok; i++) {
+        char a2b[32], b2a[32];
+        snprintf(a2b, sizeof a2b, "a2b-%d", i);
+        snprintf(b2a, sizeof b2a, "b2a-%d", i);
+
+        /* Alice -> Bob */
+        out_len = 0;
+        if (send_msg(&alice, &bob, a2b, out, &out_len) != 0 ||
+            strcmp(out, a2b) != 0) {
+            ok = 0; break;
+        }
+
+        /* Bob -> Alice */
+        out_len = 0;
+        if (send_msg(&bob, &alice, b2a, out, &out_len) != 0 ||
+            strcmp(out, b2a) != 0) {
+            ok = 0; break;
+        }
+    }
+
+    TEST("200 alternating messages with ratchet all succeed", ok);
+    TEST("alice tx_seq == 100", alice.tx_seq == 100);
+    TEST("alice rx_seq == 100", alice.rx_seq == 100);
+    TEST("bob tx_seq == 100",   bob.tx_seq == 100);
+    TEST("bob rx_seq == 100",   bob.rx_seq == 100);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test: DH ratchet deep PCS ----------------------------------------- */
+
+static void test_dh_ratchet_deep_pcs(void) {
+    printf("\n=== DH ratchet deep PCS ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    char out[MAX_MSG + 1];
+    uint16_t out_len;
+
+    /* 3 ratchet cycles = 6 messages */
+    for (int i = 0; i < 3; i++) {
+        out_len = 0;
+        (void)send_msg(&alice, &bob, "a2b", out, &out_len);
+        out_len = 0;
+        (void)send_msg(&bob, &alice, "b2a", out, &out_len);
+    }
+
+    /* Snapshot state at this point */
+    uint8_t saved_root[KEY], saved_bob_rx[KEY], saved_alice_tx[KEY];
+    memcpy(saved_root,     bob.root,  KEY);
+    memcpy(saved_bob_rx,   bob.rx,    KEY);
+    memcpy(saved_alice_tx, alice.tx,  KEY);
+
+    /* 5 more ratchet cycles = 10 more messages */
+    for (int i = 0; i < 5; i++) {
+        out_len = 0;
+        (void)send_msg(&alice, &bob, "a2b", out, &out_len);
+        out_len = 0;
+        (void)send_msg(&bob, &alice, "b2a", out, &out_len);
+    }
+
+    /* Root, rx, and tx must have diverged from snapshots */
+    TEST("deep PCS: bob root diverged",
+         crypto_verify32(bob.root, saved_root) != 0);
+    TEST("deep PCS: bob rx diverged",
+         crypto_verify32(bob.rx, saved_bob_rx) != 0);
+    TEST("deep PCS: alice tx diverged",
+         crypto_verify32(alice.tx, saved_alice_tx) != 0);
+
+    /* Old chain key stepped produces different mk than current chain stepped */
+    uint8_t mk_current[KEY], next_current[KEY];
+    uint8_t mk_saved[KEY],   next_saved[KEY];
+    chain_step(bob.rx,       mk_current, next_current);
+    chain_step(saved_bob_rx, mk_saved,   next_saved);
+    TEST("deep PCS: old rx chain mk differs from current",
+         crypto_verify32(mk_current, mk_saved) != 0);
+
+    /* Session still functional */
+    out_len = 0;
+    TEST("deep PCS: alice->bob still works",
+         send_msg(&alice, &bob, "still alive", out, &out_len) == 0);
+    TEST("deep PCS: correct content",
+         strcmp(out, "still alive") == 0);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+    crypto_wipe(saved_root, KEY);
+    crypto_wipe(saved_bob_rx, KEY);
+    crypto_wipe(saved_alice_tx, KEY);
+    crypto_wipe(mk_current, KEY);
+    crypto_wipe(next_current, KEY);
+    crypto_wipe(mk_saved, KEY);
+    crypto_wipe(next_saved, KEY);
+}
+
+/* ---- test: DH ratchet bootstrap chain symmetry -------------------------- */
+
+static void test_dh_ratchet_bootstrap_chain_symmetry(void) {
+    printf("\n=== DH ratchet bootstrap chain symmetry ===\n");
+
+    uint8_t alice_priv[KEY], alice_pub[KEY];
+    uint8_t bob_priv[KEY],   bob_pub[KEY];
+    gen_keypair(alice_priv, alice_pub);
+    gen_keypair(bob_priv,   bob_pub);
+
+    session_t alice, bob;
+    uint8_t sas_a[KEY], sas_b[KEY];
+    (void)session_init(&alice, 1, alice_priv, alice_pub, bob_pub, sas_a);
+    (void)session_init(&bob,   0, bob_priv,   bob_pub,  alice_pub, sas_b);
+
+    /* Bootstrap chain: alice.rx ("resp->init") == bob.tx ("resp->init") */
+    TEST("bootstrap: alice.rx == bob.tx",
+         crypto_verify32(alice.rx, bob.tx) == 0);
+
+    /* After session_init, ratchet_init does NOT mutate root —
+     * both roots should be equal (derived from same PRK + "root" label). */
+    TEST("bootstrap: alice.root == bob.root",
+         crypto_verify32(alice.root, bob.root) == 0);
+
+    /* SAS keys must match */
+    TEST("bootstrap: SAS keys match",
+         crypto_verify32(sas_a, sas_b) == 0);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(alice_pub, KEY);
+    crypto_wipe(bob_priv, KEY);
+    crypto_wipe(bob_pub, KEY);
+    crypto_wipe(sas_a, KEY);
+    crypto_wipe(sas_b, KEY);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -3238,6 +3391,9 @@ int main(void) {
     test_dh_ratchet_tcp_loopback();
     test_dh_ratchet_simultaneous_first_send();
     test_dh_ratchet_state_preserved_on_failure();
+    test_dh_ratchet_long_stress();
+    test_dh_ratchet_deep_pcs();
+    test_dh_ratchet_bootstrap_chain_symmetry();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);
