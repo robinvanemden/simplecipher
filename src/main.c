@@ -77,11 +77,14 @@ static void usage(const char *prog){
         "\n"
         "  Usage:\n"
         "    %s listen  [port]          wait for a peer\n"
-        "    %s connect <host> [port]   connect to a peer\n"
+        "    %s connect [--socks5 proxy:port] [--peer-fingerprint XXXX-XXXX-XXXX-XXXX] <host> [port]\n"
+        "                                connect to a peer\n"
         "\n"
         "  Options:\n"
-        "    --tui    split-pane terminal interface\n"
-        "    port     default: 7777\n"
+        "    --tui                split-pane terminal interface\n"
+        "    --socks5 host:port   connect through a SOCKS5 proxy (e.g. Tor)\n"
+        "    --peer-fingerprint   verify the peer's public key fingerprint\n"
+        "    port                 default: 7777\n"
         "\n"
         "  After connecting, compare the safety code with your peer\n"
         "  over a separate channel (phone call, in person).\n"
@@ -114,12 +117,41 @@ int main(int argc, char *argv[]){
      * managed internally by cli_chat_loop() and tui_chat_loop(). */
 
     int tui_mode = 0;
+    const char *socks5_host = nullptr;
+    const char *socks5_port = nullptr;
+    const char *peer_fp_expected = nullptr;
 
-    /* Check for --tui flag and shift argv */
-    if (argc >= 2 && strcmp(argv[1], "--tui") == 0){
-        tui_mode = 1;
-        argv++;
-        argc--;
+    /* Parse leading flags (--tui, --socks5, --peer-fingerprint) and shift
+     * argv so the positional args (listen/connect, host, port) remain.
+     * Flags can appear in any order before the subcommand. */
+    while (argc >= 2){
+        if (strcmp(argv[1], "--tui") == 0){
+            tui_mode = 1;
+            argv++; argc--;
+        } else if (strcmp(argv[1], "--socks5") == 0 && argc >= 3){
+            /* --socks5 host:port — split into host and port components. */
+            const char *arg = argv[2];
+            static char s5host[256];
+            static char s5port[8];
+            const char *colon = strrchr(arg, ':');
+            if (!colon || colon == arg || !colon[1]){
+                fprintf(stderr, "  --socks5 requires host:port format\n");
+                return 1;
+            }
+            size_t hlen = (size_t)(colon - arg);
+            if (hlen >= sizeof s5host){ fprintf(stderr, "  socks5 host too long\n"); return 1; }
+            memcpy(s5host, arg, hlen);
+            s5host[hlen] = '\0';
+            snprintf(s5port, sizeof s5port, "%s", colon + 1);
+            socks5_host = s5host;
+            socks5_port = s5port;
+            argv += 2; argc -= 2;
+        } else if (strcmp(argv[1], "--peer-fingerprint") == 0 && argc >= 3){
+            peer_fp_expected = argv[2];
+            argv += 2; argc -= 2;
+        } else {
+            break;  /* not a flag — start of positional args */
+        }
     }
 
     if (argc < 2) usage(argv[0]);
@@ -170,9 +202,36 @@ int main(int argc, char *argv[]){
 
     we_init = (strcmp(argv[1], "connect") == 0);
     if (!we_init && strcmp(argv[1], "listen") != 0) usage(argv[0]);
-    if (we_init && argc < 3) usage(argv[0]);
-    if (we_init){ host = argv[2]; if (argc >= 4) port = argv[3]; }
-    else        {                  if (argc >= 3) port = argv[2]; }
+
+    /* Interactive connect prompt: if "connect" is given without a host,
+     * prompt on stdin.  This keeps the target address out of argv, shell
+     * history, and /proc/*/cmdline — useful when connecting to sensitive
+     * destinations (e.g. .onion addresses through --socks5). */
+    static char prompt_host[256];
+    static char prompt_port[8];
+
+    if (we_init && argc < 3){
+        printf("  Host: "); fflush(stdout);
+        if (!fgets(prompt_host, sizeof prompt_host, stdin) || !prompt_host[0]){
+            fprintf(stderr, "  No host provided.\n"); return 1;
+        }
+        size_t hl = strlen(prompt_host);
+        if (hl > 0 && prompt_host[hl-1] == '\n') prompt_host[hl-1] = '\0';
+        if (!prompt_host[0]){ fprintf(stderr, "  No host provided.\n"); return 1; }
+        host = prompt_host;
+
+        printf("  Port [7777]: "); fflush(stdout);
+        if (fgets(prompt_port, sizeof prompt_port, stdin) && prompt_port[0] != '\n' && prompt_port[0] != '\0'){
+            size_t pl = strlen(prompt_port);
+            if (pl > 0 && prompt_port[pl-1] == '\n') prompt_port[pl-1] = '\0';
+            if (prompt_port[0]) port = prompt_port;
+        }
+    } else if (we_init){
+        host = argv[2];
+        if (argc >= 4) port = argv[3];
+    } else {
+        if (argc >= 3) port = argv[2];
+    }
     if (!validate_port(port)){ fprintf(stderr, "invalid port: %s\n", port); return 1; }
 
     if (tui_mode) tui_init_term();
@@ -195,7 +254,10 @@ int main(int argc, char *argv[]){
         } else {
             printf("  Connecting to %s:%s ...", host, port); fflush(stdout);
         }
-        g_fd = connect_socket(host, port);
+        if (socks5_host)
+            g_fd = connect_socket_socks5(socks5_host, socks5_port, host, port);
+        else
+            g_fd = connect_socket(host, port);
         if (g_fd == INVALID_SOCK){
             fprintf(stderr, "\n  Connection failed. Check the address and make sure\n"
                             "  the peer is listening on %s:%s.\n", host, port);
@@ -313,6 +375,60 @@ int main(int argc, char *argv[]){
         fprintf(stderr, "key agreement failed (bad peer key)\n"); goto out;
     }
     crypto_wipe(self_priv, sizeof self_priv);  /* private key no longer needed */
+
+    /* Fingerprint verification: an optional second layer of identity assurance.
+     *
+     * In listen mode, always print our fingerprint so the listener can share
+     * it out-of-band (e.g. paste it into a Signal message) before connecting.
+     *
+     * In connect mode with --peer-fingerprint, verify the peer's key matches
+     * the expected fingerprint.  This catches MITM attacks even before the
+     * SAS comparison, and does not require an interactive voice call. */
+    {
+        char our_fp[20], peer_fp[20];
+        format_fingerprint(our_fp, self_pub);
+        format_fingerprint(peer_fp, peer_pub);
+
+        if (!we_init && !tui_mode){
+            printf("\n  Your fingerprint: %s\n", our_fp);
+            printf("  (share this with your peer if using --peer-fingerprint)\n");
+        }
+
+        if (peer_fp_expected){
+            /* Strip dashes and uppercase both strings before comparing. */
+            char ne[20] = {0}, np[20] = {0};
+            int ei = 0, pi = 0;
+            for (int i = 0; peer_fp_expected[i] && ei < (int)sizeof(ne)-1; i++){
+                char c = peer_fp_expected[i];
+                if (c == '-') continue;
+                if (c >= 'a' && c <= 'z') c -= 32;
+                ne[ei++] = c;
+            }
+            for (int i = 0; peer_fp[i] && pi < (int)sizeof(np)-1; i++){
+                char c = peer_fp[i];
+                if (c == '-') continue;
+                if (c >= 'a' && c <= 'z') c -= 32;
+                np[pi++] = c;
+            }
+            int mismatch = (ei != pi || memcmp(ne, np, (size_t)ei) != 0);
+            crypto_wipe(ne, sizeof ne);
+            crypto_wipe(np, sizeof np);
+            if (mismatch){
+                fprintf(stderr, "\n  [!] Peer fingerprint mismatch!\n"
+                                "  Expected: %s\n"
+                                "  Got:      %s\n"
+                                "  Aborting -- possible MITM attack.\n",
+                        peer_fp_expected, peer_fp);
+                crypto_wipe(our_fp, sizeof our_fp);
+                crypto_wipe(peer_fp, sizeof peer_fp);
+                goto out;
+            }
+            if (!tui_mode)
+                printf("  Peer fingerprint verified: %s\n", peer_fp);
+        }
+        crypto_wipe(our_fp, sizeof our_fp);
+        crypto_wipe(peer_fp, sizeof peer_fp);
+    }
 
     /* ------------------------------------------------------------------
      * STEP 4: Out-of-band safety code verification
