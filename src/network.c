@@ -219,7 +219,7 @@ int get_local_ips(char *buf, size_t buf_sz){
     return n;
 }
 
-/* Connect through a SOCKS5 proxy (RFC 1928, no-auth method).
+/* ---- SOCKS5 proxy support (RFC 1928) ------------------------------------
  *
  * SOCKS5 is a simple proxying protocol that tunnels arbitrary TCP connections.
  * The negotiation has two phases:
@@ -230,86 +230,112 @@ int get_local_ips(char *buf, size_t buf_sz){
  * bytes written to the socket reach the target, and vice versa.  The caller
  * uses the returned socket exactly like a direct connection.
  *
- * This lets SimpleCipher tunnel through Tor (127.0.0.1:9050) or any other
- * SOCKS5 proxy without modifying the protocol or event loops. */
+ * The request builder and reply parser are separated from the I/O layer so
+ * they can be unit-tested, fuzzed, and formally verified independently. */
+
+/* Build a SOCKS5 CONNECT request into buf.
+ *
+ * Format: [ver=5, cmd=CONNECT(1), rsv=0, atyp=DOMAIN(3), len, host..., port_hi, port_lo]
+ *
+ * Using address type 0x03 (domain name) lets the proxy resolve DNS,
+ * which is essential for Tor (.onion addresses) and avoids leaking
+ * DNS queries from the client machine.
+ *
+ * buf must be at least SOCKS5_REQ_MAX (262) bytes.
+ * Returns the request length, or 0 on invalid input. */
+int socks5_build_request(uint8_t *buf, size_t buf_sz,
+                         const char *host, const char *port_str){
+    if (!buf || !host || !port_str) return 0;
+    size_t host_len = strlen(host);
+    if (host_len == 0 || host_len > 255) return 0;
+
+    unsigned long port_num = strtoul(port_str, nullptr, 10);
+    if (port_num == 0 || port_num > 65535) return 0;
+
+    size_t need = 4 + 1 + host_len + 2;
+    if (need > buf_sz) return 0;
+
+    size_t off = 0;
+    buf[off++] = 0x05;                       /* version       */
+    buf[off++] = 0x01;                       /* cmd: CONNECT  */
+    buf[off++] = 0x00;                       /* reserved      */
+    buf[off++] = 0x03;                       /* atyp: domain  */
+    buf[off++] = (uint8_t)host_len;          /* domain length */
+    memcpy(buf + off, host, host_len);
+    off += host_len;
+    buf[off++] = (uint8_t)(port_num >> 8);   /* port high     */
+    buf[off++] = (uint8_t)(port_num & 0xFF); /* port low      */
+
+    return (int)off;
+}
+
+/* Compute how many bytes to skip after the SOCKS5 CONNECT reply header.
+ *
+ * The reply header is 4 bytes: [ver, status, rsv, atyp].  After that,
+ * the proxy sends a bound address whose length depends on atyp:
+ *   0x01 (IPv4):   4 bytes address + 2 bytes port  = 6
+ *   0x03 (domain): 1 byte length + N bytes + 2 bytes port (variable)
+ *   0x04 (IPv6):  16 bytes address + 2 bytes port  = 18
+ *
+ * For atyp 0x03, the caller must read the 1-byte length first and pass
+ * it as domain_len.  For other types, domain_len is ignored.
+ *
+ * Returns the number of bytes to skip (after the domain_len byte for 0x03),
+ * or -1 for an unknown address type. */
+int socks5_reply_skip(uint8_t atyp, uint8_t domain_len){
+    if (atyp == 0x01) return 4 + 2;
+    if (atyp == 0x03) return (int)domain_len + 2;
+    if (atyp == 0x04) return 16 + 2;
+    return -1;
+}
+
+/* Connect through a SOCKS5 proxy.  See socks5_build_request and
+ * socks5_reply_skip above for the pure logic; this function handles I/O. */
 [[nodiscard]] socket_t connect_socket_socks5(const char *proxy_host, const char *proxy_port,
                                               const char *target_host, const char *target_port){
     socket_t fd = connect_socket(proxy_host, proxy_port);
     if (fd == INVALID_SOCK) return INVALID_SOCK;
 
-    /* Phase 1: SOCKS5 greeting — offer "no authentication" (method 0x00).
-     * Format: [version=5, nmethods=1, method=0x00] */
+    /* Phase 1: SOCKS5 greeting — offer "no authentication" (method 0x00). */
     uint8_t greeting[3] = {0x05, 0x01, 0x00};
     if (write_exact(fd, greeting, 3) != 0){ close_sock(fd); return INVALID_SOCK; }
 
-    /* Proxy replies with [version, chosen_method].
-     * 0x00 = no auth, 0xFF = no acceptable methods. */
     uint8_t greet_reply[2];
     if (read_exact(fd, greet_reply, 2) != 0 ||
         greet_reply[0] != 0x05 || greet_reply[1] != 0x00){
         close_sock(fd); return INVALID_SOCK;
     }
 
-    /* Phase 2: CONNECT request.
-     * Format: [ver=5, cmd=CONNECT(1), rsv=0, atyp=DOMAIN(3), len, host..., port_hi, port_lo]
-     *
-     * Using address type 0x03 (domain name) lets the proxy resolve DNS,
-     * which is essential for Tor (.onion addresses) and avoids leaking
-     * DNS queries from the client machine. */
-    size_t host_len = strlen(target_host);
-    if (host_len > 255){ close_sock(fd); return INVALID_SOCK; }
+    /* Phase 2: Build and send CONNECT request. */
+    uint8_t req[4 + 1 + 255 + 2];
+    int req_len = socks5_build_request(req, sizeof req, target_host, target_port);
+    if (req_len <= 0){ close_sock(fd); return INVALID_SOCK; }
+    if (write_exact(fd, req, (size_t)req_len) != 0){ close_sock(fd); return INVALID_SOCK; }
 
-    unsigned long target_port_num = strtoul(target_port, nullptr, 10);
-    if (target_port_num == 0 || target_port_num > 65535){ close_sock(fd); return INVALID_SOCK; }
-
-    uint8_t req[4 + 1 + 255 + 2];  /* max possible CONNECT request */
-    size_t req_len = 0;
-    req[req_len++] = 0x05;                         /* version       */
-    req[req_len++] = 0x01;                         /* cmd: CONNECT  */
-    req[req_len++] = 0x00;                         /* reserved      */
-    req[req_len++] = 0x03;                         /* atyp: domain  */
-    req[req_len++] = (uint8_t)host_len;            /* domain length */
-    memcpy(req + req_len, target_host, host_len);
-    req_len += host_len;
-    req[req_len++] = (uint8_t)(target_port_num >> 8);   /* port high byte */
-    req[req_len++] = (uint8_t)(target_port_num & 0xFF); /* port low byte  */
-
-    if (write_exact(fd, req, req_len) != 0){ close_sock(fd); return INVALID_SOCK; }
-
-    /* Read the CONNECT reply header: [ver, status, rsv, atyp].
-     * Status 0x00 = success.  We must then consume the bound address
-     * field (variable length depending on atyp) before the socket is
-     * ready for application data. */
+    /* Phase 3: Read and parse CONNECT reply. */
     uint8_t reply[4];
     if (read_exact(fd, reply, 4) != 0 || reply[1] != 0x00){
         close_sock(fd); return INVALID_SOCK;
     }
 
-    /* Skip the bound address + port that the proxy reports.
-     * The length depends on the address type in reply[3]:
-     *   0x01 (IPv4):   4 bytes address + 2 bytes port
-     *   0x03 (domain): 1 byte length + N bytes + 2 bytes port
-     *   0x04 (IPv6):  16 bytes address + 2 bytes port */
-    size_t skip = 0;
-    if (reply[3] == 0x01){
-        skip = 4 + 2;
-    } else if (reply[3] == 0x03){
+    /* Compute skip length for the bound address field. */
+    int skip;
+    if (reply[3] == 0x03){
         uint8_t dlen;
         if (read_exact(fd, &dlen, 1) != 0){ close_sock(fd); return INVALID_SOCK; }
-        skip = (size_t)dlen + 2;
-    } else if (reply[3] == 0x04){
-        skip = 16 + 2;
+        skip = socks5_reply_skip(reply[3], dlen);
     } else {
-        close_sock(fd); return INVALID_SOCK;
+        skip = socks5_reply_skip(reply[3], 0);
     }
+    if (skip < 0){ close_sock(fd); return INVALID_SOCK; }
 
-    /* Drain the remaining bound-address bytes into a throwaway buffer. */
+    /* Drain the bound-address bytes. */
     uint8_t drain[256 + 2];
-    if (skip > sizeof drain || read_exact(fd, drain, skip) != 0){
+    if ((size_t)skip > sizeof drain ||
+        read_exact(fd, drain, (size_t)skip) != 0){
         close_sock(fd); return INVALID_SOCK;
     }
 
-    /* Socket is now tunneled to target_host:target_port. */
     return fd;
 }
 

@@ -71,4 +71,20 @@ void print_local_ips(const char *port);
  * buf_sz is the total buffer size; output is null-terminated. */
 int get_local_ips(char *buf, size_t buf_sz);
 
+/* ---- SOCKS5 helpers (pure, testable) ------------------------------------ */
+
+/* Maximum SOCKS5 CONNECT request size: 4 header + 1 len + 255 host + 2 port */
+static constexpr int SOCKS5_REQ_MAX = 262;
+
+/* Build a SOCKS5 CONNECT request.  Returns request length, or 0 on invalid
+ * input (null pointers, empty host, host > 255 bytes, port out of range).
+ * buf must be at least SOCKS5_REQ_MAX bytes. */
+int socks5_build_request(uint8_t *buf, size_t buf_sz,
+                         const char *host, const char *port_str);
+
+/* Compute bytes to skip after SOCKS5 reply header, based on address type.
+ * For atyp 0x03, caller must read the 1-byte domain length first.
+ * Returns -1 for unknown atyp. */
+int socks5_reply_skip(uint8_t atyp, uint8_t domain_len);
+
 #endif /* SIMPLECIPHER_NETWORK_H */
