@@ -129,7 +129,7 @@ endif()
 # Fuzz targets (requires clang -fsanitize=fuzzer; enable with -DFUZZ=ON)
 option(FUZZ "Build libFuzzer fuzz targets" OFF)
 if(FUZZ)
-    foreach(target fuzz_frame_open fuzz_sanitize fuzz_validate_port)
+    foreach(target fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5)
         add_executable(${target} tests/${target}.c ${CORE_SRC} ${PLATFORM_SRC})
         target_include_directories(${target} PRIVATE src lib)
         target_compile_options(${target} PRIVATE

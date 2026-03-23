@@ -21,7 +21,7 @@ jobs:
           mkdir -p build/fuzz
           cd build/fuzz
           CC=clang-19 cmake -DFUZZ=ON ../..
-          make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port
+          make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5
 
       - name: Fuzz frame_open (10 min)
         run: |
@@ -39,6 +39,12 @@ jobs:
         run: |
           mkdir -p fuzz_out/validate_port
           build/fuzz/fuzz_validate_port fuzz_out/validate_port tests/corpus/validate_port \
+            -max_total_time=300 -print_final_stats=1
+
+      - name: Fuzz socks5_build_request (5 min)
+        run: |
+          mkdir -p fuzz_out/socks5
+          build/fuzz/fuzz_socks5 fuzz_out/socks5 \
             -max_total_time=300 -print_final_stats=1
 
       - name: Upload crash artifacts (if any)

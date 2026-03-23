@@ -72,6 +72,9 @@ jobs:
       - name: Smoke-fuzz validate_port (30s)
         run: build/fuzz/fuzz_validate_port tests/corpus/validate_port -max_total_time=30 -print_final_stats=1
 
+      - name: Smoke-fuzz socks5_build_request (30s)
+        run: build/fuzz/fuzz_socks5 -max_total_time=30 -print_final_stats=1
+
   test-asan-ubsan:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
