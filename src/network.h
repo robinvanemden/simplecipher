@@ -55,6 +55,13 @@ void set_sock_opts(socket_t fd);
 [[nodiscard]] socket_t listen_socket_cb(const char *port,
                                         void (*on_idle)(void *ctx), void *ctx);
 
+/* Connect through a SOCKS5 proxy (RFC 1928).
+ * Opens TCP to the proxy, negotiates SOCKS5 no-auth, sends a CONNECT
+ * request for target_host:target_port, then returns the connected socket.
+ * The caller uses this socket exactly like one from connect_socket(). */
+[[nodiscard]] socket_t connect_socket_socks5(const char *proxy_host, const char *proxy_port,
+                                              const char *target_host, const char *target_port);
+
 /* Print non-loopback IP addresses so the user can tell their peer where
  * to connect.  Skips link-local (169.254.x.x, fe80::) and loopback. */
 void print_local_ips(const char *port);

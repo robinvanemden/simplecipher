@@ -219,6 +219,100 @@ int get_local_ips(char *buf, size_t buf_sz){
     return n;
 }
 
+/* Connect through a SOCKS5 proxy (RFC 1928, no-auth method).
+ *
+ * SOCKS5 is a simple proxying protocol that tunnels arbitrary TCP connections.
+ * The negotiation has two phases:
+ *   1. Greeting: client proposes authentication methods, proxy picks one.
+ *   2. Request:  client asks the proxy to CONNECT to a target host:port.
+ *
+ * After a successful CONNECT, the TCP socket is transparently forwarded —
+ * bytes written to the socket reach the target, and vice versa.  The caller
+ * uses the returned socket exactly like a direct connection.
+ *
+ * This lets SimpleCipher tunnel through Tor (127.0.0.1:9050) or any other
+ * SOCKS5 proxy without modifying the protocol or event loops. */
+[[nodiscard]] socket_t connect_socket_socks5(const char *proxy_host, const char *proxy_port,
+                                              const char *target_host, const char *target_port){
+    socket_t fd = connect_socket(proxy_host, proxy_port);
+    if (fd == INVALID_SOCK) return INVALID_SOCK;
+
+    /* Phase 1: SOCKS5 greeting — offer "no authentication" (method 0x00).
+     * Format: [version=5, nmethods=1, method=0x00] */
+    uint8_t greeting[3] = {0x05, 0x01, 0x00};
+    if (write_exact(fd, greeting, 3) != 0){ close_sock(fd); return INVALID_SOCK; }
+
+    /* Proxy replies with [version, chosen_method].
+     * 0x00 = no auth, 0xFF = no acceptable methods. */
+    uint8_t greet_reply[2];
+    if (read_exact(fd, greet_reply, 2) != 0 ||
+        greet_reply[0] != 0x05 || greet_reply[1] != 0x00){
+        close_sock(fd); return INVALID_SOCK;
+    }
+
+    /* Phase 2: CONNECT request.
+     * Format: [ver=5, cmd=CONNECT(1), rsv=0, atyp=DOMAIN(3), len, host..., port_hi, port_lo]
+     *
+     * Using address type 0x03 (domain name) lets the proxy resolve DNS,
+     * which is essential for Tor (.onion addresses) and avoids leaking
+     * DNS queries from the client machine. */
+    size_t host_len = strlen(target_host);
+    if (host_len > 255){ close_sock(fd); return INVALID_SOCK; }
+
+    unsigned long target_port_num = strtoul(target_port, nullptr, 10);
+    if (target_port_num == 0 || target_port_num > 65535){ close_sock(fd); return INVALID_SOCK; }
+
+    uint8_t req[4 + 1 + 255 + 2];  /* max possible CONNECT request */
+    size_t req_len = 0;
+    req[req_len++] = 0x05;                         /* version       */
+    req[req_len++] = 0x01;                         /* cmd: CONNECT  */
+    req[req_len++] = 0x00;                         /* reserved      */
+    req[req_len++] = 0x03;                         /* atyp: domain  */
+    req[req_len++] = (uint8_t)host_len;            /* domain length */
+    memcpy(req + req_len, target_host, host_len);
+    req_len += host_len;
+    req[req_len++] = (uint8_t)(target_port_num >> 8);   /* port high byte */
+    req[req_len++] = (uint8_t)(target_port_num & 0xFF); /* port low byte  */
+
+    if (write_exact(fd, req, req_len) != 0){ close_sock(fd); return INVALID_SOCK; }
+
+    /* Read the CONNECT reply header: [ver, status, rsv, atyp].
+     * Status 0x00 = success.  We must then consume the bound address
+     * field (variable length depending on atyp) before the socket is
+     * ready for application data. */
+    uint8_t reply[4];
+    if (read_exact(fd, reply, 4) != 0 || reply[1] != 0x00){
+        close_sock(fd); return INVALID_SOCK;
+    }
+
+    /* Skip the bound address + port that the proxy reports.
+     * The length depends on the address type in reply[3]:
+     *   0x01 (IPv4):   4 bytes address + 2 bytes port
+     *   0x03 (domain): 1 byte length + N bytes + 2 bytes port
+     *   0x04 (IPv6):  16 bytes address + 2 bytes port */
+    size_t skip = 0;
+    if (reply[3] == 0x01){
+        skip = 4 + 2;
+    } else if (reply[3] == 0x03){
+        uint8_t dlen;
+        if (read_exact(fd, &dlen, 1) != 0){ close_sock(fd); return INVALID_SOCK; }
+        skip = (size_t)dlen + 2;
+    } else if (reply[3] == 0x04){
+        skip = 16 + 2;
+    } else {
+        close_sock(fd); return INVALID_SOCK;
+    }
+
+    /* Drain the remaining bound-address bytes into a throwaway buffer. */
+    uint8_t drain[256 + 2];
+    if (skip > sizeof drain || read_exact(fd, drain, skip) != 0){
+        close_sock(fd); return INVALID_SOCK;
+    }
+
+    /* Socket is now tunneled to target_host:target_port. */
+    return fd;
+}
+
 /* Connect to host:port, trying all addresses getaddrinfo returns.
  * Returns the connected socket, or INVALID_SOCK on failure. */
 [[nodiscard]] socket_t connect_socket(const char *host, const char *port){
