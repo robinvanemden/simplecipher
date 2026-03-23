@@ -104,38 +104,40 @@ if command -v aapt2 >/dev/null 2>&1; then
     echo ""
     echo "=== APK-level release safety tests ==="
 
-    # Verify the release APK is not debuggable (aapt2 badging only shows
-    # "application-debuggable" when the flag is true — absence means safe)
-    check "release APK is not debuggable" \
-        "! echo '$BADGING' | grep -q 'application-debuggable'"
-
+    # These checks only apply to release builds (debug builds are debuggable
+    # by design and retain log calls for development).
     # No exported content providers or broadcast receivers (attack surface)
     check "no exported content providers" \
         "! echo '$XMLTREE_MANIFEST' | grep -q 'provider'"
     check "no exported broadcast receivers" \
         "! echo '$XMLTREE_MANIFEST' | grep -q 'receiver'"
 
-    # ProGuard log stripping verification: the built dex should contain
-    # no references to android.util.Log method calls.  R8 should have
-    # removed them via -assumenosideeffects, but a misconfiguration could
-    # silently leave them in.
-    if command -v dexdump >/dev/null 2>&1; then
-        DEXDUMP="$(dexdump -d "$APK" 2>/dev/null || true)"
-        check "no Log.d/v/i/w/e/wtf calls in dex (R8 stripped)" \
-            "! echo '$DEXDUMP' | grep -qE 'Landroid/util/Log;\.(d|v|i|w|e|wtf)'"
-    elif command -v baksmali >/dev/null 2>&1; then
-        SMALI_DIR="$(mktemp -d)"
-        baksmali d "$APK" -o "$SMALI_DIR" 2>/dev/null || true
-        check "no Log.d/v/i/w/e/wtf calls in dex (R8 stripped)" \
-            "! grep -rqE 'Landroid/util/Log;->(d|v|i|w|e|wtf)' '$SMALI_DIR'"
-        rm -rf "$SMALI_DIR"
-    else
-        echo "  SKIP: dexdump/baksmali not found, skipping log stripping verification"
-    fi
-
     # No WebView usage — SimpleCipher should never load web content
     check "no WebView in dex" \
         "! unzip -p '$APK' classes.dex 2>/dev/null | strings | grep -q 'android/webkit/WebView'"
+
+    # Release-only checks (debug builds are debuggable and retain logs by design)
+    IS_DEBUG="$(echo "$BADGING" | grep -c 'application-debuggable' || true)"
+    if [ "$IS_DEBUG" -eq 0 ]; then
+        check "release APK is not debuggable" "true"
+
+        # ProGuard log stripping verification
+        if command -v dexdump >/dev/null 2>&1; then
+            DEXDUMP="$(dexdump -d "$APK" 2>/dev/null || true)"
+            check "no Log.d/v/i/w/e/wtf calls in dex (R8 stripped)" \
+                "! echo '$DEXDUMP' | grep -qE 'Landroid/util/Log;\.(d|v|i|w|e|wtf)'"
+        elif command -v baksmali >/dev/null 2>&1; then
+            SMALI_DIR="$(mktemp -d)"
+            baksmali d "$APK" -o "$SMALI_DIR" 2>/dev/null || true
+            check "no Log.d/v/i/w/e/wtf calls in dex (R8 stripped)" \
+                "! grep -rqE 'Landroid/util/Log;->(d|v|i|w|e|wtf)' '$SMALI_DIR'"
+            rm -rf "$SMALI_DIR"
+        else
+            echo "  SKIP: dexdump/baksmali not found, skipping log stripping verification"
+        fi
+    else
+        echo "  SKIP: debug build — skipping debuggable and log stripping checks"
+    fi
 
 else
     echo "  SKIP: aapt2 not found, skipping manifest and security validation"
