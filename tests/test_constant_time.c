@@ -1,16 +1,49 @@
 /*
- * test_constant_time.c — Verify ALL timing-sensitive functions run in constant time.
+ * test_constant_time.c — Hardware-level timing side-channel verification
  *
  * Uses dudect (https://github.com/oreparaz/dudect) to statistically test
  * whether functions leak timing information that depends on secret inputs.
  *
- * How it works:
+ * HOW IT WORKS:
  *   1. Generate two classes of inputs: "fixed" (class 0) and "random" (class 1).
- *   2. Run the function under test many times on both classes.
- *   3. Apply Welch's t-test to the execution time distributions.
- *   4. If |t| > threshold, the function is variable-time (timing leak found).
+ *   2. Run the function under test many times (~2M) on both classes.
+ *   3. Measure wall-clock execution time for each invocation using rdtsc.
+ *   4. Apply Welch's t-test to the two timing distributions.
+ *   5. If |t| > threshold, the execution time correlates with the input
+ *      class — the function is variable-time (timing leak found).
  *
- * Functions tested (every function that handles secret data):
+ * WHY THIS EXISTS ALONGSIDE TEST_TIMECOP.C:
+ *
+ * SimpleCipher has TWO constant-time verification tools that complement
+ * each other.  Neither alone is sufficient.
+ *
+ * test_timecop.c (Valgrind/memcheck approach):
+ *   + Deterministic: one run, definitive yes/no, exact source location.
+ *   + Catches: secret-dependent branches, secret-dependent memory indexing.
+ *   - Cannot see: hardware timing differences.  Valgrind runs code in a
+ *     software CPU emulator that does not model cache lines, pipeline
+ *     stalls, multiplication latency, or speculative execution.
+ *
+ * test_constant_time.c (this file, dudect approach):
+ *   + Runs on REAL HARDWARE with the REAL CPU.
+ *   + Catches: variable-latency multiplication (some ARM Cortex-M chips),
+ *     cache-timing differences, CPU pipeline stalls that depend on operand
+ *     values, any microarchitectural timing side channel.
+ *   - Statistical: needs millions of measurements, no source location.
+ *   - May miss leaks that require specific input patterns not covered by
+ *     the random/fixed class design.
+ *
+ * Together they cover both classes of timing side channels:
+ *   Timecop → control-flow leaks (branches on secrets)
+ *   dudect  → hardware-level leaks (CPU timing on secrets)
+ *
+ * WHEN TO USE WHICH:
+ *   - After any code change to crypto/protocol: run test_timecop.c (seconds).
+ *   - Before a release or when targeting new hardware: run this file (minutes).
+ *   - If porting to ARM/embedded: this file is essential — ARM Cortex-M
+ *     may have non-constant-time multiplication that Valgrind cannot detect.
+ *
+ * FUNCTIONS TESTED (every function that handles secret data):
  *   1. is_zero32       — constant-time all-zero check (secret: DH output)
  *   2. verify_commit   — commitment comparison (secret: commitment hash)
  *   3. domain_hash     — KDF building block (secret: key material in msg)
@@ -18,9 +51,9 @@
  *   5. chain_step      — symmetric ratchet (secret: chain key)
  *   6. crypto_x25519   — DH key exchange (secret: private key)
  *   7. frame_build     — encrypt message (secret: session state)
- *   8. frame_open      — decrypt frame (secret: session state, untrusted input)
+ *   8. frame_open      — decrypt frame (known-accept, see below)
  *
- * For best results, run with CPU pinning to reduce noise:
+ * For best results, run with CPU pinning to reduce measurement noise:
  *   taskset -c 0 ./test_ct
  *
  * Build:

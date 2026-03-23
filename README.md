@@ -340,11 +340,39 @@ bash tests/test_binary.sh
 - Run: `python3 tests/cbmc_harness.py`
 
 **Constant-time verification** (manual, two complementary approaches):
-- **Timecop/Valgrind** (`tests/test_timecop.c`): marks secret data as "uninitialized" using Valgrind's memcheck, then detects any conditional branch or memory index that depends on the secret. Deterministic — one run, exact source location if a leak exists. All 7 secret-handling functions pass with 0 errors.
-  - Run: `gcc -std=c23 -g -O1 -Isrc -Ilib tests/test_timecop.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c lib/monocypher.c -lm -o test_timecop && valgrind --track-origins=yes ./test_timecop`
-- **dudect** (`tests/test_constant_time.c`): [statistical timing analysis](https://github.com/oreparaz/dudect) — runs each function millions of times with different inputs, applies Welch's t-test to detect execution time differences that correlate with secret values. Catches hardware-level timing leaks (cache, CPU instruction latency) that Valgrind's software model cannot see.
-  - Run: `gcc -std=c23 -O2 -Isrc -Ilib -Itests tests/test_constant_time.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c lib/monocypher.c -lm -o test_ct && taskset -c 0 ./test_ct`
-- Known-accept: `frame_open` shows timing variance in dudect due to Monocypher's intentional MAC-fail fast path (not exploitable — see source for details)
+
+Timing side channels are subtle: if a cryptographic function takes even nanoseconds longer for one secret key than another, an attacker measuring network response times can gradually recover the key. SimpleCipher verifies constant-time behavior with two tools that catch different classes of leaks:
+
+| | Timecop/Valgrind | dudect |
+|---|---|---|
+| **Method** | Marks secrets as "uninitialized"; Valgrind flags any branch or memory index that depends on them | Runs function ~2M times with different inputs; Welch's t-test detects timing correlations |
+| **Catches** | Secret-dependent branches, secret-dependent array indexing | Variable-latency CPU instructions (multiplication, cache timing, pipeline stalls) |
+| **Cannot see** | Hardware timing differences (runs in software CPU emulator) | Control-flow leaks if test inputs don't exercise the right code path |
+| **Speed** | Seconds (one run, deterministic) | Minutes (~2M measurements per function) |
+| **Output** | Exact file:line of violation | Statistical pass/fail (no source location) |
+| **When to use** | After any code change | Before release, when targeting new hardware (especially ARM) |
+
+Both tools verify the same 7 secret-handling functions: `is_zero32`, `verify_commit`, `domain_hash`, `expand`, `chain_step`, `crypto_x25519`, `frame_build`. All 7 pass both tools.
+
+Known-accept: `frame_open` shows timing variance in dudect because Monocypher intentionally skips decryption when the MAC fails (`crypto_aead_read` line 2921). This is not exploitable — the MAC comparison itself is constant-time (`crypto_verify16`), and the timing difference only reveals pass/fail, not which byte failed.
+
+```bash
+# Timecop (fast, deterministic — run after code changes)
+gcc -std=c23 -g -O1 -Isrc -Ilib tests/test_timecop.c \
+  src/platform.c src/crypto.c src/protocol.c src/ratchet.c \
+  src/network.c src/tui.c src/tui_posix.c src/cli.c \
+  src/cli_posix.c lib/monocypher.c -lm -o test_timecop
+valgrind --track-origins=yes ./test_timecop
+# Expected: ERROR SUMMARY: 0 errors from 0 contexts
+
+# dudect (thorough, hardware-level — run before releases)
+gcc -std=c23 -O2 -Isrc -Ilib -Itests tests/test_constant_time.c \
+  src/platform.c src/crypto.c src/protocol.c src/ratchet.c \
+  src/network.c src/tui.c src/tui_posix.c src/cli.c \
+  src/cli_posix.c lib/monocypher.c -lm -o test_ct
+taskset -c 0 ./test_ct
+# Expected: All 7 secret-handling functions verified constant-time
+```
 
 **Platform tests** (run natively on GitHub-hosted runners):
 
