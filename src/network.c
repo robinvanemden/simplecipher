@@ -208,7 +208,10 @@ int get_local_ips(char *buf, size_t buf_sz){
         char ip[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET, &s4->sin_addr, ip, sizeof ip);
         int w = snprintf(buf + off, buf_sz - off, "%s%s", n ? "\n" : "", ip);
-        if (w > 0) off += (size_t)w;
+        if (w > 0){
+            off += (size_t)w;
+            if (off >= buf_sz) off = buf_sz - 1;
+        }
         n++;
     }
     freeifaddrs(ifa);
@@ -247,7 +250,8 @@ int get_local_ips(char *buf, size_t buf_sz){
 
 /* Bind to port, accept exactly one connection, close the listener.
  * One peer only -- this is not a server.
- * SO_REUSEADDR avoids "address already in use" on quick restarts.
+ * SO_REUSEADDR (POSIX) avoids "address already in use" on quick restarts.
+ * SO_EXCLUSIVEADDRUSE (Windows) prevents malicious port hijacking.
  * IPV6_V6ONLY=0 accepts both IPv4 and IPv6 on dual-stack systems. */
 [[nodiscard]] socket_t listen_socket(const char *port){
     struct addrinfo hints, *res, *p;
@@ -261,7 +265,11 @@ int get_local_ips(char *buf, size_t buf_sz){
     for (p = res; p; p = p->ai_next){
         srv = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (srv == INVALID_SOCK) continue;
+#if defined(_WIN32) || defined(_WIN64)
+        setsockopt(srv, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&one, sizeof one);
+#else
         setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char*)&one, sizeof one);
+#endif
 #ifdef IPV6_V6ONLY
         if (p->ai_family == AF_INET6){
             int off = 0;
@@ -311,7 +319,11 @@ int get_local_ips(char *buf, size_t buf_sz){
     for (p = res; p; p = p->ai_next){
         srv = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (srv == INVALID_SOCK) continue;
+#if defined(_WIN32) || defined(_WIN64)
+        setsockopt(srv, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&one, sizeof one);
+#else
         setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char*)&one, sizeof one);
+#endif
 #ifdef IPV6_V6ONLY
         if (p->ai_family == AF_INET6){
             int off = 0;

@@ -36,8 +36,8 @@ android {
      * (local dev), the release build uses the debug signing config so it
      * can still be installed on a device for testing. */
     signingConfigs {
-        release {
-            if (System.env.KEYSTORE_BASE64) {
+        if (System.env.KEYSTORE_BASE64) {
+            release {
                 def ksFile = file("${rootProject.buildDir}/release.keystore")
                 ksFile.parentFile.mkdirs()
                 ksFile.bytes = Base64.decoder.decode(System.env.KEYSTORE_BASE64)
@@ -45,14 +45,6 @@ android {
                 storePassword System.env.KEYSTORE_PASSWORD
                 keyAlias System.env.KEY_ALIAS
                 keyPassword System.env.KEY_PASSWORD
-            } else {
-                /* Fall back to debug keystore for local/CI builds without
-                 * signing secrets.  CI generates this keystore in a workflow
-                 * step before running Gradle (see ci.yml / release.yml). */
-                storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')
-                storePassword 'android'
-                keyAlias 'androiddebugkey'
-                keyPassword 'android'
             }
         }
     }
@@ -63,7 +55,13 @@ android {
         }
         release {
             debuggable false
-            signingConfig signingConfigs.release
+            /* Only sign release builds when secrets are present.
+             * Without this, Gradle will produce an unsigned APK that
+             * cannot be installed -- failing closed rather than
+             * silently falling back to debug signing. */
+            if (signingConfigs.hasProperty('release')) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
