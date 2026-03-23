@@ -18,6 +18,7 @@
 #include "platform.h"
 #include "crypto.h"
 #include "protocol.h"
+#include "ratchet.h"
 #include "network.h"
 #include "tui.h"
 #include "cli.h"
@@ -87,7 +88,7 @@ static void test_crypto_basics(void) {
     const char *msg = "hello world";
     uint8_t frame[FRAME_SZ], next_tx[KEY];
     TEST("frame_build succeeds",
-         frame_build(sa.tx, sa.tx_seq, (const uint8_t *)msg,
+         frame_build(&sa, (const uint8_t *)msg,
                      (uint16_t)strlen(msg), frame, next_tx) == 0);
 
     /* Advance initiator chain */
@@ -106,7 +107,7 @@ static void test_crypto_basics(void) {
     uint8_t next_tx2[KEY];
     const char *msg2 = "test tamper";
     TEST("tamper test frame builds",
-         frame_build(sa.tx, sa.tx_seq, (const uint8_t *)msg2,
+         frame_build(&sa, (const uint8_t *)msg2,
                      (uint16_t)strlen(msg2), frame2, next_tx2) == 0);
     frame2[AD_SZ + 10] ^= 0x01;  /* flip a ciphertext bit */
     TEST("tampered frame is rejected", frame_open(&sb, frame2, plain, &plen) != 0);
@@ -115,7 +116,7 @@ static void test_crypto_basics(void) {
     uint8_t frame3[FRAME_SZ];
     uint8_t next_tx3[KEY];
     TEST("replay test frame builds",
-         frame_build(sa.tx, sa.tx_seq, (const uint8_t *)msg2,
+         frame_build(&sa, (const uint8_t *)msg2,
                      (uint16_t)strlen(msg2), frame3, next_tx3) == 0);
     memcpy(sa.tx, next_tx3, KEY);
     sa.tx_seq++;
@@ -127,7 +128,7 @@ static void test_crypto_basics(void) {
     /* Zero message */
     uint8_t frame_empty[FRAME_SZ], next_empty[KEY];
     TEST("empty message frame builds",
-         frame_build(sa.tx, sa.tx_seq, (const uint8_t *)"", 0,
+         frame_build(&sa, (const uint8_t *)"", 0,
                      frame_empty, next_empty) == 0);
     memcpy(sa.tx, next_empty, KEY);
     sa.tx_seq++;
@@ -140,7 +141,7 @@ static void test_crypto_basics(void) {
     fill_random(big, MAX_MSG);
     uint8_t frame_big[FRAME_SZ], next_big[KEY];
     TEST("max-length message frame builds",
-         frame_build(sa.tx, sa.tx_seq, big, MAX_MSG,
+         frame_build(&sa, big, MAX_MSG,
                      frame_big, next_big) == 0);
     memcpy(sa.tx, next_big, KEY);
     sa.tx_seq++;
@@ -154,7 +155,7 @@ static void test_crypto_basics(void) {
     uint8_t too_big[MAX_MSG + 1];
     uint8_t frame_too[FRAME_SZ], next_too[KEY];
     TEST("over-length message rejected",
-         frame_build(sa.tx, sa.tx_seq, too_big, MAX_MSG + 1,
+         frame_build(&sa, too_big, MAX_MSG + 1,
                      frame_too, next_too) != 0);
 
     /* Cleanup */
@@ -264,7 +265,7 @@ static void test_tcp_loopback(void) {
         const char *msg = "hello from initiator";
         uint8_t frame[FRAME_SZ], next_tx[KEY];
         TEST("initiator frame_build",
-             frame_build(initiator.sess.tx, initiator.sess.tx_seq,
+             frame_build(&initiator.sess,
                          (const uint8_t *)msg, (uint16_t)strlen(msg),
                          frame, next_tx) == 0);
         TEST("initiator write_exact",
@@ -290,7 +291,7 @@ static void test_tcp_loopback(void) {
         const char *msg = "hello from listener";
         uint8_t frame[FRAME_SZ], next_tx[KEY];
         TEST("listener frame_build",
-             frame_build(listener.sess.tx, listener.sess.tx_seq,
+             frame_build(&listener.sess,
                          (const uint8_t *)msg, (uint16_t)strlen(msg),
                          frame, next_tx) == 0);
         TEST("listener write_exact",
@@ -320,7 +321,7 @@ static void test_tcp_loopback(void) {
             snprintf(msg, sizeof msg, "chain message %d", i);
 
             uint8_t frame[FRAME_SZ], next_tx[KEY];
-            int build_ok = frame_build(initiator.sess.tx, initiator.sess.tx_seq,
+            int build_ok = frame_build(&initiator.sess,
                                        (const uint8_t *)msg, (uint16_t)strlen(msg),
                                        frame, next_tx) == 0;
             int write_ok = build_ok && write_exact(initiator.fd, frame, FRAME_SZ) == 0;
@@ -578,8 +579,13 @@ static void test_seq_overflow(void) {
     /* Frame at UINT64_MAX should still build successfully */
     uint8_t frame[FRAME_SZ], next[KEY];
     const char *msg = "overflow test";
+    session_t tmp;
+    memset(&tmp, 0, sizeof tmp);
+    memcpy(tmp.tx, chain, KEY);
+    tmp.tx_seq = UINT64_MAX;
+    tmp.need_send_ratchet = 0;
     TEST("frame_build at UINT64_MAX succeeds",
-         frame_build(chain, UINT64_MAX, (const uint8_t *)msg,
+         frame_build(&tmp, (const uint8_t *)msg,
                      (uint16_t)strlen(msg), frame, next) == 0);
 
     /* Verify the AD encodes UINT64_MAX correctly */
@@ -624,11 +630,13 @@ static void test_corrupted_length_field(void) {
     le64_store(ad, 0);
     make_nonce(nonce, 0);
 
-    /* Craft plaintext with length field = MAX_MSG + 1 (exceeds limit) */
+    /* Craft plaintext with length field = MAX_MSG + 1 (exceeds limit)
+     * v2 format: [flags(1) | len(2) | ...] */
     memset(pt, 0, sizeof pt);
     uint16_t bad_len = MAX_MSG + 1;
-    pt[0] = (uint8_t)(bad_len & 0xff);
-    pt[1] = (uint8_t)(bad_len >> 8);
+    pt[0] = 0;  /* flags: no ratchet */
+    pt[1] = (uint8_t)(bad_len & 0xff);
+    pt[2] = (uint8_t)(bad_len >> 8);
 
     uint8_t frame[FRAME_SZ];
     memcpy(frame, ad, AD_SZ);
@@ -694,7 +702,7 @@ static void test_cross_session_isolation(void) {
     const char *msg = "session isolation test";
     uint8_t frame[FRAME_SZ], next[KEY];
     TEST("frame_build for isolation test",
-         frame_build(s1.tx, s1.tx_seq, (const uint8_t *)msg,
+         frame_build(&s1, (const uint8_t *)msg,
                      (uint16_t)strlen(msg), frame, next) == 0);
 
     uint8_t plain[MAX_MSG + 1];
@@ -738,7 +746,7 @@ static void test_bidirectional_chains(void) {
     /* Send 5 messages initiator -> responder */
     for (int i = 0; i < 5; i++) {
         TEST("fwd build",
-             frame_build(init_s.tx, init_s.tx_seq, (const uint8_t *)msg,
+             frame_build(&init_s, (const uint8_t *)msg,
                          (uint16_t)strlen(msg), frame, next) == 0);
         memcpy(init_s.tx, next, KEY);
         init_s.tx_seq++;
@@ -749,7 +757,7 @@ static void test_bidirectional_chains(void) {
     /* Send a message responder -> initiator to verify rx chain still works */
     const char *reply = "reverse direction";
     TEST("reverse build",
-         frame_build(resp_s.tx, resp_s.tx_seq, (const uint8_t *)reply,
+         frame_build(&resp_s, (const uint8_t *)reply,
                      (uint16_t)strlen(reply), frame, next) == 0);
     memcpy(resp_s.tx, next, KEY);
     resp_s.tx_seq++;
@@ -941,7 +949,7 @@ static void test_forward_secrecy_key_erasure(void) {
     for (int i = 0; i < 5; i++) {
         const char *msg = "advance chain";
         uint8_t frame[FRAME_SZ], next_tx[KEY];
-        frame_build(sender.tx, sender.tx_seq,
+        frame_build(&sender,
                     (const uint8_t *)msg, (uint16_t)strlen(msg),
                     frame, next_tx);
         memcpy(sender.tx, next_tx, KEY);
@@ -976,9 +984,16 @@ static void test_forward_secrecy_key_erasure(void) {
     uint8_t stale_frame[FRAME_SZ], stale_next[KEY];
     uint8_t stale_chain[KEY];
     fill_random(stale_chain, KEY);  /* random chain != real chain */
-    frame_build(stale_chain, receiver.rx_seq,
-                (const uint8_t *)"stale", 5,
-                stale_frame, stale_next);
+    {
+        session_t stale_s;
+        memset(&stale_s, 0, sizeof stale_s);
+        memcpy(stale_s.tx, stale_chain, KEY);
+        stale_s.tx_seq = receiver.rx_seq;
+        stale_s.need_send_ratchet = 0;
+        frame_build(&stale_s,
+                    (const uint8_t *)"stale", 5,
+                    stale_frame, stale_next);
+    }
     uint8_t plain[MAX_MSG + 1];
     uint16_t plen;
     TEST("frame with wrong chain key rejected",
@@ -1010,13 +1025,19 @@ static void test_frame_build_cleanup(void) {
 
     uint8_t frame[FRAME_SZ], next[KEY];
     const char *msg = "cleanup test";
+    session_t tmp;
+    memset(&tmp, 0, sizeof tmp);
+    memcpy(tmp.tx, chain, KEY);
+    tmp.tx_seq = 0;
+    tmp.need_send_ratchet = 0;
     TEST("frame_build succeeds",
-         frame_build(chain, 0, (const uint8_t *)msg,
+         frame_build(&tmp, (const uint8_t *)msg,
                      (uint16_t)strlen(msg), frame, next) == 0);
 
-    /* Original chain must be unchanged (frame_build takes const chain) */
+    /* Original chain in session must be unchanged (frame_build does not
+     * commit the chain advance — that is the caller's job). */
     TEST("chain unchanged after frame_build",
-         crypto_verify32(chain, chain_backup) == 0);
+         crypto_verify32(tmp.tx, chain_backup) == 0);
 
     /* next_chain must differ from original */
     TEST("next_chain differs from original",
@@ -1115,8 +1136,13 @@ static void test_frame_build_wipes_intermediates(void) {
     const char *msg = "short";
     uint16_t msglen = (uint16_t)strlen(msg);
     uint8_t frame[FRAME_SZ], next[KEY];
+    session_t tmp;
+    memset(&tmp, 0, sizeof tmp);
+    memcpy(tmp.tx, chain, KEY);
+    tmp.tx_seq = 0;
+    tmp.need_send_ratchet = 0;
     TEST("frame_build succeeds",
-         frame_build(chain, 0, (const uint8_t *)msg, msglen, frame, next) == 0);
+         frame_build(&tmp, (const uint8_t *)msg, msglen, frame, next) == 0);
 
     /* Decrypt and verify the padding region (bytes after the message) is zero */
     session_t s;
@@ -1136,10 +1162,11 @@ static void test_frame_build_wipes_intermediates(void) {
                             frame, AD_SZ,
                             frame + AD_SZ, CT_SZ) == 0);
 
-    /* Padding bytes (after 2-byte length + message) must be zero.
-     * This proves frame_build memset pt to 0 before copying the message. */
+    /* Padding bytes (after flags + 2-byte length + message) must be zero.
+     * This proves frame_build memset pt to 0 before copying the message.
+     * v2 format: [flags(1) | len(2) | message | zero padding] */
     int pad_clean = 1;
-    for (int i = 2 + msglen; i < CT_SZ; i++) {
+    for (int i = 3 + msglen; i < CT_SZ; i++) {
         if (pt[i] != 0) { pad_clean = 0; break; }
     }
     TEST("plaintext padding is zero (no leftover data)", pad_clean);
@@ -1167,8 +1194,13 @@ static void test_frame_open_wipes_on_mac_failure(void) {
     /* Build a valid frame */
     const char *msg = "wipe me on failure";
     uint8_t frame[FRAME_SZ], next[KEY];
+    session_t tmp;
+    memset(&tmp, 0, sizeof tmp);
+    memcpy(tmp.tx, chain, KEY);
+    tmp.tx_seq = 0;
+    tmp.need_send_ratchet = 0;
     TEST("frame_build succeeds",
-         frame_build(chain, 0, (const uint8_t *)msg,
+         frame_build(&tmp, (const uint8_t *)msg,
                      (uint16_t)strlen(msg), frame, next) == 0);
 
     /* Tamper with ciphertext to trigger MAC failure */
@@ -1214,8 +1246,13 @@ static void test_frame_open_no_bleed_past_length(void) {
     const char *msg = "hi";
     uint16_t msglen = (uint16_t)strlen(msg);
     uint8_t frame[FRAME_SZ], next[KEY];
+    session_t tmp;
+    memset(&tmp, 0, sizeof tmp);
+    memcpy(tmp.tx, chain, KEY);
+    tmp.tx_seq = 0;
+    tmp.need_send_ratchet = 0;
     TEST("frame_build succeeds",
-         frame_build(chain, 0, (const uint8_t *)msg, msglen, frame, next) == 0);
+         frame_build(&tmp, (const uint8_t *)msg, msglen, frame, next) == 0);
 
     session_t s;
     memset(&s, 0, sizeof s);
@@ -1356,12 +1393,17 @@ static void test_frame_build_rejects_oversized(void) {
     uint8_t oversized[MAX_MSG + 2];
     memset(oversized, 'X', sizeof oversized);
 
+    session_t tmp;
+    memset(&tmp, 0, sizeof tmp);
+    memcpy(tmp.tx, chain, KEY);
+    tmp.tx_seq = 0;
+    tmp.need_send_ratchet = 0;
     TEST("frame_build rejects len > MAX_MSG",
-         frame_build(chain, 0, oversized, MAX_MSG + 1, frame, next) == -1);
+         frame_build(&tmp, oversized, MAX_MSG + 1, frame, next) == -1);
 
     /* Input chain must be unmodified */
     TEST("chain unchanged after rejection",
-         crypto_verify32(chain, chain_backup) == 0);
+         crypto_verify32(tmp.tx, chain_backup) == 0);
 
     /* The frame output should not contain a valid-looking AD or ciphertext.
      * Since the function returned early, frame should still have marker. */
@@ -1388,8 +1430,13 @@ static void test_frame_boundary_message_sizes(void) {
         memcpy(chain1, chain, KEY);
         const uint8_t single = 'Z';
         uint8_t frame[FRAME_SZ], next[KEY];
+        session_t tmp1;
+        memset(&tmp1, 0, sizeof tmp1);
+        memcpy(tmp1.tx, chain1, KEY);
+        tmp1.tx_seq = 0;
+        tmp1.need_send_ratchet = 0;
         TEST("frame_build len=1 succeeds",
-             frame_build(chain1, 0, &single, 1, frame, next) == 0);
+             frame_build(&tmp1, &single, 1, frame, next) == 0);
 
         session_t s;
         memset(&s, 0, sizeof s);
@@ -1411,8 +1458,13 @@ static void test_frame_boundary_message_sizes(void) {
         memcpy(chain2, chain, KEY);
         const uint8_t two[2] = {'A', 'B'};
         uint8_t frame[FRAME_SZ], next[KEY];
+        session_t tmp2;
+        memset(&tmp2, 0, sizeof tmp2);
+        memcpy(tmp2.tx, chain2, KEY);
+        tmp2.tx_seq = 0;
+        tmp2.need_send_ratchet = 0;
         TEST("frame_build len=2 succeeds",
-             frame_build(chain2, 0, two, 2, frame, next) == 0);
+             frame_build(&tmp2, two, 2, frame, next) == 0);
 
         session_t s;
         memset(&s, 0, sizeof s);
@@ -1460,10 +1512,17 @@ static void test_nonce_uniqueness_across_chains(void) {
     const char *msg = "same plaintext";
     uint16_t len = (uint16_t)strlen(msg);
     uint8_t f1[FRAME_SZ], f2[FRAME_SZ], nx1[KEY], nx2[KEY];
+    session_t ts1, ts2;
+    memset(&ts1, 0, sizeof ts1);
+    memcpy(ts1.tx, chain1, KEY);
+    ts1.need_send_ratchet = 0;
+    memset(&ts2, 0, sizeof ts2);
+    memcpy(ts2.tx, chain2, KEY);
+    ts2.need_send_ratchet = 0;
     TEST("frame_build chain1",
-         frame_build(chain1, 0, (const uint8_t *)msg, len, f1, nx1) == 0);
+         frame_build(&ts1, (const uint8_t *)msg, len, f1, nx1) == 0);
     TEST("frame_build chain2",
-         frame_build(chain2, 0, (const uint8_t *)msg, len, f2, nx2) == 0);
+         frame_build(&ts2, (const uint8_t *)msg, len, f2, nx2) == 0);
 
     /* AD is the same (seq=0) but ciphertext must differ */
     TEST("same plaintext, different chains → different ciphertext",
@@ -1499,7 +1558,7 @@ static void test_sequential_chain_advancement(void) {
         uint16_t mlen = (uint16_t)strlen(msg);
 
         uint8_t frame[FRAME_SZ], next_tx[KEY];
-        if (frame_build(sender.tx, sender.tx_seq,
+        if (frame_build(&sender,
                         (const uint8_t *)msg, mlen, frame, next_tx) != 0) {
             all_ok = 0; break;
         }
@@ -1542,7 +1601,7 @@ static void test_sequential_chain_advancement(void) {
         uint8_t dummy_sas[KEY];
         (void)session_init(&fresh_sender, 1, priv_a, pub_a, pub_b, dummy_sas);
         uint8_t replay_frame[FRAME_SZ], replay_next[KEY];
-        (void)frame_build(fresh_sender.tx, 0,
+        (void)frame_build(&fresh_sender,
                           (const uint8_t *)"message 0", 9,
                           replay_frame, replay_next);
 

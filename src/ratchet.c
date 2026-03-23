@@ -54,29 +54,21 @@ void ratchet_init(session_t *s, int we_init,
      * first ratchet key arrives from the peer. */
     memcpy(s->peer_dh, peer_pub, KEY);
 
-    if (we_init){
-        /* Initiator: generate a fresh ratchet keypair immediately and
-         * perform one DH ratchet step to derive the sending chain.
-         * The handshake keypair is NOT stored — only the fresh one. */
-        fill_random(s->dh_priv, KEY);
-        crypto_x25519_public_key(s->dh_pub, s->dh_priv);
+    /* Both sides store the handshake keypair as the initial ratchet keypair
+     * and set need_send_ratchet=1.  The first frame_build on either side
+     * will trigger ratchet_send, which generates a fresh keypair, performs
+     * a DH ratchet step, and includes the new public key in the frame
+     * (FLAG_RATCHET).  This ensures the peer can derive the matching
+     * rx chain from the ratchet key in the first received message.
+     *
+     * The handshake private key is retained here because it is needed for
+     * the first ratchet_receive DH computation when the peer's ratchet
+     * key arrives. */
+    (void)we_init;
+    memcpy(s->dh_priv, self_priv, KEY);
+    memcpy(s->dh_pub,  self_pub,  KEY);
 
-        ratchet_step(s->root, s->tx, s->dh_priv, s->peer_dh);
-
-        s->need_send_ratchet = 0;  /* ready to send (already ratcheted) */
-    } else {
-        /* Responder: store the handshake keypair as the initial ratchet
-         * keypair.  The responder DOES retain the handshake private key
-         * here — it is needed for the first ratchet_receive DH computation
-         * when the initiator's ratchet key arrives.  This differs from
-         * the initiator, who generates a fresh keypair immediately.
-         * The first incoming frame will carry the initiator's new ratchet
-         * key, triggering ratchet_receive to derive rx. */
-        memcpy(s->dh_priv, self_priv, KEY);
-        memcpy(s->dh_pub,  self_pub,  KEY);  /* avoid recomputing */
-
-        s->need_send_ratchet = 1;  /* first send must ratchet */
-    }
+    s->need_send_ratchet = 1;  /* first send must ratchet */
 }
 
 int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]){

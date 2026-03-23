@@ -95,18 +95,18 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]){
     expand(sas_key_out,  prk, "sas");
     expand(s->root,      prk, "root");
 
-    /* The initiator's tx chain is derived inside ratchet_init (via a
-     * DH ratchet step).  The responder's rx chain is derived when the
-     * first ratchet frame arrives.  We derive the OTHER chain here:
-     * - Initiator: rx (receiving from responder, who hasn't ratcheted yet)
-     * - Responder: tx (sending to initiator, before our first ratchet)
+    /* Derive bootstrap chains for both directions.  These are used for
+     * the very first frame from each side, which also carries FLAG_RATCHET
+     * to set up the DH-ratcheted chains for subsequent messages.
      *
-     * This "bootstrap" chain uses the same expand(root, label) as v1,
-     * but only for the direction that hasn't ratcheted yet. */
+     * Initiator tx = responder rx ("init->resp" direction)
+     * Initiator rx = responder tx ("resp->init" direction) */
     if (we_init){
+        expand(s->tx, s->root, "init->resp");
         expand(s->rx, s->root, "resp->init");
     } else {
-        expand(s->tx, s->root, "resp->init");  /* same label as initiator's rx */
+        expand(s->tx, s->root, "resp->init");
+        expand(s->rx, s->root, "init->resp");
     }
     s->tx_seq = 0;
     s->rx_seq = 0;
@@ -139,15 +139,33 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
 [[nodiscard]] int frame_build(session_t *s,
                               const uint8_t *plain, uint16_t len,
                               uint8_t frame[FRAME_SZ], uint8_t next_chain[KEY]){
-    /* Check if a DH ratchet step is needed (direction switched). */
+    /* Check if a DH ratchet step is needed (direction switched).
+     *
+     * IMPORTANT: save the pre-ratchet tx chain BEFORE calling ratchet_send.
+     * ratchet_send derives a new tx chain for future messages, but THIS
+     * frame must be encrypted with the OLD chain — because the receiver's
+     * rx still corresponds to the old chain.  The ratchet key we include
+     * tells the receiver to derive the new rx for FUTURE messages. */
     uint8_t ratchet_pub[KEY];
+    uint8_t encrypt_chain[KEY];
+    memcpy(encrypt_chain, s->tx, KEY);
     int ratcheting = ratchet_send(s, ratchet_pub);
 
     uint16_t max = ratcheting ? MAX_MSG_RATCHET : MAX_MSG;
     if (len > max) return -1;
 
     uint8_t mk[KEY], ad[AD_SZ], nonce[NONCE_SZ], pt[CT_SZ];
-    chain_step(s->tx, mk, next_chain);
+    if (ratcheting){
+        /* Ratcheted: encrypt with old chain, next_chain = ratcheted tx.
+         * The caller commits next_chain after send, installing the new
+         * ratcheted chain for subsequent messages. */
+        uint8_t discard[KEY];
+        chain_step(encrypt_chain, mk, discard);
+        memcpy(next_chain, s->tx, KEY);
+        crypto_wipe(discard, sizeof discard);
+    } else {
+        chain_step(encrypt_chain, mk, next_chain);
+    }
     le64_store(ad, s->tx_seq);
     make_nonce(nonce, s->tx_seq);
 
@@ -170,10 +188,11 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
                      frame + AD_SZ + CT_SZ,
                      mk, nonce, ad, AD_SZ, pt, CT_SZ);
 
-    crypto_wipe(mk,          sizeof mk);
-    crypto_wipe(pt,          sizeof pt);
-    crypto_wipe(nonce,       sizeof nonce);
-    crypto_wipe(ratchet_pub, sizeof ratchet_pub);
+    crypto_wipe(mk,            sizeof mk);
+    crypto_wipe(pt,            sizeof pt);
+    crypto_wipe(nonce,         sizeof nonce);
+    crypto_wipe(ratchet_pub,   sizeof ratchet_pub);
+    crypto_wipe(encrypt_chain, sizeof encrypt_chain);
     return 0;
 }
 
@@ -234,9 +253,16 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
         return -1;
     }
 
-    /* All validation passed — now safe to commit state changes. */
-    if (flags & FLAG_RATCHET) ratchet_receive(s, pt + ratchet_off);
-    memcpy(s->rx, next_rx, KEY);
+    /* All validation passed — now safe to commit state changes.
+     *
+     * If a ratchet key was present, ratchet_receive derives a fresh rx
+     * chain for future messages.  We must NOT overwrite it with next_rx
+     * (which is the old chain stepped forward).  For non-ratchet frames,
+     * advance the existing chain as before. */
+    if (flags & FLAG_RATCHET)
+        ratchet_receive(s, pt + ratchet_off);
+    else
+        memcpy(s->rx, next_rx, KEY);
     s->rx_seq++;
     s->need_send_ratchet = 1;
     if (out)     memcpy(out, pt + off, len);
