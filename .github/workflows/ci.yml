@@ -98,6 +98,22 @@ jobs:
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: build/sanitize/test_p2p
 
+      - name: Build test_p2p with MSan
+        run: |
+          mkdir -p build/msan
+          cd build/msan
+          CC=clang-19 cmake \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer -g -O1" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=memory" \
+            ../..
+          make -j$(nproc) test_p2p
+
+      - name: Run tests under MSan
+        env:
+          MSAN_OPTIONS: halt_on_error=1
+        run: build/msan/test_p2p
+
   static-analysis:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
