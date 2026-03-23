@@ -273,7 +273,7 @@ make
 Or explicitly, if you prefer not to use `make`:
 
 ```bash
-gcc -O2 -std=c23 -Isrc -Ilib src/*.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -o simplecipher
+gcc -O2 -std=c23 -Isrc -Ilib src/*.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
 ```
 
 ### Cross-compile with CMake presets
@@ -299,7 +299,7 @@ cd android && ./gradlew assembleDebug
 
 ### Build flags
 
-Binaries are size-optimized: `-Os -flto -ffunction-sections -fdata-sections` with `--gc-sections` for dead code removal. Linux binaries are stripped of build-id, compiler ident, and RELRO segments.
+Binaries are size-optimized: `-Os -flto -ffunction-sections -fdata-sections` with `--gc-sections` for dead code removal. Linux binaries are stripped of symbols, build-id, and compiler ident. Full RELRO and non-executable stack are enabled on all ELF binaries.
 
 ## Tests
 
@@ -362,7 +362,8 @@ bash tests/test_binary.sh
 ├── src/
 │   ├── main.c                    # entry point — start reading here
 │   ├── platform.h / platform.c   # OS abstraction: sockets, CSPRNG, signals, time
-│   ├── crypto.h / crypto.c       # KDF, chain-key ratchet, commitment scheme
+│   ├── crypto.h / crypto.c       # KDF, symmetric chain ratchet, commitment scheme
+│   ├── ratchet.h / ratchet.c     # DH ratchet for post-compromise security
 │   ├── protocol.h / protocol.c   # sessions, frame encrypt/decrypt, handshake helpers
 │   ├── network.h / network.c     # TCP connect, listen, send, receive
 │   ├── tui.h / tui.c             # shared TUI: ring buffer, drawing, SAS screen
@@ -393,13 +394,20 @@ bash tests/test_binary.sh
 │       ├── activity_main.xml     # connection setup screen
 │       └── activity_chat.xml     # chat interface
 ├── tests/
-│   ├── test_p2p.c                # 273-test P2P integration suite
+│   ├── test_p2p.c                # 542-test P2P integration suite
+│   ├── test_constant_time.c      # dudect timing side-channel verification
+│   ├── cbmc_harness.py           # CBMC formal verification (38K properties)
+│   ├── dudect.h                  # vendored dudect library (public domain)
 │   ├── test_binary.sh            # local test runner
-│   ├── test_build.sh             # CMake configuration tests
+│   ├── test_build.sh             # CMake configuration + Monocypher integrity
 │   ├── test_linux.sh             # ELF binary analysis
 │   ├── test_android.sh           # APK structural validation
 │   ├── test_windows.ps1          # PE binary analysis (PowerShell)
-│   └── test_windows_pe.sh        # PE header checks (cross-platform)
+│   ├── test_windows_pe.sh        # PE header checks (cross-platform)
+│   ├── fuzz_frame_open.c         # libFuzzer harness for frame_open
+│   ├── fuzz_sanitize.c           # libFuzzer harness for sanitize_peer_text
+│   ├── fuzz_validate_port.c      # libFuzzer harness for validate_port
+│   └── gen_fuzz_corpus.c         # seed corpus generator for fuzzers
 ├── .clang-tidy                    # clang-tidy check configuration
 └── .github/workflows/
     ├── ci.yml                    # build + test + sanitizers + analysis (12 jobs)
@@ -414,8 +422,9 @@ The protocol is split into focused modules. Each module exposes a header; consum
 ```
 lib/monocypher.c          (vendored crypto primitives — X25519, XChaCha20-Poly1305, BLAKE2b)
         │
-src/platform.h/c          OS abstraction (sockets, CSPRNG, signals, time)
-src/crypto.h/c            KDF, chain-key ratchet, commitment scheme
+src/platform.h/c          OS abstraction (sockets, CSPRNG, signals, seccomp)
+src/crypto.h/c            KDF, symmetric chain ratchet, commitment scheme
+src/ratchet.h/c           DH ratchet (post-compromise security)
         │
 src/protocol.h/c          sessions, frames, handshake helpers
 src/network.h/c           TCP connect / listen / send / receive

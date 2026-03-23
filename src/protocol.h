@@ -19,13 +19,14 @@
  *   ikm      = dh_shared_secret || initiator_pub || responder_pub
  *   prk      = domain_hash("cipher x25519 sas root v1", ikm)
  *   sas_key  = expand(prk, "sas")
- *   tx_chain = expand(prk, direction)
- *   rx_chain = expand(prk, direction)
+ *   root_key = expand(prk, "root")
+ *   bootstrap_chain = expand(root_key, "resp->init")
+ *   ... then ratchet_init derives the DH-ratcheted chains from root_key
  *
  * The commit-after-send pattern ensures both sides stay in sync:
  * the chain is advanced only after a successful network write.
  *
- * Read next: network.h (TCP I/O) or crypto.h (cryptographic primitives)
+ * Read next: ratchet.h (DH ratchet), network.h (TCP I/O), crypto.h (primitives)
  */
 
 #ifndef SIMPLECIPHER_PROTOCOL_H
