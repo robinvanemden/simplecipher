@@ -108,7 +108,7 @@ TUI mode works on Linux, macOS, and Windows 10+. No dependencies — pure ANSI e
 
 **Interactive connect**: running `simplecipher connect` without a host prompts for it on stdin. The target address never appears in `argv`, shell history, or `/proc/*/cmdline`.
 
-**Peer fingerprint** (`--peer-fingerprint`): the listener's fingerprint is shown on the listen screen. Share it out-of-band (paper, QR code, Signal message), then the connector passes it as a flag. After the handshake, the peer's public key is hashed and compared — mismatch aborts the connection. This is optional additional verification on top of the SAS code, useful when you can pre-share a fingerprint but can't make a phone call.
+**Peer fingerprint** (`--peer-fingerprint`): the listener's fingerprint is shown on the listen screen *before* any connection is made, so it can be shared while waiting for a peer. The connector passes it as a flag. After the handshake, the peer's public key is hashed and compared — mismatch aborts the connection. This is optional additional verification on top of the SAS code, useful when you can pre-share a fingerprint but can't make a phone call.
 
 On Android, the same flow happens through the app UI: choose Listen or Connect, enter the host/port, verify the safety code, and chat.
 

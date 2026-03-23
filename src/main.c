@@ -236,6 +236,26 @@ int main(int argc, char *argv[]){
 
     if (tui_mode) tui_init_term();
 
+    /* ------------------------------------------------------------------
+     * STEP 0: Generate ephemeral keypair and compute fingerprint
+     *
+     * Done BEFORE the TCP connection so the listener can display and
+     * share their fingerprint while waiting for a peer to connect.
+     * The peer uses --peer-fingerprint to verify identity after the
+     * handshake completes.
+     *
+     * The keypair is session-only: generated fresh every run, wiped at
+     * exit.  Generating it a few seconds earlier (before listen/connect
+     * instead of after) does not change the security properties — the
+     * keys exist in RAM either way until the session ends.
+     * ------------------------------------------------------------------ */
+
+    gen_keypair(self_priv, self_pub);
+    make_commit(commit_self, self_pub);
+
+    char self_fp[20];
+    format_fingerprint(self_fp, self_pub);
+
     if (!tui_mode){
         printf("\n");
         printf("  SimpleCipher\n");
@@ -276,6 +296,8 @@ int main(int argc, char *argv[]){
             printf("  Tell your peer to run:\n\n");
             print_local_ips(port);
             printf("\n");
+            printf("  Your fingerprint: %s\n", self_fp);
+            printf("  (share with peer for --peer-fingerprint verification)\n\n");
             printf("  Waiting for connection... (Ctrl+C to cancel)"); fflush(stdout);
             g_fd = listen_socket(port);
         }
@@ -303,10 +325,11 @@ int main(int argc, char *argv[]){
      * This prevents an attacker from adaptively brute-forcing the SAS
      * after seeing one side's key (see make_commit in crypto.h for the
      * full argument).
+     *
+     * gen_keypair + make_commit were already called in STEP 0 (before
+     * listen/connect) so the fingerprint could be shown on the listen
+     * screen for pre-sharing.
      * ------------------------------------------------------------------ */
-
-    gen_keypair(self_priv, self_pub);
-    make_commit(commit_self, self_pub);
 
     /* 30-second timeout: disconnect a peer who stalls during the handshake.
      * Removed after the handshake so idle chat sessions are not affected. */
@@ -378,21 +401,15 @@ int main(int argc, char *argv[]){
 
     /* Fingerprint verification: an optional second layer of identity assurance.
      *
-     * In listen mode, always print our fingerprint so the listener can share
-     * it out-of-band (e.g. paste it into a Signal message) before connecting.
+     * The listener's fingerprint was already shown on the listen screen
+     * (STEP 0/1) so it can be pre-shared before the peer connects.
      *
      * In connect mode with --peer-fingerprint, verify the peer's key matches
      * the expected fingerprint.  This catches MITM attacks even before the
      * SAS comparison, and does not require an interactive voice call. */
     {
-        char our_fp[20], peer_fp[20];
-        format_fingerprint(our_fp, self_pub);
+        char peer_fp[20];
         format_fingerprint(peer_fp, peer_pub);
-
-        if (!we_init && !tui_mode){
-            printf("\n  Your fingerprint: %s\n", our_fp);
-            printf("  (share this with your peer if using --peer-fingerprint)\n");
-        }
 
         if (peer_fp_expected){
             /* Strip dashes and uppercase both strings before comparing. */
@@ -419,16 +436,15 @@ int main(int argc, char *argv[]){
                                 "  Got:      %s\n"
                                 "  Aborting -- possible MITM attack.\n",
                         peer_fp_expected, peer_fp);
-                crypto_wipe(our_fp, sizeof our_fp);
                 crypto_wipe(peer_fp, sizeof peer_fp);
                 goto out;
             }
             if (!tui_mode)
                 printf("  Peer fingerprint verified: %s\n", peer_fp);
         }
-        crypto_wipe(our_fp, sizeof our_fp);
         crypto_wipe(peer_fp, sizeof peer_fp);
     }
+    crypto_wipe(self_fp, sizeof self_fp);
 
     /* ------------------------------------------------------------------
      * STEP 4: Out-of-band safety code verification
