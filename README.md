@@ -196,11 +196,13 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Zero-init all locals (`-ftrivial-auto-var-init=zero`) | yes | yes | yes |
 | Buffer overflow detection (`_FORTIFY_SOURCE`) | 3 | — | 2 |
 | Control-flow integrity | CET (x86), BTI (arm64) | CET (x86), BTI (arm64) | CFI + BTI (arm64) |
+| Strict flex array bounds (`-fstrict-flex-arrays=3`) | yes | yes | yes |
 | Hidden symbol visibility | yes | yes | yes + JNI export whitelist |
 | LTO (whole-program optimization) | yes | yes | yes |
 | **Linker** | | | |
 | Full RELRO (read-only GOT) | yes | — | yes |
 | Non-executable stack | yes | — | yes |
+| Block dlopen (`-z,nodlopen`) | yes | — | — |
 | ASLR | OS default | high-entropy | OS default |
 | DEP (W^X) | OS default | yes | OS default |
 | Fully static binary | yes (musl) | yes | N/A (shared JNI lib) |
@@ -209,6 +211,7 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Lock memory (prevent swap) | `mlockall` | — | — |
 | Disable core dumps | `RLIMIT_CORE=0` | `SetErrorMode` (WER off) | — |
 | Block ptrace / memory inspection | `PR_SET_DUMPABLE=0` | — | — |
+| Seccomp-BPF syscall filter | yes (chat loop) | — | — |
 | **Key management** | | | |
 | Wipe all keys after use (`crypto_wipe`) | yes | yes | yes (native layer) |
 | Ephemeral keys only (nothing on disk) | yes | yes | yes |
