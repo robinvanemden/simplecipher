@@ -376,6 +376,7 @@ jobs:
             release/simplecipher-win-x86_64.exe \
             release/simplecipher-win-aarch64.exe \
             release/simplecipher-android.apk \
+            release/simplecipher-android-debug.apk \
             release/SHA256SUMS.txt \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
