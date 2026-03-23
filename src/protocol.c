@@ -124,36 +124,56 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
 
 /* Encrypt one message into a fixed 512-byte frame.
  *
- * Frame: [ seq(8) | ciphertext(488) | mac(16) ]
- * Plaintext slot: [ len(2) | message | zeros to fill 488 bytes ]
- * Fixed size hides message length from network observers.
+ * Calls ratchet_send() to check if a DH ratchet step is needed.  If so,
+ * the frame's flags byte is set to FLAG_RATCHET and the sender's new
+ * ratchet public key is included in the plaintext slot.
  *
  * next_chain is computed but the caller does NOT advance the chain until
  * the write succeeds -- "commit after successful send" keeps both sides
- * in sync even if a send fails midway. */
-[[nodiscard]] int frame_build(const uint8_t chain[KEY], uint64_t seq,
+ * in sync even if a send fails midway.
+ *
+ * Note: ratchet state (root, dh_priv, dh_pub, tx) is mutated inside
+ * ratchet_send before the frame is built.  If the subsequent write fails,
+ * the session is inconsistent -- this is acceptable because any I/O
+ * failure is session-fatal in SimpleCipher. */
+[[nodiscard]] int frame_build(session_t *s,
                               const uint8_t *plain, uint16_t len,
                               uint8_t frame[FRAME_SZ], uint8_t next_chain[KEY]){
-    if (len > MAX_MSG) return -1;
+    /* Check if a DH ratchet step is needed (direction switched). */
+    uint8_t ratchet_pub[KEY];
+    int ratcheting = ratchet_send(s, ratchet_pub);
+
+    uint16_t max = ratcheting ? MAX_MSG_RATCHET : MAX_MSG;
+    if (len > max) return -1;
 
     uint8_t mk[KEY], ad[AD_SZ], nonce[NONCE_SZ], pt[CT_SZ];
-    chain_step(chain, mk, next_chain);
-    le64_store(ad, seq);
-    make_nonce(nonce, seq);
+    chain_step(s->tx, mk, next_chain);
+    le64_store(ad, s->tx_seq);
+    make_nonce(nonce, s->tx_seq);
 
+    /* Build plaintext slot:
+     *   Normal:  [ flags(1) | len(2) | message | zero padding ]
+     *   Ratchet: [ flags(1) | ratchet_pub(32) | len(2) | message | padding ] */
     memset(pt, 0, sizeof pt);
-    pt[0] = (uint8_t)(len & 0xff);
-    pt[1] = (uint8_t)(len >> 8);
-    if (len) memcpy(pt + 2, plain, len);
+    size_t off = 0;
+    pt[off++] = ratcheting ? FLAG_RATCHET : 0;
+    if (ratcheting){
+        memcpy(pt + off, ratchet_pub, KEY);
+        off += KEY;
+    }
+    pt[off++] = (uint8_t)(len & 0xff);
+    pt[off++] = (uint8_t)(len >> 8);
+    if (len) memcpy(pt + off, plain, len);
 
     memcpy(frame, ad, AD_SZ);
-    crypto_aead_lock(frame + AD_SZ,         /* ciphertext */
-                     frame + AD_SZ + CT_SZ, /* mac        */
+    crypto_aead_lock(frame + AD_SZ,
+                     frame + AD_SZ + CT_SZ,
                      mk, nonce, ad, AD_SZ, pt, CT_SZ);
 
-    crypto_wipe(mk,    sizeof mk);
-    crypto_wipe(pt,    sizeof pt);
-    crypto_wipe(nonce, sizeof nonce);
+    crypto_wipe(mk,          sizeof mk);
+    crypto_wipe(pt,          sizeof pt);
+    crypto_wipe(nonce,       sizeof nonce);
+    crypto_wipe(ratchet_pub, sizeof ratchet_pub);
     return 0;
 }
 
@@ -184,17 +204,42 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
         return -1;
     }
 
-    len = (uint16_t)(pt[0] | (pt[1] << 8));
-    if (len > MAX_MSG){
+    /* Parse the v2 plaintext slot: flags, optional ratchet key, len, message.
+     *
+     * IMPORTANT: do not mutate session state until ALL validation passes.
+     * ratchet_receive modifies s->root, s->rx, s->peer_dh — so we read
+     * the ratchet key position first, validate len, and only then commit
+     * all state changes (chain advance + ratchet) in one block. */
+    size_t off = 0;
+    uint8_t flags = pt[off++];
+
+    /* Reject frames with unknown flag bits (forward compatibility). */
+    if (flags & ~FLAG_RATCHET){
         crypto_wipe(mk, sizeof mk); crypto_wipe(next_rx, sizeof next_rx);
         crypto_wipe(pt, sizeof pt); crypto_wipe(nonce, sizeof nonce);
         return -1;
     }
 
-    /* Auth passed -- now safe to advance the chain. */
+    /* Note the ratchet key position but don't process it yet. */
+    size_t ratchet_off = off;
+    if (flags & FLAG_RATCHET) off += KEY;
+
+    len = (uint16_t)(pt[off] | (pt[off + 1] << 8));
+    off += 2;
+
+    uint16_t max = (flags & FLAG_RATCHET) ? MAX_MSG_RATCHET : MAX_MSG;
+    if (len > max){
+        crypto_wipe(mk, sizeof mk); crypto_wipe(next_rx, sizeof next_rx);
+        crypto_wipe(pt, sizeof pt); crypto_wipe(nonce, sizeof nonce);
+        return -1;
+    }
+
+    /* All validation passed — now safe to commit state changes. */
+    if (flags & FLAG_RATCHET) ratchet_receive(s, pt + ratchet_off);
     memcpy(s->rx, next_rx, KEY);
     s->rx_seq++;
-    if (out)     memcpy(out, pt + 2, len);
+    s->need_send_ratchet = 1;
+    if (out)     memcpy(out, pt + off, len);
     if (out_len) *out_len = len;
 
     crypto_wipe(mk, sizeof mk); crypto_wipe(next_rx, sizeof next_rx);

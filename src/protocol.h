@@ -74,10 +74,19 @@ void session_wipe(session_t *s);
 
 /* Encrypt one message into a fixed 512-byte frame.
  *
+ * Calls ratchet_send() to check if a DH ratchet step is needed.  If so,
+ * the frame's flags byte is set to FLAG_RATCHET and the sender's new
+ * ratchet public key is included in the plaintext slot.
+ *
  * next_chain is computed but the caller does NOT advance the chain until
  * the write succeeds -- "commit after successful send" keeps both sides
- * in sync even if a send fails midway. */
-[[nodiscard]] int frame_build(const uint8_t chain[KEY], uint64_t seq,
+ * in sync even if a send fails midway.
+ *
+ * Note: ratchet state (root, dh_priv, dh_pub, tx) is mutated inside
+ * ratchet_send before the frame is built.  If the subsequent write fails,
+ * the session is inconsistent -- this is acceptable because any I/O
+ * failure is session-fatal in SimpleCipher. */
+[[nodiscard]] int frame_build(session_t *s,
                               const uint8_t *plain, uint16_t len,
                               uint8_t frame[FRAME_SZ], uint8_t next_chain[KEY]);
 
