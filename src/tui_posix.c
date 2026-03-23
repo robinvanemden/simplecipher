@@ -170,7 +170,7 @@ void tui_chat_loop(socket_t fd, session_t *sess){
                     continue;
                 }
 
-                if (frame_build(sess->tx, sess->tx_seq,
+                if (frame_build(sess,
                                 (const uint8_t*)line, (uint16_t)line_len,
                                 frame, next_tx) != 0){
                     crypto_wipe(line,    sizeof line);

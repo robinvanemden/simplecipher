@@ -89,6 +89,7 @@ set(CORE_SRC
     src/platform.c
     src/crypto.c
     src/protocol.c
+    src/ratchet.c
     src/network.c
     src/tui.c
     src/cli.c

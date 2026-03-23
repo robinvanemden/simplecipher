@@ -10,6 +10,7 @@ add_library(simplecipher SHARED
     "${PROJECT_ROOT}/src/platform.c"
     "${PROJECT_ROOT}/src/crypto.c"
     "${PROJECT_ROOT}/src/protocol.c"
+    "${PROJECT_ROOT}/src/ratchet.c"
     "${PROJECT_ROOT}/src/network.c"
     "${PROJECT_ROOT}/src/tui.c"
     "${PROJECT_ROOT}/src/tui_posix.c"

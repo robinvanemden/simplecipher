@@ -256,7 +256,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess){
 
                 /* Build the encrypted frame.  Do not advance the chain
                  * until write_exact succeeds (same logic as the original). */
-                if (frame_build(sess->tx, sess->tx_seq,
+                if (frame_build(sess,
                                 (const uint8_t*)line, (uint16_t)line_len,
                                 frame, next_tx) != 0){
                     crypto_wipe(line,    sizeof line);
@@ -383,7 +383,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess){
 
             /* Build the frame (compute next_chain) but do not advance
              * the chain yet -- only commit after a successful write. */
-            if (frame_build(sess->tx, sess->tx_seq,
+            if (frame_build(sess,
                             (const uint8_t*)line, (uint16_t)n,
                             frame, next_tx) != 0){
                 crypto_wipe(line,    sizeof line);

@@ -421,7 +421,7 @@ static void *session_thread(void *arg) {
 
                     /* Encrypt and send */
                     uint8_t frame[FRAME_SZ], next_tx[KEY];
-                    if (frame_build(sess.tx, sess.tx_seq,
+                    if (frame_build(&sess,
                                     msg_buf, plen,
                                     frame, next_tx) != 0) {
                         LOGE("frame_build failed");

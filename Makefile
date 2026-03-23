@@ -15,7 +15,7 @@ CFLAGS  ?= -Os -std=c23 -Wall -Wextra -Isrc -Ilib \
 LDFLAGS ?= -flto -Wl,--gc-sections -s
 
 # Core sources (platform-independent + small inline #ifdefs)
-CORE_SRC = src/platform.c src/crypto.c src/protocol.c src/network.c \
+CORE_SRC = src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c \
            src/tui.c src/cli.c lib/monocypher.c
 
 # Platform-specific event loops and hardening
