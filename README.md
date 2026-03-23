@@ -330,7 +330,7 @@ bash tests/test_binary.sh
 
 ### Test coverage
 
-**P2P integration tests** (`tests/test_p2p.c` — 542 tests):
+**P2P integration tests** (`tests/test_p2p.c` — 605 tests):
 - Crypto primitives: keygen, commitment, DH agreement, SAS derivation, KDF known-answer vectors
 - DH ratchet: roundtrip, key rotation, multiple cycles, consecutive sends, long burst (20 messages), post-compromise security proof, simultaneous send, state preservation on failure
 - TCP loopback: full handshake + ratcheted message exchange over 127.0.0.1
@@ -349,11 +349,11 @@ bash tests/test_binary.sh
 - clang-tidy-19: bugprone, cert, security, clang-analyzer checks
 
 **Fuzzing** (CI smoke + weekly long runs):
-- libFuzzer + ASan + UBSan on frame parsing, input sanitization, port validation
+- libFuzzer + ASan + UBSan on frame parsing, input sanitization, port validation, SOCKS5 request building
 
 **Formal verification** (manual, requires [CBMC](https://github.com/diffblue/cbmc)):
-- Bounded model checking on 6 core functions: `frame_open`, `frame_build`, `chain_step`, `ratchet_send`, `ratchet_receive`, `session_init`
-- Proves absence of buffer overflow, out-of-bounds access, null pointer dereference, and signed integer overflow for ALL possible inputs (38,279 properties verified)
+- Bounded model checking on 9 functions: `frame_open`, `frame_build`, `chain_step`, `ratchet_send`, `ratchet_receive`, `session_init`, `format_fingerprint`, `socks5_build_request`, `socks5_reply_skip`
+- Proves absence of buffer overflow, out-of-bounds access, null pointer dereference, and signed integer overflow for ALL possible inputs (57,161 properties verified)
 - Run: `python3 tests/cbmc_harness.py`
 
 **Constant-time verification** (manual, two complementary approaches):
@@ -442,7 +442,7 @@ taskset -c 0 ./test_ct
 ├── tests/
 │   ├── test_p2p.c                # 542-test P2P integration suite
 │   ├── test_constant_time.c      # dudect timing side-channel verification
-│   ├── cbmc_harness.py           # CBMC formal verification (38K properties)
+│   ├── cbmc_harness.py           # CBMC formal verification (57K properties)
 │   ├── dudect.h                  # vendored dudect library (public domain)
 │   ├── test_binary.sh            # local test runner
 │   ├── test_build.sh             # CMake configuration + Monocypher integrity
@@ -453,6 +453,7 @@ taskset -c 0 ./test_ct
 │   ├── fuzz_frame_open.c         # libFuzzer harness for frame_open
 │   ├── fuzz_sanitize.c           # libFuzzer harness for sanitize_peer_text
 │   ├── fuzz_validate_port.c      # libFuzzer harness for validate_port
+│   ├── fuzz_socks5.c             # libFuzzer harness for SOCKS5 request builder
 │   └── gen_fuzz_corpus.c         # seed corpus generator for fuzzers
 ├── .clang-tidy                    # clang-tidy check configuration
 └── .github/workflows/
