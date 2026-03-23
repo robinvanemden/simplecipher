@@ -61,7 +61,23 @@ SimpleCipher encrypts your messages, but your IP address is still visible to the
 | **Port forwarding** | Forward port 7777 on your router | Anyone who knows the IP can attempt a connection |
 | **Tor** | Anonymity matters | Neither side learns the other's IP; network observers see Tor traffic but not the destination |
 
-**If you need anonymity** — not just encryption — use Tor. Install Tor, then: `torsocks simplecipher listen` and `torsocks simplecipher connect <onion-address>`. This also solves NAT traversal (no port forwarding needed).
+**If you need anonymity** — not just encryption — use Tor:
+
+```bash
+# Connecting through Tor (easy — just wrap with torsocks or --socks5):
+simplecipher connect --socks5 127.0.0.1:9050 <onion-address>
+
+# Listening as a Tor onion service (requires onion service setup):
+# 1. Add to /etc/tor/torrc:
+#      HiddenServiceDir /var/lib/tor/simplecipher/
+#      HiddenServicePort 7777 127.0.0.1:7777
+# 2. Restart Tor:  sudo systemctl restart tor
+# 3. Get your .onion address:  cat /var/lib/tor/simplecipher/hostname
+# 4. Listen normally:  simplecipher listen
+# Your peer connects to the .onion address via --socks5.
+```
+
+Note: `torsocks` only works for **outbound** connections (connect). To accept incoming connections anonymously, you must configure a Tor onion service as shown above. See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for details.
 
 ### Options
 
@@ -107,10 +123,10 @@ After connecting, both sides see the same safety code:
 +------------------------------------------+
   Safety code:  A3F2-91BC
 
-Type the first 4 characters of the code to confirm:
+Type the full code to confirm:
 ```
 
-Call your peer on a separate channel (phone, in person) and compare the code. If it matches, type the first 4 characters to confirm. If it does not match, someone is intercepting — press Ctrl+C.
+Call your peer on a separate channel (phone, in person) and compare the code. If it matches, type the full code to confirm (dashes optional, case-insensitive). If it does not match, someone is intercepting — press Ctrl+C.
 
 **The safety code comparison IS the authentication.** Skip it and a man-in-the-middle can read everything.
 
@@ -212,7 +228,7 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Stack clash protection | yes | — | yes |
 | Zero-init all locals (`-ftrivial-auto-var-init=zero`) | yes | yes | yes |
 | Buffer overflow detection (`_FORTIFY_SOURCE`) | 3 | — | 2 |
-| Control-flow integrity | CET (x86), BTI (arm64) | CET (x86), BTI (arm64) | CFI + BTI (arm64) |
+| Control-flow integrity | CET (x86), BTI (arm64) | flags set (not PE-verified) | CFI + BTI (arm64) |
 | Strict flex array bounds (`-fstrict-flex-arrays=3`) | yes | yes | yes |
 | Hidden symbol visibility | yes | yes | yes + JNI export whitelist |
 | LTO (whole-program optimization) | yes | yes | yes |
@@ -256,7 +272,7 @@ No OpenSSL, no libsodium, no dynamic linking. The entire cryptographic stack is 
 ## FAQ
 
 **Why not just use Signal / WhatsApp / Telegram?**
-Those require accounts, phone numbers, and a central server that knows who talks to whom. SimpleCipher has no server, no accounts, and no keys stored to disk. There is no central record of who talked to whom, and no local forensic trace that a conversation ever happened. When the session ends, the keys are gone. Use Signal when you need persistent contacts and key continuity. Use SimpleCipher when leaving no trace matters more.
+Those require accounts, phone numbers, and a central server that knows who talks to whom. SimpleCipher has no server, no accounts, and no keys stored to disk. There is no central record of who talked to whom. When the session ends, the keys are gone. The application stores no protocol state, message history, or contact list — but note that the underlying OS may retain artifacts (terminal scrollback, shell history if host/port were on the command line, swap/pagefile, OS-level logging). Use `--socks5` and the interactive connect prompt to minimize command-line exposure. Use Signal when you need persistent contacts and key continuity. Use SimpleCipher when minimal trace matters more.
 
 **Why not just use Tailscale / WireGuard and any chat app?**
 Tailscale solves connectivity (NAT traversal), not trust. SimpleCipher adds: ephemeral keys (nothing stored to disk), SAS verification (cryptographic proof of who you're talking to), and forward secrecy (keys wiped after each message). Even if the VPN layer were compromised, SimpleCipher's end-to-end encryption holds. They're complementary — use Tailscale for connectivity, SimpleCipher for trust.
@@ -501,7 +517,11 @@ git push origin v0.3.0
 
 ### Verifying release binaries
 
-Every release binary has a [Sigstore](https://www.sigstore.dev/) build provenance attestation. This cryptographically proves the binary was built by this repository's CI — not by a third party. Even if the CI environment were compromised, the attestation is signed by Sigstore's transparency log and cannot be forged.
+Every release binary has a [Sigstore](https://www.sigstore.dev/) build provenance attestation. This proves the binary was built by this repository's CI workflow — not by an unrelated third party.
+
+**What attestation proves:** the binary was produced by a specific GitHub Actions workflow in this repository, at a specific commit, with a specific set of inputs. The attestation is signed by Sigstore's transparency log.
+
+**What attestation does NOT prove:** that the workflow itself is safe. If the workflow were compromised (e.g. a malicious dependency or a tampered action), the attestation would still be valid for the compromised artifact. Attestation is provenance, not a security guarantee.
 
 To verify a downloaded binary:
 
