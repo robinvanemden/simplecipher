@@ -121,3 +121,22 @@ void format_sas(char out[20], const uint8_t key[KEY]){
     snprintf(out, 20, "%02X%02X-%02X%02X",
              key[0], key[1], key[2], key[3]);
 }
+
+/* Format a public key fingerprint as "XXXX-XXXX-XXXX-XXXX" (16 hex chars).
+ *
+ * Hashes the public key with a distinct domain label, then formats the first
+ * 8 bytes (64 bits) as four dash-separated groups of 4 hex digits.  64 bits
+ * is sufficient for interactive verification: with the commitment scheme in
+ * place, an attacker cannot brute-force a matching fingerprint.
+ *
+ * The fingerprint lets users verify peer identity out-of-band (paper, QR code,
+ * Signal) before the session starts, adding a second layer of trust beyond
+ * the in-session SAS code. */
+void format_fingerprint(char out[20], const uint8_t pub[KEY]){
+    uint8_t hash[32];
+    domain_hash(hash, "cipher fingerprint v2", pub, KEY);
+    snprintf(out, 20, "%02X%02X-%02X%02X-%02X%02X-%02X%02X",
+             hash[0], hash[1], hash[2], hash[3],
+             hash[4], hash[5], hash[6], hash[7]);
+    crypto_wipe(hash, sizeof hash);
+}

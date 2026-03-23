@@ -179,4 +179,14 @@ void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]);
  * clearly over a voice call: "A-3-F-2 dash 9-1-B-C". */
 void format_sas(char out[20], const uint8_t key[KEY]);
 
+/* Format a public key fingerprint as "XXXX-XXXX-XXXX-XXXX" (16 hex chars
+ * with dashes).  Uses the first 8 bytes of BLAKE2b(pub) for 64-bit
+ * fingerprint — sufficient for interactive verification since the commitment
+ * scheme prevents brute-force search.
+ *
+ * The fingerprint can be shared out-of-band (paper, QR code, Signal message)
+ * and verified with --peer-fingerprint to confirm peer identity without
+ * relying solely on the SAS code. */
+void format_fingerprint(char out[20], const uint8_t pub[KEY]);
+
 #endif /* SIMPLECIPHER_CRYPTO_H */

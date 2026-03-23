@@ -205,7 +205,7 @@ int main(int argc, char *argv[]){
 
     /* Interactive connect prompt: if "connect" is given without a host,
      * prompt on stdin.  This keeps the target address out of argv, shell
-     * history, and /proc/*/cmdline — useful when connecting to sensitive
+     * history, and process listings — useful when connecting to sensitive
      * destinations (e.g. .onion addresses through --socks5). */
     static char prompt_host[256];
     static char prompt_port[8];
