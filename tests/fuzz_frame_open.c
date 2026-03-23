@@ -8,8 +8,8 @@
  * Build:
  *   clang -std=c23 -Isrc -Ilib -g -O1 -fsanitize=fuzzer,address,undefined \
  *     tests/fuzz_frame_open.c src/platform.c src/crypto.c src/protocol.c \
- *     src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c \
- *     lib/monocypher.c -o fuzz_frame_open
+ *     src/ratchet.c src/network.c src/tui.c src/tui_posix.c src/cli.c \
+ *     src/cli_posix.c lib/monocypher.c -o fuzz_frame_open
  *
  * Run:
  *   ./fuzz_frame_open [-max_total_time=60]
@@ -23,6 +23,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     /* Set up a session with a deterministic key so the fuzzer can explore
      * paths beyond the initial seq check.  We cycle through a few rx_seq
      * values so the fuzzer can discover the seq-match path. */
+    /* Zero-init gives deterministic DH ratchet fields (dh_priv, dh_pub,
+     * root all zero).  This is safe: frame_open will parse the v2 flags
+     * and may call ratchet_receive with zero dh_priv, which is
+     * deterministic but harmless for fuzzing purposes. */
     session_t s;
     memset(&s, 0, sizeof s);
 

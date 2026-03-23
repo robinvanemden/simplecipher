@@ -6,8 +6,9 @@
  *
  * Build & run:
  *   gcc -std=c23 -Isrc -Ilib -o gen_fuzz_corpus tests/gen_fuzz_corpus.c \
- *       src/platform.c src/crypto.c src/protocol.c src/network.c \
- *       src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c lib/monocypher.c
+ *       src/platform.c src/crypto.c src/protocol.c src/ratchet.c \
+ *       src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c \
+ *       lib/monocypher.c
  *   ./gen_fuzz_corpus tests/corpus
  *
  * Creates:
@@ -62,7 +63,7 @@ static void gen_frame_open_corpus(const char *base) {
     {
         const char *msg = "hello";
         uint8_t frame[FRAME_SZ], next[KEY];
-        (void)frame_build(s.tx, s.tx_seq, (const uint8_t *)msg,
+        (void)frame_build(&s, (const uint8_t *)msg,
                           (uint16_t)strlen(msg), frame, next);
 
         /* fuzz_frame_open reads FRAME_SZ bytes + optional KEY bytes */
@@ -81,7 +82,7 @@ static void gen_frame_open_corpus(const char *base) {
     /* Seed 2: valid frame with empty message */
     {
         uint8_t frame[FRAME_SZ], next[KEY];
-        (void)frame_build(s.tx, s.tx_seq, (const uint8_t *)"", 0, frame, next);
+        (void)frame_build(&s, (const uint8_t *)"", 0, frame, next);
         uint8_t seed[FRAME_SZ + KEY];
         memcpy(seed, frame, FRAME_SZ);
         memcpy(seed + FRAME_SZ, s.tx, KEY);
@@ -95,7 +96,7 @@ static void gen_frame_open_corpus(const char *base) {
         uint8_t msg[MAX_MSG];
         memset(msg, 'A', MAX_MSG);
         uint8_t frame[FRAME_SZ], next[KEY];
-        (void)frame_build(s.tx, s.tx_seq, msg, MAX_MSG, frame, next);
+        (void)frame_build(&s, msg, MAX_MSG, frame, next);
         uint8_t seed[FRAME_SZ + KEY];
         memcpy(seed, frame, FRAME_SZ);
         memcpy(seed + FRAME_SZ, s.tx, KEY);
@@ -122,12 +123,12 @@ static void gen_frame_open_corpus(const char *base) {
     {
         for (int i = 0; i < 10; i++) {
             uint8_t frame[FRAME_SZ], next[KEY];
-            (void)frame_build(s.tx, s.tx_seq, (const uint8_t *)"x", 1, frame, next);
+            (void)frame_build(&s, (const uint8_t *)"x", 1, frame, next);
             memcpy(s.tx, next, KEY);
             s.tx_seq++;
         }
         uint8_t frame[FRAME_SZ], next[KEY];
-        (void)frame_build(s.tx, s.tx_seq, (const uint8_t *)"deep chain", 10,
+        (void)frame_build(&s, (const uint8_t *)"deep chain", 10,
                     frame, next);
         uint8_t seed[FRAME_SZ + KEY];
         memcpy(seed, frame, FRAME_SZ);
