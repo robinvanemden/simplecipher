@@ -10,6 +10,7 @@
  */
 
 #include "protocol.h"
+#include "ratchet.h"
 
 /* ---- input validation --------------------------------------------------- */
 
@@ -88,11 +89,29 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]){
     memcpy(ikm + KEY*2, resp_pub, KEY);
     domain_hash(prk, "cipher x25519 sas root v1", ikm, sizeof ikm);
 
+    /* Before (v1): derived tx/rx directly from prk, discarded prk.
+     * Now (v2): derive a root key that persists across DH ratchet steps,
+     * then let ratchet_init derive the initial tx/rx chains from root. */
     expand(sas_key_out,  prk, "sas");
-    expand(s->tx,        prk, we_init ? "init->resp" : "resp->init");
-    expand(s->rx,        prk, we_init ? "resp->init" : "init->resp");
+    expand(s->root,      prk, "root");
+
+    /* The initiator's tx chain is derived inside ratchet_init (via a
+     * DH ratchet step).  The responder's rx chain is derived when the
+     * first ratchet frame arrives.  We derive the OTHER chain here:
+     * - Initiator: rx (receiving from responder, who hasn't ratcheted yet)
+     * - Responder: tx (sending to initiator, before our first ratchet)
+     *
+     * This "bootstrap" chain uses the same expand(root, label) as v1,
+     * but only for the direction that hasn't ratcheted yet. */
+    if (we_init){
+        expand(s->rx, s->root, "resp->init");
+    } else {
+        expand(s->tx, s->root, "resp->init");  /* same label as initiator's rx */
+    }
     s->tx_seq = 0;
     s->rx_seq = 0;
+
+    ratchet_init(s, we_init, self_priv, self_pub, peer_pub);
 
     crypto_wipe(dh,  sizeof dh);
     crypto_wipe(prk, sizeof prk);
