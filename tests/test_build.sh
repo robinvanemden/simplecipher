@@ -60,5 +60,26 @@ check "windows aarch64 build uses C23 flag" \
     "grep -q '$C23_PAT' '$BUILD_WIN_ARM/CMakeFiles/simplecipher.dir/flags.make'"
 
 echo ""
+echo "=== Vendored library integrity ==="
+
+# Verify monocypher.c and monocypher.h have not been accidentally modified.
+# These checksums correspond to the vendored Monocypher version.  Update them
+# only when intentionally upgrading the library.
+MONO_C_HASH="$(sha256sum "$PROJECT_DIR/lib/monocypher.c" 2>/dev/null | cut -d' ' -f1)"
+MONO_H_HASH="$(sha256sum "$PROJECT_DIR/lib/monocypher.h" 2>/dev/null | cut -d' ' -f1)"
+
+check "lib/monocypher.c exists" "test -f '$PROJECT_DIR/lib/monocypher.c'"
+check "lib/monocypher.h exists" "test -f '$PROJECT_DIR/lib/monocypher.h'"
+
+# Hardcoded hashes of the vendored Monocypher files.  If these fail after
+# a legitimate upgrade, regenerate with: sha256sum lib/monocypher.c lib/monocypher.h
+EXPECTED_C="02174117935699d418443c75a558a287deb06ef8cf7c1adced61d9047d2f323d"
+EXPECTED_H="fcaf6ed771358bb4f40fba016f6518ae86ec02b1b877d2cc35ad92d3a26fd7b3"
+check "monocypher.c integrity (sha256)" \
+    "test '$MONO_C_HASH' = '$EXPECTED_C'"
+check "monocypher.h integrity (sha256)" \
+    "test '$MONO_H_HASH' = '$EXPECTED_H'"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

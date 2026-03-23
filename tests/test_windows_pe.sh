@@ -74,6 +74,32 @@ check "is stripped (no symbols)" \
 SIZE="$(stat --format=%s "$BIN" 2>/dev/null || stat -f%z "$BIN" 2>/dev/null || echo 999999)"
 check "size < 256KB" "test '$SIZE' -lt 262144"
 
+# DllCharacteristics (2 bytes at optional header + 70 for PE32+)
+DLL_CHARS=$(le16 $((PE_OFFSET + 24 + 70)))
+DLL_CHARS_DEC=$(printf '%d' "0x$DLL_CHARS")
+
+# DYNAMIC_BASE (ASLR) = bit 6 = 0x0040
+check "ASLR enabled (DYNAMIC_BASE)" \
+    "test \$((DLL_CHARS_DEC & 0x0040)) -ne 0"
+
+# HIGH_ENTROPY_VA = bit 5 = 0x0020
+check "high-entropy ASLR (HIGH_ENTROPY_VA)" \
+    "test \$((DLL_CHARS_DEC & 0x0020)) -ne 0"
+
+# NX_COMPAT (DEP) = bit 8 = 0x0100
+check "DEP enabled (NX_COMPAT)" \
+    "test \$((DLL_CHARS_DEC & 0x0100)) -ne 0"
+
+# No debug directory: check NumberOfRvaAndSizes >= 7, then read debug
+# directory RVA at optional header + 144 (PE32+).  If RVA is 0, no debug info.
+DEBUG_RVA=$(hex_at $((PE_OFFSET + 24 + 144)) 4)
+check "no debug directory (no PDB reference)" \
+    "test '$DEBUG_RVA' = '00000000'"
+
+# No debug strings leaked into binary
+check "no 'SAS:' debug string" \
+    "! strings '$BIN' | grep -q 'SAS:'"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

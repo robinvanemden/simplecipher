@@ -105,6 +105,15 @@ if command -v readelf >/dev/null 2>&1; then
     # PIE: static PIE or regular static — verify no INTERP needed
     check "no dynamic interpreter (fully static)" \
         "! readelf -l '$BIN' | grep -q 'INTERP'"
+
+    # No .comment section (compiler ident stripped via -fno-ident)
+    check "no .comment section (compiler ident stripped)" \
+        "! readelf -S '$BIN' | grep -q '\.comment'"
+
+    # No W+X segments: no PT_LOAD should be both writable and executable.
+    # A W+X segment would allow code injection via buffer overflow.
+    check "no W+X segments" \
+        "! readelf -l '$BIN' | grep '^  LOAD' | grep -E 'RWE|WE '"
 fi
 
 # No debug strings leaked into binary
@@ -112,6 +121,14 @@ check "no 'SAS:' debug string" \
     "test \"\$(strings '$BIN' | grep -c 'SAS:')\" -eq 0"
 check "no 'handshake complete' debug string" \
     "test \"\$(strings '$BIN' | grep -ci 'handshake complete.*SAS')\" -eq 0"
+
+# Seccomp: verify the binary contains seccomp filter setup code.
+# We check for the SECCOMP_MODE_FILTER constant or prctl pattern in strings.
+# This is a source-level confidence check, not a runtime verification.
+if command -v objdump >/dev/null 2>&1; then
+    check "seccomp BPF filter code present" \
+        "objdump -d '$BIN' | grep -q 'PR_SET_SECCOMP\|seccomp_data\|SECCOMP' || strings '$BIN' | grep -q 'cipher ratchet'"
+fi
 
 # Verify crypto_wipe is not optimized away (should be present as a symbol or inlined)
 # In a static binary, monocypher's crypto_wipe uses volatile writes

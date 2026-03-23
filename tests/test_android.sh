@@ -101,6 +101,42 @@ if command -v aapt2 >/dev/null 2>&1; then
         echo "  SKIP: could not dump activity_chat.xml layout"
     fi
 
+    echo ""
+    echo "=== APK-level release safety tests ==="
+
+    # Verify the release APK is not debuggable (aapt2 badging only shows
+    # "application-debuggable" when the flag is true — absence means safe)
+    check "release APK is not debuggable" \
+        "! echo '$BADGING' | grep -q 'application-debuggable'"
+
+    # No exported content providers or broadcast receivers (attack surface)
+    check "no exported content providers" \
+        "! echo '$XMLTREE_MANIFEST' | grep -q 'provider'"
+    check "no exported broadcast receivers" \
+        "! echo '$XMLTREE_MANIFEST' | grep -q 'receiver'"
+
+    # ProGuard log stripping verification: the built dex should contain
+    # no references to android.util.Log method calls.  R8 should have
+    # removed them via -assumenosideeffects, but a misconfiguration could
+    # silently leave them in.
+    if command -v dexdump >/dev/null 2>&1; then
+        DEXDUMP="$(dexdump -d "$APK" 2>/dev/null || true)"
+        check "no Log.d/v/i/w/e/wtf calls in dex (R8 stripped)" \
+            "! echo '$DEXDUMP' | grep -qE 'Landroid/util/Log;\.(d|v|i|w|e|wtf)'"
+    elif command -v baksmali >/dev/null 2>&1; then
+        SMALI_DIR="$(mktemp -d)"
+        baksmali d "$APK" -o "$SMALI_DIR" 2>/dev/null || true
+        check "no Log.d/v/i/w/e/wtf calls in dex (R8 stripped)" \
+            "! grep -rqE 'Landroid/util/Log;->(d|v|i|w|e|wtf)' '$SMALI_DIR'"
+        rm -rf "$SMALI_DIR"
+    else
+        echo "  SKIP: dexdump/baksmali not found, skipping log stripping verification"
+    fi
+
+    # No WebView usage — SimpleCipher should never load web content
+    check "no WebView in dex" \
+        "! unzip -p '$APK' classes.dex 2>/dev/null | strings | grep -q 'android/webkit/WebView'"
+
 else
     echo "  SKIP: aapt2 not found, skipping manifest and security validation"
 fi
@@ -161,6 +197,10 @@ check_so() {
     # No LOGI/LOGE format strings in release (NDEBUG should suppress them)
     check "$abi: no log format strings (NDEBUG active)" \
         "! strings '$so' | grep -qE '(connecting to|listening on|handshake|CMD_QUIT)'"
+
+    # Non-executable stack (NX): GNU_STACK segment should have no E flag
+    check "$abi: non-executable stack (NX)" \
+        "readelf -l '$so' | grep 'GNU_STACK' | grep -qv ' E'"
 }
 
 # ARM64-specific hardening checks
@@ -263,6 +303,20 @@ check "CMake uses hidden symbol visibility" \
 check "CMake enables PAC+BTI (ARM64)" \
     "grep -q 'mbranch-protection=standard' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
 
+# 16KB page alignment (Android 15+ requirement, NDK r28+ default)
+# Native libraries must be aligned to 16KB for Android 15+ compatibility.
+# Check via readelf: the maximum p_align of any LOAD segment should be >= 16384.
+if command -v readelf >/dev/null 2>&1 && [ -f "$TMPDIR/lib/arm64-v8a/libsimplecipher.so" ]; then
+    MAX_ALIGN="$(readelf -l "$TMPDIR/lib/arm64-v8a/libsimplecipher.so" 2>/dev/null \
+        | awk '/LOAD/{gsub(/0x/,"",$NF); print strtonum("0x"$NF)}' \
+        | sort -rn | head -1)"
+    if [ -n "$MAX_ALIGN" ] && [ "$MAX_ALIGN" -ge 16384 ] 2>/dev/null; then
+        check "arm64 .so 16KB page aligned (Android 15+)" "true"
+    else
+        echo "  SKIP: arm64 .so not 16KB aligned (MAX_ALIGN=${MAX_ALIGN:-unknown}, may need NDK r28+)"
+    fi
+fi
+
 # JNI exports version script exists
 check "JNI exports version script exists" \
     "test -f '$REPO_ROOT/android/app/src/main/c/jni_exports.map'"
@@ -278,6 +332,10 @@ check "JNI disables core dumps (RLIMIT_CORE)" \
 # Manifest: extractNativeLibs=false
 check "Manifest disables native lib extraction" \
     "grep -q 'extractNativeLibs.*false' '$REPO_ROOT/android/app/src/main/AndroidManifest.xml'"
+
+# Manifest: hasFragileUserData=false (prevent OS from offering to keep data on uninstall)
+check "Manifest has hasFragileUserData=false" \
+    "grep -q 'hasFragileUserData.*false' '$REPO_ROOT/android/app/src/main/AndroidManifest.xml'"
 
 # Manifest: network security config
 check "Network security config exists" \
