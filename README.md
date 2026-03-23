@@ -313,24 +313,37 @@ bash tests/test_binary.sh
 
 ### Test coverage
 
-**P2P integration tests** (`tests/test_p2p.c` — 273 tests):
-- Crypto primitives: keygen, commitment, DH agreement, SAS derivation
-- TCP loopback: full handshake between two threads on 127.0.0.1
-- Bidirectional encrypted message exchange over the wire
-- Tamper detection: flipped ciphertext bits cause authentication failure
-- Replay rejection: reused frames are rejected
-- Forward secrecy chain: 10-message sequence with chain advancement
-- Edge cases: empty messages, max-length messages, over-length rejection
+**P2P integration tests** (`tests/test_p2p.c` — 542 tests):
+- Crypto primitives: keygen, commitment, DH agreement, SAS derivation, KDF known-answer vectors
+- DH ratchet: roundtrip, key rotation, multiple cycles, consecutive sends, long burst (20 messages), post-compromise security proof, simultaneous send, state preservation on failure
+- TCP loopback: full handshake + ratcheted message exchange over 127.0.0.1
+- Tamper detection, replay rejection, reserved flag rejection
+- Forward secrecy chain, chain step aliasing safety (100-iteration feedback loop)
+- Edge cases: empty messages, max-length messages (normal + ratchet), over-length rejection
 - Input validation: port range, sanitization of non-printable bytes
+- Session wipe completeness (all DH ratchet fields zeroed)
+- Deterministic session vector: fixed keys produce known SAS `9052-EF29`
 
 **Sanitizers** (CI, blocking):
 - AddressSanitizer + UndefinedBehaviorSanitizer on the full test suite (clang-19)
+- MemorySanitizer (detects uninitialized memory reads)
 
 **Static analysis** (CI, blocking):
 - clang-tidy-19: bugprone, cert, security, clang-analyzer checks
 
 **Fuzzing** (CI smoke + weekly long runs):
 - libFuzzer + ASan + UBSan on frame parsing, input sanitization, port validation
+
+**Formal verification** (manual, requires [CBMC](https://github.com/diffblue/cbmc)):
+- Bounded model checking on 6 core functions: `frame_open`, `frame_build`, `chain_step`, `ratchet_send`, `ratchet_receive`, `session_init`
+- Proves absence of buffer overflow, out-of-bounds access, null pointer dereference, and signed integer overflow for ALL possible inputs (38,279 properties verified)
+- Run: `python3 tests/cbmc_harness.py`
+
+**Constant-time verification** (manual, requires x86_64):
+- [dudect](https://github.com/oreparaz/dudect) statistical timing analysis on 8 functions: `is_zero32`, `verify_commit`, `domain_hash`, `expand`, `chain_step`, `crypto_x25519`, `frame_build`, `frame_open`
+- 7/7 secret-handling functions verified constant-time (~2M measurements each)
+- Known-accept: `frame_open` shows timing variance due to Monocypher's intentional MAC-fail fast path (not exploitable — see `test_constant_time.c` for details)
+- Run: `gcc -std=c23 -O2 -Isrc -Ilib -Itests tests/test_constant_time.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c lib/monocypher.c -lm -o test_ct && taskset -c 0 ./test_ct`
 
 **Platform tests** (run natively on GitHub-hosted runners):
 
