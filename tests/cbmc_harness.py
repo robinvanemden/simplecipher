@@ -36,6 +36,7 @@ SOURCES = [
     "src/crypto.c",
     "src/ratchet.c",
     "src/protocol.c",
+    "src/network.c",
 ]
 
 # Headers that need C23→C11 conversion
@@ -157,6 +158,30 @@ int main(void) {
     }
     int we_init = nondet_int();
     session_init(&s, we_init, priv, pub, peer, sas);
+    return 0;
+}
+""",
+    "socks5_build_request": """
+extern uint8_t nondet_uint8(void);
+int main(void) {
+    uint8_t buf[262];
+    /* Symbolic host: up to 256 chars (one past max to test rejection) */
+    char host[257];
+    for (int i = 0; i < 256; i++) host[i] = (char)nondet_uint8();
+    host[256] = '\\0';
+    char port[6];
+    for (int i = 0; i < 5; i++) port[i] = (char)nondet_uint8();
+    port[5] = '\\0';
+    socks5_build_request(buf, sizeof buf, host, port);
+    return 0;
+}
+""",
+    "socks5_reply_skip": """
+extern uint8_t nondet_uint8(void);
+int main(void) {
+    uint8_t atyp = nondet_uint8();
+    uint8_t dlen = nondet_uint8();
+    socks5_reply_skip(atyp, dlen);
     return 0;
 }
 """,

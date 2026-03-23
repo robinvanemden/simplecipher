@@ -3785,6 +3785,93 @@ static void test_fingerprint_wipe(void) {
     crypto_wipe(pub2, KEY);
 }
 
+/* ---- test: SOCKS5 pure functions ---------------------------------------- */
+
+static void test_socks5_build_request(void) {
+    printf("\n=== socks5_build_request ===\n");
+    uint8_t buf[SOCKS5_REQ_MAX];
+
+    /* Valid request */
+    int len = socks5_build_request(buf, sizeof buf, "example.com", "80");
+    TEST("valid request returns positive length", len > 0);
+    TEST("version is 5", buf[0] == 0x05);
+    TEST("command is CONNECT", buf[1] == 0x01);
+    TEST("reserved is 0", buf[2] == 0x00);
+    TEST("address type is domain", buf[3] == 0x03);
+    TEST("domain length is 11", buf[4] == 11);
+    TEST("domain content correct", memcmp(buf + 5, "example.com", 11) == 0);
+    TEST("port high byte is 0", buf[16] == 0x00);
+    TEST("port low byte is 80", buf[17] == 80);
+    TEST("total length is 18", len == 18);
+
+    /* Onion address (long hostname) */
+    len = socks5_build_request(buf, sizeof buf,
+        "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuv.onion", "9050");
+    TEST(".onion address accepted", len > 0);
+
+    /* Max length hostname (255 chars) */
+    char long_host[256];
+    memset(long_host, 'a', 255);
+    long_host[255] = '\0';
+    len = socks5_build_request(buf, sizeof buf, long_host, "443");
+    TEST("255-char hostname accepted", len > 0);
+    TEST("255-char request length correct", len == 4 + 1 + 255 + 2);
+
+    /* Hostname too long (256 chars) */
+    char too_long[257];
+    memset(too_long, 'a', 256);
+    too_long[256] = '\0';
+    len = socks5_build_request(buf, sizeof buf, too_long, "443");
+    TEST("256-char hostname rejected", len == 0);
+
+    /* Empty hostname */
+    len = socks5_build_request(buf, sizeof buf, "", "80");
+    TEST("empty hostname rejected", len == 0);
+
+    /* Port edge cases */
+    len = socks5_build_request(buf, sizeof buf, "host", "0");
+    TEST("port 0 rejected", len == 0);
+
+    len = socks5_build_request(buf, sizeof buf, "host", "65535");
+    TEST("port 65535 accepted", len > 0);
+    TEST("port 65535 high byte", buf[4 + 1 + 4 + 0] == 0xFF);
+    TEST("port 65535 low byte", buf[4 + 1 + 4 + 1] == 0xFF);
+
+    len = socks5_build_request(buf, sizeof buf, "host", "65536");
+    TEST("port 65536 rejected", len == 0);
+
+    len = socks5_build_request(buf, sizeof buf, "host", "abc");
+    TEST("non-numeric port rejected", len == 0);
+
+    /* Null inputs */
+    len = socks5_build_request(buf, sizeof buf, NULL, "80");
+    TEST("null host rejected", len == 0);
+
+    len = socks5_build_request(buf, sizeof buf, "host", NULL);
+    TEST("null port rejected", len == 0);
+
+    len = socks5_build_request(NULL, sizeof buf, "host", "80");
+    TEST("null buffer rejected", len == 0);
+
+    /* Buffer too small */
+    len = socks5_build_request(buf, 5, "example.com", "80");
+    TEST("undersized buffer rejected", len == 0);
+}
+
+static void test_socks5_reply_skip(void) {
+    printf("\n=== socks5_reply_skip ===\n");
+
+    TEST("IPv4 skip is 6", socks5_reply_skip(0x01, 0) == 6);
+    TEST("IPv6 skip is 18", socks5_reply_skip(0x04, 0) == 18);
+    TEST("domain len=0 skip is 2", socks5_reply_skip(0x03, 0) == 2);
+    TEST("domain len=10 skip is 12", socks5_reply_skip(0x03, 10) == 12);
+    TEST("domain len=255 skip is 257", socks5_reply_skip(0x03, 255) == 257);
+    TEST("unknown atyp 0x00 returns -1", socks5_reply_skip(0x00, 0) == -1);
+    TEST("unknown atyp 0x02 returns -1", socks5_reply_skip(0x02, 0) == -1);
+    TEST("unknown atyp 0x05 returns -1", socks5_reply_skip(0x05, 0) == -1);
+    TEST("unknown atyp 0xFF returns -1", socks5_reply_skip(0xFF, 0) == -1);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -3857,6 +3944,8 @@ int main(void) {
     test_fingerprint_known_vector();
     test_fingerprint_comparison_cases();
     test_fingerprint_wipe();
+    test_socks5_build_request();
+    test_socks5_reply_skip();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);
