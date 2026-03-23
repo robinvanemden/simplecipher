@@ -27,10 +27,14 @@ echo "=== Smoke tests ==="
 check "exists" "test -f '$BIN'"
 check "is executable" "test -x '$BIN'"
 
-# Running with no args should print usage to stderr and exit 1
-USAGE_OUT="$("$BIN" 2>&1 || true)"
-check "prints usage with no args" "echo '$USAGE_OUT' | grep -q 'listen'"
-check "prints usage mentioning connect" "echo '$USAGE_OUT' | grep -q 'connect'"
+# Running with no args should print usage to stderr and exit 1.
+# Pipe directly to grep instead of storing in a variable — the usage text
+# contains parentheses and special characters that break eval+echo.
+USAGE_TMP="$(mktemp)"
+"$BIN" >"$USAGE_TMP" 2>&1 || true
+check "prints usage with no args" "grep -q 'listen' '$USAGE_TMP'"
+check "prints usage mentioning connect" "grep -q 'connect' '$USAGE_TMP'"
+rm -f "$USAGE_TMP"
 
 # --- Binary analysis ---
 

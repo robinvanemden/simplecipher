@@ -61,7 +61,7 @@ jobs:
           mkdir -p build/fuzz
           cd build/fuzz
           CC=clang-19 cmake -DFUZZ=ON ../..
-          make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port
+          make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5
 
       - name: Smoke-fuzz frame_open (30s)
         run: build/fuzz/fuzz_frame_open tests/corpus/frame_open -max_total_time=30 -print_final_stats=1
