@@ -447,6 +447,45 @@ void ts(char *buf, size_t n){
     }
 }
 
+/* Best-effort terminal scrollback purge.
+ * Emits ANSI escape sequences to clear the visible screen and scrollback
+ * buffer.  Only effective when stdout is a terminal — silently skipped when
+ * piping or redirecting. */
+#if defined(_WIN32) || defined(_WIN64)
+void purge_terminal(void){
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (h == INVALID_HANDLE_VALUE) return;
+    DWORD mode;
+    if (!GetConsoleMode(h, &mode)) return;  /* not a console */
+    /* Windows 10+ supports ANSI sequences via ENABLE_VIRTUAL_TERMINAL_PROCESSING */
+    if (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) {
+        const char seq[] = "\033[2J\033[3J\033[H";
+        DWORD written;
+        WriteConsoleA(h, seq, sizeof seq - 1, &written, NULL);
+    } else {
+        /* Fallback: clear screen via Console API (no scrollback clear) */
+        CONSOLE_SCREEN_BUFFER_INFO csbi;
+        if (GetConsoleScreenBufferInfo(h, &csbi)) {
+            DWORD cells = csbi.dwSize.X * csbi.dwSize.Y;
+            COORD origin = {0, 0};
+            DWORD written;
+            FillConsoleOutputCharacterA(h, ' ', cells, origin, &written);
+            FillConsoleOutputAttribute(h, csbi.wAttributes, cells, origin, &written);
+            SetConsoleCursorPosition(h, origin);
+        }
+    }
+}
+#else /* POSIX */
+void purge_terminal(void){
+    if (!isatty(STDOUT_FILENO)) return;
+    /* \033[2J  — clear visible screen
+     * \033[3J  — clear scrollback buffer (xterm, VTE, Windows Terminal)
+     * \033[H   — move cursor to top-left */
+    const char seq[] = "\033[2J\033[3J\033[H";
+    (void)write(STDOUT_FILENO, seq, sizeof seq - 1);
+}
+#endif /* platform */
+
 /* Encode a 64-bit integer in little-endian byte order.
  * Used to write sequence numbers into frames consistently on all platforms. */
 void le64_store(uint8_t out[8], uint64_t v){

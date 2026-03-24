@@ -585,6 +585,11 @@ out:
     crypto_wipe(sas_key,      sizeof sas_key);
     crypto_wipe(sas,          sizeof sas);
     crypto_wipe(typed_sas,    sizeof typed_sas);
+    /* Clear the terminal screen and scrollback buffer so messages don't
+     * linger in terminal history.  TUI mode uses an alternate screen buffer
+     * (\033[?1049h/l) which is restored automatically on exit — purging there
+     * would clear the user's previous scrollback, so we skip it. */
+    if (!tui_mode) purge_terminal();
     plat_quit();
     return rc;
 }

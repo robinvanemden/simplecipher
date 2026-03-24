@@ -19,7 +19,7 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Stack clash protection | yes | — | — |
 | Zero-init all locals (`-ftrivial-auto-var-init=zero`) | yes | yes | yes |
 | Buffer overflow detection (`_FORTIFY_SOURCE`) | 3 | — | 2 |
-| Control-flow integrity | CET (x86), BTI (arm64) | flags set (not PE-verified) | BTI (arm64) |
+| Control-flow integrity | CET (x86), BTI (arm64) | CET via mingw (`-fcf-protection=full`); no MSVC CFG PE flag | BTI (arm64) |
 | Strict flex array bounds (`-fstrict-flex-arrays=3`) | yes | yes | — |
 | Hidden symbol visibility | yes | yes | yes + JNI export whitelist |
 | LTO (whole-program optimization) | yes | yes | yes |

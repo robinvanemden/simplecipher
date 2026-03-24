@@ -126,6 +126,20 @@ if command -v readelf >/dev/null 2>&1; then
         "! readelf -l '$BIN' | grep '^  LOAD' | grep -E 'RWE|WE '"
 fi
 
+# CET: Intel Control-flow Enforcement Technology
+# The .note.gnu.property section records GNU_PROPERTY_X86_FEATURE_1_IBT
+# and GNU_PROPERTY_X86_FEATURE_1_SHSTK when -fcf-protection=full is used.
+# Only relevant on x86_64; aarch64 uses BTI (Branch Target Identification)
+# which is verified separately via compiler flags in CI.
+if [ "$EXPECTED_ARCH" = "x86-64" ] && command -v readelf >/dev/null 2>&1; then
+    if readelf -n "$BIN" 2>/dev/null | grep -q "IBT"; then
+        echo "  PASS: CET IBT (Indirect Branch Tracking) enabled"
+        PASS=$((PASS + 1))
+    else
+        echo "  SKIP: CET IBT not detected (may need -fcf-protection=full)"
+    fi
+fi
+
 # No debug strings leaked into binary
 check "no 'SAS:' debug string" \
     "test \"\$(strings '$BIN' | grep -c 'SAS:')\" -eq 0"

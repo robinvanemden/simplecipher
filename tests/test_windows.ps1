@@ -100,6 +100,20 @@ Check "DEP/NX enabled (NX_COMPAT)" {
     ($DllChars -band 0x0100) -ne 0
 }
 
+# CFG: Control Flow Guard
+# Note: CFG requires the MSVC linker. SimpleCipher cross-compiles with
+# mingw which uses Intel CET (-fcf-protection=full) instead.  CET is
+# enforced by the CPU hardware on supported processors, but does not
+# set the IMAGE_DLLCHARACTERISTICS_GUARD_CF PE flag.
+# The GUARD_CF flag (0x4000) will NOT be present in mingw builds — this
+# is expected and documented.
+$HasGuardCF = ($DllChars -band 0x4000) -ne 0
+if ($HasGuardCF) {
+    Check "CFG enabled (GUARD_CF)" { $true }
+} else {
+    Write-Host "  INFO: CFG not present (expected — mingw uses CET instead of MSVC CFG)"
+}
+
 # Stack protector: the "stack smashing detected" error string survives stripping
 Check "stack protector active (error string present)" {
     $BinaryText -match "stack smashing detected"
