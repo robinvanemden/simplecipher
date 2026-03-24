@@ -219,8 +219,9 @@ cd android && ./gradlew assembleRelease
 | Permission | Purpose |
 |------------|---------|
 | `INTERNET` | TCP connection to peer |
+| `HIDE_OVERLAY_WINDOWS` | Blocks screen-overlay attacks (not a user-visible permission) |
 
-That's it. Nothing else.
+No camera, no storage, no contacts, no location, no microphone.
 
 ### Full flavor
 
