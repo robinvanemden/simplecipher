@@ -930,13 +930,20 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         return -1;
     }
 
-    /* Spawn the session thread */
+    /* Mark session active BEFORE spawning the thread.  If the thread
+     * fails and exits before we resume, its cleanup clears the flag
+     * via the generation guard.  Publishing after pthread_create()
+     * would race: a fast-exiting thread could clear 0 before the
+     * parent stores 1, leaving a stale "active" flag. */
+    g_session_active = 1;
+
     /* Create joinable (not detached) so nativeStart can wait for the
      * previous thread to finish before binding the same port again. */
     int rc = pthread_create(&g_session_thread, NULL, session_thread, ta);
 
     if (rc != 0) {
         LOGE("pthread_create failed: %d", rc);
+        g_session_active = 0;
         (*env)->DeleteGlobalRef(env, ta->callback);
         free(ta->host);
         free(ta);
@@ -945,8 +952,6 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         g_pipe_wr = -1;
         return -1;
     }
-
-    g_session_active = 1;
     LOGI("session thread spawned (mode=%d, port=%d)", (int)mode, (int)port);
     return 0;
 }
