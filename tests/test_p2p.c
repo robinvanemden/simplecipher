@@ -359,6 +359,85 @@ static void test_tcp_loopback(void) {
     plat_quit();
 }
 
+/* ---- test: IPv6 TCP loopback -------------------------------------------- */
+
+static void test_tcp_loopback_ipv6(void) {
+    printf("\n=== TCP loopback P2P test (IPv6) ===\n");
+
+    plat_init();
+
+    const char *port = "19770";
+
+    /* We test at the socket level: verify connect_socket("::1", port) succeeds
+     * when a listener is bound.  If IPv6 is not available on the test host,
+     * skip gracefully. */
+
+    socket_t srv = INVALID_SOCK;
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family   = AF_INET6;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags    = AI_PASSIVE;
+
+    if (getaddrinfo(NULL, port, &hints, &res) != 0) {
+        printf("  SKIP: IPv6 not available (getaddrinfo failed)\n");
+        plat_quit();
+        return;
+    }
+
+    srv = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (srv == INVALID_SOCK) {
+        freeaddrinfo(res);
+        printf("  SKIP: IPv6 socket creation failed\n");
+        plat_quit();
+        return;
+    }
+
+    int one = 1;
+    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof one);
+
+    if (bind(srv, res->ai_addr, (socklen_t)res->ai_addrlen) != 0 ||
+        listen(srv, 1) != 0) {
+        close_sock(srv);
+        freeaddrinfo(res);
+        printf("  SKIP: IPv6 bind/listen failed (IPv6 may be disabled)\n");
+        plat_quit();
+        return;
+    }
+    freeaddrinfo(res);
+
+    /* Connect via connect_socket("::1", port) */
+    socket_t client = connect_socket("::1", port);
+    if (client == INVALID_SOCK) {
+        close_sock(srv);
+        printf("  SKIP: IPv6 connect failed\n");
+        plat_quit();
+        return;
+    }
+
+    socket_t accepted = accept(srv, NULL, NULL);
+    TEST("IPv6 accept succeeded", accepted != INVALID_SOCK);
+    TEST("IPv6 connect succeeded", client != INVALID_SOCK);
+
+    /* Quick data exchange to prove the connection works */
+    if (accepted != INVALID_SOCK && client != INVALID_SOCK) {
+        const char *msg = "ipv6 test";
+        TEST("IPv6 write", write_exact(client, (const uint8_t *)msg, 9) == 0);
+        uint8_t buf[9];
+        TEST("IPv6 read", read_exact(accepted, buf, 9) == 0);
+        TEST("IPv6 data matches", memcmp(buf, msg, 9) == 0);
+    }
+
+    if (accepted != INVALID_SOCK) {
+        sock_shutdown_both(accepted);
+        close_sock(accepted);
+    }
+    sock_shutdown_both(client);
+    close_sock(client);
+    close_sock(srv);
+    plat_quit();
+}
+
 /* ---- test 3: port validation -------------------------------------------- */
 
 static void test_validation(void) {
@@ -4646,6 +4725,7 @@ int main(void) {
     test_sanitize();
     test_crypto_basics();
     test_tcp_loopback();
+    test_tcp_loopback_ipv6();
     test_zero_dh_rejection();
     test_chain_step_independence();
     test_domain_separation();

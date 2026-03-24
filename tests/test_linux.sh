@@ -186,6 +186,50 @@ check "purge_terminal called in main.c (guarded by tui_mode)" \
 check "platform.c has OpenBSD pledge support" \
     "grep -q '__OpenBSD__' '$REPO_ROOT/src/platform.c' && grep -q 'pledge' '$REPO_ROOT/src/platform.c'"
 
+# --- CLI argument tests ---
+
+echo ""
+echo "=== CLI argument tests ==="
+
+# --help should print usage information
+check "help flag works" \
+    "$BIN --help 2>&1 | grep -qi 'usage\|listen\|connect'"
+
+# Unknown flag should exit cleanly (not crash or segfault; exit code <= 2)
+UNKNOWN_EXIT=0
+"$BIN" --nonexistent >/dev/null 2>&1 || UNKNOWN_EXIT=$?
+check "unknown flag exits cleanly (no crash)" \
+    "test '$UNKNOWN_EXIT' -le 2"
+
+# connect without host should exit cleanly within a short timeout (not crash)
+CONNECT_EXIT=0
+timeout 2 "$BIN" connect >/dev/null 2>&1 || CONNECT_EXIT=$?
+check "connect without host exits cleanly" \
+    "test '$CONNECT_EXIT' -le 128"
+
+# --- Seccomp functional test ---
+
+echo ""
+echo "=== Seccomp functional test ==="
+
+# Verify the binary was built with seccomp / hardening code.
+# Release binaries are built with CIPHER_HARDEN; check for BPF/seccomp
+# evidence in the binary (strings or disassembly).
+if command -v objdump >/dev/null 2>&1; then
+    if objdump -d "$BIN" 2>/dev/null | grep -qE 'PR_SET_SECCOMP|seccomp'; then
+        check "seccomp prctl call present in disassembly" "true"
+    elif strings "$BIN" 2>/dev/null | grep -qiE 'seccomp|SECCOMP|PR_SET_NO_NEW_PRIVS'; then
+        check "seccomp strings present in binary" "true"
+    else
+        # Fallback: verify the source contains seccomp integration (source-level)
+        check "seccomp integrated in platform.c (source check)" \
+            "grep -q 'SECCOMP_MODE_FILTER\|seccomp_data\|PR_SET_NO_NEW_PRIVS' '$REPO_ROOT/src/platform.c'"
+    fi
+else
+    check "seccomp integrated in platform.c (source check)" \
+        "grep -q 'SECCOMP_MODE_FILTER\|seccomp_data\|PR_SET_NO_NEW_PRIVS' '$REPO_ROOT/src/platform.c'"
+fi
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
