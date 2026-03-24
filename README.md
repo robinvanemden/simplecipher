@@ -190,6 +190,37 @@ Every frame is exactly 512 bytes regardless of message length:
 
 This hides message length from network observers. The sequence number is authenticated (tamper-proof) but not encrypted, enabling replay and reorder detection before any crypto work.
 
+## Threat model
+
+SimpleCipher protects the contents and authenticity of a conversation between two people who can verify each other's identity through a separate channel (phone call, in person).
+
+**The adversary can:**
+- Observe all network traffic between the two peers (passive eavesdropping)
+- Modify, replay, reorder, or inject network packets (active MITM)
+- Record all encrypted traffic for later analysis (harvest-now-decrypt-later)
+- Compromise one peer's device after the session ends (device seizure)
+- Compromise one peer's device during a session (RAM extraction)
+
+**SimpleCipher defends against:**
+- Eavesdropping — XChaCha20-Poly1305 encryption with ephemeral keys
+- Active MITM — commitment scheme + SAS verification prevents key substitution
+- Harvest-now-decrypt-later — forward secrecy (chain ratchet wipes old keys)
+- Post-session device seizure — no keys on disk, nothing to find
+- Mid-session RAM compromise — DH ratchet recovers after the next direction switch
+
+**SimpleCipher does NOT defend against:**
+- An adversary present at session start who can substitute keys AND prevent SAS verification (if the user skips verification, all bets are off)
+- An adversary who controls the peer's device (the peer IS the adversary)
+- OS-level forensic artifacts (swap, terminal scrollback, shell history) — mitigated by `mlockall`, seccomp, and interactive prompt, but not eliminated
+- Traffic analysis beyond message length (timing, frequency, endpoints visible unless using Tor)
+- An adversary who compromises both directions simultaneously mid-session (DH ratchet recovers on direction switch, not instantly)
+
+**Assumptions:**
+- The OS CSPRNG (`getrandom`/`getentropy`/`BCryptGenRandom`) produces cryptographically secure random bytes
+- Monocypher's X25519, XChaCha20-Poly1305, and BLAKE2b implementations are correct (audited by Cure53)
+- The user actually compares the SAS code out-of-band and does not skip verification
+- TCP delivers bytes reliably and in order (the protocol has no reorder/retransmit logic)
+
 ## Security properties
 
 | Property | How |
