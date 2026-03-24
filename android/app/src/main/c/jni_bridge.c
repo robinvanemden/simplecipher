@@ -38,6 +38,9 @@
  * Command protocol (pipe):
  *   [1 byte: cmd] [2 bytes: payload length, little-endian] [payload]
  *   All writes are < PIPE_BUF (4096) so they are atomic from any thread.
+ *   The write end is O_NONBLOCK so the UI thread never stalls; if the
+ *   pipe is full (session thread stuck in a socket write), the command
+ *   is dropped with an EAGAIN log.
  *
  * CMD_SEND         = 0x01  (payload = UTF-8 message, max 486 bytes)
  * CMD_CONFIRM_SAS  = 0x02  (no payload)
@@ -54,6 +57,7 @@
 #include <android/log.h>
 #include <pthread.h>
 #include <unistd.h>  /* pipe, read, write, close */
+#include <fcntl.h>   /* fcntl, O_NONBLOCK */
 #include <poll.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
@@ -286,9 +290,74 @@ static void *session_thread(void *arg) {
     snprintf(port_str, sizeof port_str, "%d", port);
 
     if (mode == 1) {
-        /* Connect mode */
+        /* Connect mode — interruptible via pipe.
+         *
+         * We can't use connect_socket() directly because connect() can
+         * block for up to 127 seconds (kernel SYN timeout) with no way
+         * to interrupt it.  Instead, use non-blocking connect + poll()
+         * on both the socket and the pipe so CMD_QUIT is seen promptly. */
         LOGI("connecting to %s:%s", host ? host : "(null)", port_str);
-        fd = connect_socket(host, port_str);
+
+        struct addrinfo hints, *res, *p;
+        memset(&hints, 0, sizeof hints);
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_family   = AF_UNSPEC;
+        if (getaddrinfo(host, port_str, &hints, &res) != 0) {
+            LOGE("getaddrinfo failed for %s:%s", host ? host : "(null)", port_str);
+        } else {
+            for (p = res; p; p = p->ai_next) {
+                fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+                if (fd == INVALID_SOCK) continue;
+
+                /* Set non-blocking for interruptible connect */
+                int flags = fcntl((int)fd, F_GETFL);
+                if (flags != -1) fcntl((int)fd, F_SETFL, flags | O_NONBLOCK);
+
+                int rc = connect(fd, p->ai_addr, (socklen_t)p->ai_addrlen);
+                if (rc == 0) {
+                    /* Connected immediately — restore blocking */
+                    if (flags != -1) fcntl((int)fd, F_SETFL, flags);
+                    break;
+                }
+                if (errno != EINPROGRESS) {
+                    close_sock(fd); fd = INVALID_SOCK;
+                    continue;
+                }
+
+                /* Poll: wait for connect to complete or CMD_QUIT on pipe */
+                struct pollfd cfds[2];
+                cfds[0].fd     = (int)fd;
+                cfds[0].events = POLLOUT;
+                cfds[1].fd     = pipe_rd;
+                cfds[1].events = POLLIN;
+
+                int connected = 0;
+                int ret = poll(cfds, 2, HANDSHAKE_TIMEOUT_S * 1000);
+                if (ret > 0 && (cfds[1].revents & POLLIN)) {
+                    /* CMD_QUIT arrived during connect — abort */
+                    LOGI("quit received during connect");
+                    close_sock(fd); fd = INVALID_SOCK;
+                    freeaddrinfo(res);
+                    jstring reason = (*env)->NewStringUTF(env, "Session ended by user");
+                    (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+                    goto cleanup;
+                }
+                if (ret > 0 && (cfds[0].revents & POLLOUT)) {
+                    int err = 0;
+                    socklen_t elen = sizeof err;
+                    getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &elen);
+                    if (err == 0) connected = 1;
+                }
+
+                /* Restore blocking mode */
+                if (flags != -1) fcntl((int)fd, F_SETFL, flags);
+
+                if (connected) break;
+                close_sock(fd); fd = INVALID_SOCK;
+            }
+            freeaddrinfo(res);
+            if (fd != INVALID_SOCK) set_sock_opts(fd);
+        }
         we_init = 1;
     } else {
         /* Listen mode.
@@ -835,11 +904,21 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         g_session_active = 0;
     }
 
-    /* Create the command pipe */
+    /* Create the command pipe.  The write end is set non-blocking so that
+     * nativePostCommand() (called on the Java/UI thread) never blocks.
+     * If the pipe is full (session thread stuck in a socket write), the
+     * command is dropped — acceptable because a stuck thread will time out
+     * via SO_SNDTIMEO and drain the pipe, or the next nativeStart() will
+     * tear it down.  Without O_NONBLOCK, a malicious peer that stops
+     * reading can indirectly block the Android UI thread. */
     int pipefd[2];
     if (pipe(pipefd) != 0) {
         LOGE("pipe() failed: %s", strerror(errno));
         return -1;
+    }
+    {
+        int flags = fcntl(pipefd[1], F_GETFL);
+        if (flags != -1) fcntl(pipefd[1], F_SETFL, flags | O_NONBLOCK);
     }
 
     /* Store the write end globally for nativePostCommand */
@@ -1001,7 +1080,11 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
 
     ssize_t written = write(wr, buf, 3 + plen);
     if (written < 0) {
-        LOGE("pipe write failed: %s", strerror(errno));
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            LOGE("pipe full — command dropped (session thread may be blocked)");
+        } else {
+            LOGE("pipe write failed: %s", strerror(errno));
+        }
     }
 
     if (pbuf) {
