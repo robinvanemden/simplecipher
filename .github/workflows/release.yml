@@ -190,13 +190,17 @@ jobs:
       - name: Validate full APK
         run: bash tests/test_android.sh ${{ steps.apk.outputs.full }} full
 
+      - name: Stage Android APKs for upload
+        run: |
+          mkdir -p android-release
+          cp "${{ steps.apk.outputs.minimal }}" android-release/simplecipher-minimal.apk
+          cp "${{ steps.apk.outputs.full }}" android-release/simplecipher-full.apk
+
       - name: Upload Android APKs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-android
-          path: |
-            ${{ steps.apk.outputs.minimal }}
-            ${{ steps.apk.outputs.full }}
+          path: android-release/
 
   test-linux:
     needs: build
@@ -324,11 +328,11 @@ jobs:
           name: simplecipher-win-aarch64
           path: win-aarch64
 
-      - name: Download Android APK
+      - name: Download Android APKs
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: simplecipher-android
-          path: android
+          path: android-apks
 
       - name: Prepare release assets
         run: |
@@ -337,8 +341,8 @@ jobs:
           cp linux-aarch64/simplecipher release/simplecipher-linux-aarch64
           cp win-x86_64/simplecipher.exe release/simplecipher-win-x86_64.exe
           cp win-aarch64/simplecipher.exe release/simplecipher-win-aarch64.exe
-          cp android/app/build/outputs/apk/minimal/release/app-minimal-release*.apk release/simplecipher-minimal.apk
-          cp android/app/build/outputs/apk/full/release/app-full-release*.apk release/simplecipher-full.apk
+          cp android-apks/simplecipher-minimal.apk release/simplecipher-minimal.apk
+          cp android-apks/simplecipher-full.apk release/simplecipher-full.apk
           cd release
           sha256sum * > SHA256SUMS.txt
 
