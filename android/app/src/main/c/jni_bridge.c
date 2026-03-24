@@ -80,6 +80,15 @@ static volatile socket_t g_listen_sock = INVALID_SOCK;
 static pthread_t g_session_thread;
 static volatile int g_session_active = 0;
 
+/* ---- Pre-generated key (set by MainActivity before nativeStart) --------- */
+
+static uint8_t  g_prekey_priv[KEY];
+static uint8_t  g_prekey_pub[KEY];
+static int      g_prekey_valid = 0;
+
+static uint8_t  g_peer_fp[8];
+static int      g_peer_fp_valid = 0;
+
 /* ---- Thread argument struct --------------------------------------------- */
 
 /* Everything the session thread needs, passed as pthread arg.
@@ -100,6 +109,18 @@ typedef struct {
     jmethodID mid_onMessageReceived;
     jmethodID mid_onSendResult;
     jmethodID mid_onDisconnected;
+
+    /* Pre-generated keypair (copied from globals, which are wiped) */
+    uint8_t   prekey_priv[KEY];
+    uint8_t   prekey_pub[KEY];
+    int       has_prekey;
+
+    /* Expected peer fingerprint (8 raw bytes from globals) */
+    uint8_t   peer_fp[8];
+    int       has_peer_fp;
+
+    /* 8th callback method ID */
+    jmethodID mid_onPeerFingerprintReady;
 } thread_arg_t;
 
 /* ---- Helper: read exactly n bytes from a file descriptor ---------------- */
@@ -114,6 +135,38 @@ static int pipe_read_exact(int fd, void *buf, size_t n) {
         p += r;
         n -= (size_t)r;
     }
+    return 0;
+}
+
+static int ct_compare(const uint8_t *a, const uint8_t *b, size_t n) {
+    volatile uint8_t diff = 0;
+    for (size_t i = 0; i < n; i++)
+        diff |= a[i] ^ b[i];
+    return diff;
+}
+
+static int parse_fingerprint(uint8_t out[8], const char *s) {
+    uint8_t buf[8];
+    int bi = 0;
+    for (int i = 0; s[i] && bi < 8; i++) {
+        char c = s[i];
+        if (c == '-') continue;
+        int hi, lo;
+        if      (c >= '0' && c <= '9') hi = c - '0';
+        else if (c >= 'A' && c <= 'F') hi = c - 'A' + 10;
+        else if (c >= 'a' && c <= 'f') hi = c - 'a' + 10;
+        else return -1;
+        i++;
+        if (!s[i]) return -1;
+        c = s[i];
+        if      (c >= '0' && c <= '9') lo = c - '0';
+        else if (c >= 'A' && c <= 'F') lo = c - 'A' + 10;
+        else if (c >= 'a' && c <= 'f') lo = c - 'a' + 10;
+        else return -1;
+        buf[bi++] = (uint8_t)((hi << 4) | lo);
+    }
+    if (bi != 8) return -1;
+    memcpy(out, buf, 8);
     return 0;
 }
 
@@ -137,6 +190,23 @@ static void *session_thread(void *arg) {
     jmethodID mid_onMessageReceived  = ta->mid_onMessageReceived;
     jmethodID mid_onSendResult       = ta->mid_onSendResult;
     jmethodID mid_onDisconnected     = ta->mid_onDisconnected;
+    jmethodID mid_onPeerFingerprintReady = ta->mid_onPeerFingerprintReady;
+
+    int       has_prekey  = ta->has_prekey;
+    uint8_t   prekey_priv[KEY], prekey_pub[KEY];
+    if (has_prekey) {
+        memcpy(prekey_priv, ta->prekey_priv, KEY);
+        memcpy(prekey_pub,  ta->prekey_pub,  KEY);
+        crypto_wipe(ta->prekey_priv, KEY);
+        crypto_wipe(ta->prekey_pub,  KEY);
+    }
+
+    int       has_peer_fp = ta->has_peer_fp;
+    uint8_t   expected_peer_fp[8];
+    if (has_peer_fp) {
+        memcpy(expected_peer_fp, ta->peer_fp, 8);
+        crypto_wipe(ta->peer_fp, 8);
+    }
 
     free(ta);
     ta = NULL;
@@ -266,7 +336,15 @@ static void *session_thread(void *arg) {
         uint8_t sas_key[KEY];
         char    sas[20];
 
-        gen_keypair(self_priv, self_pub);
+        if (has_prekey) {
+            memcpy(self_priv, prekey_priv, KEY);
+            memcpy(self_pub,  prekey_pub,  KEY);
+            crypto_wipe(prekey_priv, KEY);
+            crypto_wipe(prekey_pub,  KEY);
+            has_prekey = 0;
+        } else {
+            gen_keypair(self_priv, self_pub);
+        }
         make_commit(commit_self, self_pub);
 
         set_sock_timeout(fd, HANDSHAKE_TIMEOUT_S);
@@ -325,6 +403,37 @@ static void *session_thread(void *arg) {
 
         crypto_wipe(commit_self, sizeof commit_self);
         crypto_wipe(commit_peer, sizeof commit_peer);
+
+        /* Compute and verify peer fingerprint */
+        {
+            uint8_t peer_hash[32];
+            domain_hash(peer_hash, "cipher fingerprint v2", peer_pub, KEY);
+
+            char peer_fp_str[20];
+            snprintf(peer_fp_str, 20, "%02X%02X-%02X%02X-%02X%02X-%02X%02X",
+                     peer_hash[0], peer_hash[1], peer_hash[2], peer_hash[3],
+                     peer_hash[4], peer_hash[5], peer_hash[6], peer_hash[7]);
+
+            int fp_matched = 0;
+            if (has_peer_fp) {
+                if (ct_compare(peer_hash, expected_peer_fp, 8) != 0) {
+                    LOGE("peer fingerprint mismatch");
+                    crypto_wipe(peer_hash, sizeof peer_hash);
+                    crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
+                    jstring reason = (*env)->NewStringUTF(env, "Peer fingerprint mismatch");
+                    (*env)->CallVoidMethod(env, cb, mid_onHandshakeFailed, reason);
+                    goto cleanup_keys;
+                }
+                fp_matched = 1;
+                crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
+            }
+
+            jstring fp_jstr = (*env)->NewStringUTF(env, peer_fp_str);
+            jboolean verified = fp_matched ? JNI_TRUE : JNI_FALSE;
+            (*env)->CallVoidMethod(env, cb, mid_onPeerFingerprintReady, fp_jstr, verified);
+            crypto_wipe(peer_hash, sizeof peer_hash);
+            crypto_wipe(peer_fp_str, sizeof peer_fp_str);
+        }
 
         /* Derive session keys */
         if (session_init(&sess, we_init, self_priv, self_pub, peer_pub,
@@ -702,6 +811,27 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         ta->host = NULL;
     }
 
+    /* Copy pre-generated key into thread arg, then wipe globals */
+    if (g_prekey_valid) {
+        memcpy(ta->prekey_priv, g_prekey_priv, KEY);
+        memcpy(ta->prekey_pub,  g_prekey_pub,  KEY);
+        ta->has_prekey = 1;
+        crypto_wipe(g_prekey_priv, KEY);
+        crypto_wipe(g_prekey_pub,  KEY);
+        g_prekey_valid = 0;
+    } else {
+        ta->has_prekey = 0;
+    }
+
+    if (g_peer_fp_valid) {
+        memcpy(ta->peer_fp, g_peer_fp, 8);
+        ta->has_peer_fp = 1;
+        crypto_wipe(g_peer_fp, 8);
+        g_peer_fp_valid = 0;
+    } else {
+        ta->has_peer_fp = 0;
+    }
+
     /* Create a JNI global ref so the callback survives across threads */
     ta->callback = (*env)->NewGlobalRef(env, callback);
 
@@ -713,12 +843,14 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     ta->mid_onMessageReceived  = (*env)->GetMethodID(env, cls, "onMessageReceived",  "(Ljava/lang/String;)V");
     ta->mid_onSendResult       = (*env)->GetMethodID(env, cls, "onSendResult",       "(Z)V");
     ta->mid_onDisconnected     = (*env)->GetMethodID(env, cls, "onDisconnected",     "(Ljava/lang/String;)V");
+    ta->mid_onPeerFingerprintReady = (*env)->GetMethodID(env, cls, "onPeerFingerprintReady",
+                                                          "(Ljava/lang/String;Z)V");
 
     /* Verify all method IDs resolved */
     if (!ta->mid_onConnected || !ta->mid_onConnectionFailed ||
         !ta->mid_onSasReady || !ta->mid_onHandshakeFailed ||
         !ta->mid_onMessageReceived || !ta->mid_onSendResult ||
-        !ta->mid_onDisconnected) {
+        !ta->mid_onDisconnected || !ta->mid_onPeerFingerprintReady) {
         LOGE("failed to resolve one or more callback method IDs");
         (*env)->DeleteGlobalRef(env, ta->callback);
         free(ta->host);
@@ -801,4 +933,52 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
     if (pbuf) {
         (*env)->ReleaseByteArrayElements(env, payload, pbuf, JNI_ABORT);
     }
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_example_simplecipher_MainActivity_nativeGenerateKey(
+        JNIEnv *env, jobject thiz) {
+    (void)thiz;
+    if (g_prekey_valid) {
+        crypto_wipe(g_prekey_priv, KEY);
+        crypto_wipe(g_prekey_pub,  KEY);
+        g_prekey_valid = 0;
+    }
+    gen_keypair(g_prekey_priv, g_prekey_pub);
+    g_prekey_valid = 1;
+    char fp[20];
+    format_fingerprint(fp, g_prekey_pub);
+    jstring result = (*env)->NewStringUTF(env, fp);
+    crypto_wipe(fp, sizeof fp);
+    return result;
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_simplecipher_MainActivity_nativeWipePreKey(
+        JNIEnv *env, jobject thiz) {
+    (void)env; (void)thiz;
+    if (g_prekey_valid) {
+        crypto_wipe(g_prekey_priv, KEY);
+        crypto_wipe(g_prekey_pub,  KEY);
+        g_prekey_valid = 0;
+    }
+    if (g_peer_fp_valid) {
+        crypto_wipe(g_peer_fp, 8);
+        g_peer_fp_valid = 0;
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_simplecipher_MainActivity_nativeSetPeerFingerprint(
+        JNIEnv *env, jobject thiz, jstring fingerprint) {
+    (void)thiz;
+    const char *fp_str = (*env)->GetStringUTFChars(env, fingerprint, NULL);
+    if (!fp_str) return;
+    if (parse_fingerprint(g_peer_fp, fp_str) == 0) {
+        g_peer_fp_valid = 1;
+    } else {
+        LOGE("nativeSetPeerFingerprint: malformed fingerprint string");
+        g_peer_fp_valid = 0;
+    }
+    (*env)->ReleaseStringUTFChars(env, fingerprint, fp_str);
 }

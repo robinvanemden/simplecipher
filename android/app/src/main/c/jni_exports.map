@@ -3,6 +3,9 @@
         JNI_OnLoad;
         Java_com_example_simplecipher_ChatActivity_nativeStart;
         Java_com_example_simplecipher_ChatActivity_nativePostCommand;
+        Java_com_example_simplecipher_MainActivity_nativeGenerateKey;
+        Java_com_example_simplecipher_MainActivity_nativeWipePreKey;
+        Java_com_example_simplecipher_MainActivity_nativeSetPeerFingerprint;
     local:
         *;
 };
