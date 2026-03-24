@@ -75,15 +75,11 @@ echo "Captured local IP: ${LOCAL_IP:-192.168.1.42}"
 IP="${LOCAL_IP:-192.168.1.42}"
 
 # Build the phone call box with proper alignment.
-# The 📞 emoji is 4 bytes but 2 display columns, so printf %-Ns
-# undercounts by 2.  We add 2 extra bytes to the emoji line width.
-W=50  # inner width (display columns)
+W=50  # inner width
 BOX_TOP="         ╔$(printf '═%.0s' $(seq 1 $W))╗"
 BOX_BOT="         ╚$(printf '═%.0s' $(seq 1 $W))╝"
 box_line() { printf '         ║  %-*s║' "$((W-2))" "$1"; }
-# +2 bytes for emoji display-width compensation
-box_line_emoji() { printf '         ║  %-*s║' "$((W))" "$1"; }
-PHONE1=$(box_line_emoji "📞  Phone call:")
+PHONE1=$(box_line "PHONE CALL:")
 PHONE2=$(box_line "Alice: \"I see $SAS -- same for you?\"")
 PHONE3=$(box_line "Bob:   \"Yes, same code.\"")
 
