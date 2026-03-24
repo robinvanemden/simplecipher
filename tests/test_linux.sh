@@ -168,32 +168,31 @@ fi
 check "crypto_wipe pattern present" \
     "test \"\$(strings '$BIN' | grep -c 'cipher')\" -gt 0 || readelf -s '$BIN' | grep -q 'crypto_wipe'"
 
-# --- Source-level hardening checks ---
+# --- Source-level hardening checks (only when source tree is available) ---
+# REPO_ROOT already defined above (near seccomp check)
 
-echo ""
-echo "=== Source-level hardening tests ==="
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/src/main.c" ]; then
+    echo ""
+    echo "=== Source-level hardening tests ==="
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-# Two-phase seccomp: verify both phases are called in main.c
-check "main.c calls sandbox_phase1" \
-    "grep -q 'sandbox_phase1()' '$REPO_ROOT/src/main.c'"
-check "main.c calls sandbox_phase2" \
-    "grep -q 'sandbox_phase2()' '$REPO_ROOT/src/main.c'"
-check "platform.c implements sandbox_phase1" \
-    "grep -q 'void sandbox_phase1' '$REPO_ROOT/src/platform.c'"
-check "platform.c implements sandbox_phase2" \
-    "grep -q 'void sandbox_phase2' '$REPO_ROOT/src/platform.c'"
-
-# Terminal scrollback purge
-check "purge_terminal declared in platform.h" \
-    "grep -q 'purge_terminal' '$REPO_ROOT/src/platform.h'"
-check "purge_terminal called in main.c (guarded by tui_mode)" \
-    "grep -q 'purge_terminal' '$REPO_ROOT/src/main.c'"
-
-# OpenBSD pledge/unveil (compile-time, no runtime CI runner)
-check "platform.c has OpenBSD pledge support" \
-    "grep -q '__OpenBSD__' '$REPO_ROOT/src/platform.c' && grep -q 'pledge' '$REPO_ROOT/src/platform.c'"
+    check "main.c calls sandbox_phase1" \
+        "grep -q 'sandbox_phase1()' '$REPO_ROOT/src/main.c'"
+    check "main.c calls sandbox_phase2" \
+        "grep -q 'sandbox_phase2()' '$REPO_ROOT/src/main.c'"
+    check "platform.c implements sandbox_phase1" \
+        "grep -q 'void sandbox_phase1' '$REPO_ROOT/src/platform.c'"
+    check "platform.c implements sandbox_phase2" \
+        "grep -q 'void sandbox_phase2' '$REPO_ROOT/src/platform.c'"
+    check "purge_terminal declared in platform.h" \
+        "grep -q 'purge_terminal' '$REPO_ROOT/src/platform.h'"
+    check "purge_terminal called in main.c (guarded by tui_mode)" \
+        "grep -q 'purge_terminal' '$REPO_ROOT/src/main.c'"
+    check "platform.c has OpenBSD pledge support" \
+        "grep -q '__OpenBSD__' '$REPO_ROOT/src/platform.c' && grep -q 'pledge' '$REPO_ROOT/src/platform.c'"
+else
+    echo ""
+    echo "=== Source-level hardening tests (SKIP: source tree not available) ==="
+fi
 
 # --- CLI argument tests ---
 
@@ -210,11 +209,13 @@ UNKNOWN_EXIT=0
 check "unknown flag exits cleanly (no crash)" \
     "test '$UNKNOWN_EXIT' -le 2"
 
-# connect without host should exit cleanly within a short timeout (not crash)
+# connect without host: the binary prompts for input on stdin.
+# With stdin closed (< /dev/null), fgets returns NULL → clean exit.
+# Cannot use timeout with CIPHER_HARDEN builds (seccomp blocks SIGALRM).
 CONNECT_EXIT=0
-timeout 2 "$BIN" connect >/dev/null 2>&1 || CONNECT_EXIT=$?
+"$BIN" connect < /dev/null >/dev/null 2>&1 || CONNECT_EXIT=$?
 check "connect without host exits cleanly" \
-    "test '$CONNECT_EXIT' -le 128"
+    "test '$CONNECT_EXIT' -le 2"
 
 # --- Seccomp functional test ---
 
