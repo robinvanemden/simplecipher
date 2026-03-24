@@ -16,4 +16,12 @@
     <string name="chat_hint">Message</string>
     <string name="btn_send">Send</string>
     <string name="btn_send_icon">↑</string>
+    <string name="fp_section_title">Fingerprint verification</string>
+    <string name="fp_session_label">Session fingerprint</string>
+    <string name="fp_scan_btn">Scan peer fingerprint</string>
+    <string name="fp_manual_hint">XXXX-XXXX-XXXX-XXXX</string>
+    <string name="fp_peer_none">Peer: not scanned</string>
+    <string name="fp_peer_set">Peer: %s</string>
+    <string name="fp_verified">Peer fingerprint verified</string>
+    <string name="fp_camera_denied">Camera permission needed for QR scanning</string>
 </resources>
