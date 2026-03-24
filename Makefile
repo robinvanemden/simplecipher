@@ -30,6 +30,10 @@ ifeq ($(UNAME),Linux)
   LDFLAGS += -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,nodlopen
 else ifeq ($(UNAME),Darwin)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
+else ifeq ($(UNAME),OpenBSD)
+  PLAT_SRC = src/tui_posix.c src/cli_posix.c
+  # OpenBSD's base clang may not support all GCC flags.
+  # pledge/unveil are activated by CIPHER_HARDEN (already set above).
 else
   PLAT_SRC = src/tui_win.c src/cli_win.c
   LDFLAGS += -lws2_32 -lbcrypt -liphlpapi
