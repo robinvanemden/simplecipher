@@ -142,22 +142,20 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 
 Every key and secret has a defined lifetime. Nothing persists beyond its purpose.
 
-```
-Key material         Created            Wiped               Lifetime
-─────────────────────────────────────────────────────────────────────
-ephemeral privkey    gen_keypair()       after session_init  handshake only
-ephemeral pubkey     gen_keypair()       cleanup             handshake only
-commitment hash      make_commit()       after verify        handshake only
-shared DH secret     session_init()      after key expansion never stored
-SAS key              expand(shared)      after format_sas    handshake only
-chain key (tx/rx)    expand(shared)      after next message  one message
-message key          chain_step()        after encrypt/decrypt  one frame
-ratchet DH privkey   ratchet_step()      after next ratchet  one direction
-fingerprint hash     domain_hash()       after compare/format  immediate
-peer fingerprint     nativeSetPeerFp()   after compare       handshake only
-─────────────────────────────────────────────────────────────────────
-                                              nothing on disk, ever
-```
+| Key material       | Created           | Wiped                 | Lifetime       |
+|--------------------|-------------------|-----------------------|----------------|
+| ephemeral privkey  | gen_keypair()     | after session_init    | handshake only |
+| ephemeral pubkey   | gen_keypair()     | cleanup               | handshake only |
+| commitment hash    | make_commit()     | after verify          | handshake only |
+| shared DH secret   | session_init()    | after key expansion   | never stored   |
+| SAS key            | expand(shared)    | after format_sas      | handshake only |
+| chain key (tx/rx)  | expand(shared)    | after next message    | one message    |
+| message key        | chain_step()      | after encrypt/decrypt | one frame      |
+| ratchet DH privkey | ratchet_step()    | after next ratchet    | one direction  |
+| fingerprint hash   | domain_hash()     | after compare/format  | immediate      |
+| peer fingerprint   | nativeSetPeerFp() | after compare         | handshake only |
+
+Nothing is stored to disk, ever.
 
 ### Fingerprint verification (optional)
 
