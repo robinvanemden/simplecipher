@@ -143,8 +143,8 @@ The chat is still encrypted. But without verification, you can't be sure who you
 |---------|-----------------|
 | Screenshot blocking (`FLAG_SECURE`) | Screenshots and screen recording of the chat and verification screens |
 | Overlay blocking (`HIDE_OVERLAY_WINDOWS`) | Other apps drawing on top of the screen to read your safety code |
-| Custom keyboard (`SimpleKeyboard`) | Keystroke logging by third-party keyboards (Gboard, SwiftKey, etc.) |
-| No keyboard learning (`IME_FLAG_NO_PERSONALIZED_LEARNING`) | System keyboard caching what you type (defence in depth) |
+| Custom keyboard (`SimpleKeyboard`) | Keystroke logging by third-party keyboards — **covers SAS input and chat only**. The connect screen (host, port, fingerprint) still uses the system keyboard with no-learn flags. |
+| No keyboard learning (`IME_FLAG_NO_PERSONALIZED_LEARNING`) | System keyboard caching what you type (defence in depth, all inputs) |
 | Session kill on background (`onStop`) | Keys sitting in memory while the app is not visible |
 | Widget clearing on pause (`onPause`) | Plaintext lingering in UI text fields |
 | Native key wiping (`crypto_wipe`) | Every key and secret is zeroed in C on every exit path |
@@ -160,6 +160,16 @@ The Android app runs on the JVM. Java Strings are immutable and garbage-collecte
 The native C layer wipes everything it touches. But at the Java-to-native boundary, String objects exist briefly outside our control.
 
 **For the strongest memory guarantees, use the desktop CLI or TUI.** The Android app is convenient but inherently weaker than the desktop builds due to JVM memory management.
+
+### Android is direct-connect only
+
+The desktop CLI supports SOCKS5 proxies (`--socks5`), which enables Tor for anonymous connections where neither side learns the other's IP address. The Android app does not support SOCKS5 — it connects directly to the peer's IP address over TCP. This means:
+
+- Your IP address is visible to the peer and to network observers
+- You cannot use Tor through the app
+- If anonymity (not just encryption) matters, use the desktop CLI
+
+This is a deliberate trade-off: the Android app prioritizes simplicity and auditability. Adding proxy support would increase the attack surface and code complexity. If your threat model requires anonymity, the desktop CLI on Tails is the right tool.
 
 ### Android vs desktop security comparison
 

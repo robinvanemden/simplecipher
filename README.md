@@ -51,7 +51,7 @@ Both type the code to confirm:
 
 **Step 5 — Either side presses Ctrl+C. Keys are wiped. Nothing is stored.**
 
-**Deep dives:** [Protocol and Security](docs/PROTOCOL.md) &#183; [Platform Hardening](docs/HARDENING.md) &#183; [Building and Development](docs/BUILDING.md) &#183; [Android App](docs/ANDROID.md) &#183; [Security Policy](SECURITY.md)
+**Deep dives:** [Protocol and Security](docs/PROTOCOL.md) &#183; [Platform Hardening](docs/HARDENING.md) &#183; [Building and Development](docs/BUILDING.md) &#183; [Android App](docs/ANDROID.md) &#183; [Design Boundaries](docs/DESIGN_BOUNDARIES.md) &#183; [Assurance Map](docs/ASSURANCE_MAP.md) &#183; [Security Policy](SECURITY.md)
 
 ## Download
 
