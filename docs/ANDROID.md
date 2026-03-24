@@ -133,7 +133,7 @@ The chat is still encrypted. But without verification, you can't be sure who you
 └───────────────────────────────────────────┘
 ```
 
-**Why a single native thread?** All crypto, session, and socket state lives on one POSIX thread. Java communicates through a pipe. No mutexes, no shared mutable state, no possibility of nonce reuse or race conditions. Two threads reading the same key/nonce pair breaks XChaCha20-Poly1305 confidentiality completely — this architecture makes that structurally impossible.
+**Why a single native thread?** All crypto, session, and socket state lives on one POSIX thread. Java communicates through a pipe. No mutexes needed for the protocol itself, no possibility of nonce reuse. Two threads reading the same key/nonce pair breaks XChaCha20-Poly1305 confidentiality completely — this architecture makes that structurally impossible. A small number of lifecycle/control globals (pipe fd, listen socket, session-active flag, generation counter) are shared between the JNI calling thread and the session thread using C11 atomics. These carry no crypto material.
 
 ## Security measures
 

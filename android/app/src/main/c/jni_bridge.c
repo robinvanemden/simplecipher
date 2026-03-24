@@ -15,8 +15,14 @@
  *   either committed the update, reusing a (key, nonce) pair.  For
  *   XChaCha20-Poly1305 that completely breaks confidentiality.
  *
- *   A single thread with exclusive ownership of all mutable state makes
- *   data races structurally impossible — no mutex needed.
+ *   A single thread with exclusive ownership of all crypto/session/socket
+ *   state makes data races on security-critical paths structurally
+ *   impossible — no mutex needed for the protocol itself.
+ *
+ *   A small number of lifecycle/control globals (pipe fd, listen socket,
+ *   session-active flag, generation counter) are shared between the JNI
+ *   calling thread and the session thread.  These use C11 atomics for
+ *   formal thread safety.  They carry no crypto material.
  *
  * Fingerprint verification (optional):
  *   Before connecting, MainActivity can call nativeGenerateKey() to
@@ -51,6 +57,7 @@
 #include <poll.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
+#include <stdatomic.h>
 
 /* ---- Logging ------------------------------------------------------------ */
 
@@ -84,25 +91,30 @@ static JavaVM *g_jvm = NULL;
  * stale-fd and double-close bugs that arise when the same fd number is
  * closed by two different code paths.
  *
- * Writes are atomic because the command header + payload is always
- * < PIPE_BUF (4096 bytes). */
-static int g_pipe_wr = -1;
+ * Pipe writes are atomic because the command header + payload is always
+ * < PIPE_BUF (4096 bytes).
+ *
+ * All cross-thread globals below use C11 atomics for formal thread safety.
+ * The crypto/session/socket state itself is still single-threaded (owned
+ * exclusively by the session pthread), but these lifecycle/control globals
+ * are shared between the JNI calling thread and the session thread. */
+static _Atomic int g_pipe_wr = -1;
 
 /* Listen socket — set while the native thread is blocked in accept().
  * nativePostCommand(CMD_QUIT) closes this to unblock accept() so the
  * thread can exit promptly when the user presses Back. */
-static volatile socket_t g_listen_sock = INVALID_SOCK;
+static _Atomic socket_t g_listen_sock = INVALID_SOCK;
 
 /* Session thread handle — used to join the thread before starting a new
  * session, ensuring the previous socket is fully closed. */
 static pthread_t g_session_thread;
-static volatile int g_session_active = 0;
+static _Atomic int g_session_active = 0;
 
 /* Session generation counter.  Incremented by nativeStart() each time a
  * new session is spawned.  The session thread stores its own generation
  * at birth and only clears g_session_active if the generation still
  * matches — preventing a stale thread from marking a newer session inactive. */
-static volatile int g_session_gen = 0;
+static _Atomic int g_session_gen = 0;
 
 /* ---- Pre-generated key (set by MainActivity before nativeStart) --------- */
 
