@@ -4366,6 +4366,10 @@ static void test_fingerprint_handshake_verification(void) {
         char listener_fp[20];
         format_fingerprint(listener_fp, listener.prekey_pub);
 
+        /* Save the pub key for verification after the thread wipes it */
+        uint8_t saved_listener_pub[KEY];
+        memcpy(saved_listener_pub, listener.prekey_pub, KEY);
+
         /* Step 3: Initiator pre-sets the expected fingerprint */
         fp_peer_ctx initiator = { .is_initiator = 1, .port = port,
                                   .expected_peer_fp = listener_fp,
@@ -4383,10 +4387,13 @@ static void test_fingerprint_handshake_verification(void) {
         TEST("pre-set fp: initiator handshake succeeded", initiator.ok);
         TEST("pre-set fp: no fingerprint mismatch", !initiator.fp_mismatch);
 
-        /* Verify the listener actually used the pre-generated key */
-        TEST("pre-set fp: listener used prekey",
-             crypto_verify32(listener.self_pub, listener.prekey_pub) != 0
-             || listener.has_prekey == 0);
+        /* The pre-generated key was used: if the listener generated a
+         * DIFFERENT key, the fingerprint wouldn't match and initiator.ok
+         * would be false.  initiator.ok==true IS the proof. */
+
+        /* Verify the listener's self_pub matches what we pre-generated */
+        TEST("pre-set fp: listener used the pre-generated key",
+             crypto_verify32(listener.self_pub, saved_listener_pub) == 0);
 
         /* Verify SAS matches (proves handshake completed properly) */
         if (listener.ok && initiator.ok) {
@@ -4490,6 +4497,52 @@ static void test_fingerprint_handshake_verification(void) {
         session_wipe(&mitm.sess);
         session_wipe(&initiator.sess);
         crypto_wipe(real_pub, KEY);
+    }
+
+    /* --- Test G: Pre-generated key WITHOUT fingerprint (SAS fallback) ---
+     *
+     * The user expanded the fingerprint panel (key generated) but did
+     * NOT scan or type a peer fingerprint.  The pre-generated key should
+     * be used for the handshake, and SAS verification should proceed
+     * normally (no auto-skip). */
+    {
+        const char *port = "19765";
+
+        /* Listener pre-generates key but sets no expected peer fingerprint */
+        fp_peer_ctx listener = { .is_initiator = 0, .port = port,
+                                 .expected_peer_fp = NULL, .has_prekey = 1 };
+        gen_keypair(listener.prekey_priv, listener.prekey_pub);
+        uint8_t saved_pub[KEY];
+        memcpy(saved_pub, listener.prekey_pub, KEY);
+
+        /* Initiator: no prekey, no expected fingerprint (default path) */
+        fp_peer_ctx initiator = { .is_initiator = 1, .port = port,
+                                  .expected_peer_fp = NULL, .has_prekey = 0 };
+
+        pthread_t t1, t2;
+        pthread_create(&t1, nullptr, fp_peer_thread, &listener);
+        pthread_create(&t2, nullptr, fp_peer_thread, &initiator);
+        pthread_join(t1, nullptr);
+        pthread_join(t2, nullptr);
+
+        TEST("prekey no-fp: listener succeeded", listener.ok);
+        TEST("prekey no-fp: initiator succeeded", initiator.ok);
+        TEST("prekey no-fp: no mismatch flag", !initiator.fp_mismatch);
+        TEST("prekey no-fp: listener used prekey",
+             crypto_verify32(listener.self_pub, saved_pub) == 0);
+
+        if (listener.ok && initiator.ok) {
+            TEST("prekey no-fp: SAS keys match",
+                 crypto_verify32(listener.sas_key, initiator.sas_key) == 0);
+        }
+
+        sock_shutdown_both(initiator.fd);
+        sock_shutdown_both(listener.fd);
+        close_sock(initiator.fd);
+        close_sock(listener.fd);
+        session_wipe(&listener.sess);
+        session_wipe(&initiator.sess);
+        crypto_wipe(saved_pub, KEY);
     }
 
     plat_quit();
