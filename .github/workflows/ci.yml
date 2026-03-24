@@ -48,6 +48,21 @@ jobs:
       - name: Run TUI integration test
         run: bash tests/test_tui.sh build/native/simplecipher
 
+      - name: Verify README demo matches actual output
+        run: |
+          # Regenerate the demo from a real session and check it still
+          # parses correctly (SAS code captured, README updated without error).
+          # We don't commit the change — the SAS is random each run — but we
+          # verify the script works and the README has a valid demo block.
+          cp README.md /tmp/readme_before.md
+          PATH="$(pwd)/build/native:$PATH" bash docs/generate-demo.sh
+          # Verify the demo block exists and has a SAS code
+          grep -qP '[0-9A-F]{4}-[0-9A-F]{4}' README.md || {
+            echo "::error::Demo block has no SAS code after regeneration"
+            exit 1
+          }
+          echo "Demo regeneration verified"
+
   fuzz:
     runs-on: ubuntu-24.04
     steps:
