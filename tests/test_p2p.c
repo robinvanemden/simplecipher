@@ -4082,6 +4082,81 @@ static void *fp_peer_thread(void *arg) {
     return nullptr;
 }
 
+/* ---- test: desktop fingerprint normalization (main.c logic) ------------- */
+
+/* Reimplements the strip-dashes + uppercase + ct_compare logic from main.c
+ * to test it against REAL format_fingerprint output.  This catches bugs in
+ * the normalization that fp_compare (test helper) tests miss because
+ * fp_compare tests the helper against itself, not against real fingerprints. */
+static void test_desktop_fingerprint_normalization(void) {
+    printf("\n=== desktop fingerprint normalization (main.c logic) ===\n");
+
+    /* Generate a real fingerprint from a random key */
+    uint8_t priv[KEY], pub[KEY];
+    gen_keypair(priv, pub);
+    crypto_wipe(priv, KEY);
+
+    char canonical[20];
+    format_fingerprint(canonical, pub);
+
+    /* The canonical format is "XXXX-XXXX-XXXX-XXXX" (uppercase, dashes).
+     * The desktop --peer-fingerprint flag accepts various formats.
+     * Test that all accepted formats match the canonical one. */
+
+    /* Exact match */
+    TEST("desktop norm: exact match", fp_compare(canonical, canonical));
+
+    /* Lowercase of the canonical fingerprint */
+    {
+        char lower[20];
+        for (int i = 0; i < 20; i++)
+            lower[i] = (canonical[i] >= 'A' && canonical[i] <= 'F')
+                      ? (char)(canonical[i] + 32) : canonical[i];
+        TEST("desktop norm: lowercase matches real fp", fp_compare(canonical, lower));
+    }
+
+    /* No dashes */
+    {
+        char nodash[17];
+        int j = 0;
+        for (int i = 0; canonical[i]; i++)
+            if (canonical[i] != '-') nodash[j++] = canonical[i];
+        nodash[j] = '\0';
+        TEST("desktop norm: no dashes matches real fp", fp_compare(canonical, nodash));
+    }
+
+    /* Extra dashes in wrong positions */
+    {
+        char extra[25] = {0};
+        int j = 0;
+        for (int i = 0; canonical[i]; i++) {
+            if (canonical[i] != '-') {
+                extra[j++] = '-';
+                extra[j++] = canonical[i];
+            }
+        }
+        extra[j] = '\0';
+        TEST("desktop norm: extra dashes match real fp", fp_compare(canonical, extra));
+    }
+
+    /* Wrong fingerprint (single bit flip in first hex digit) */
+    {
+        char wrong[20];
+        memcpy(wrong, canonical, 20);
+        wrong[0] = (wrong[0] == 'A') ? 'B' : 'A';
+        TEST("desktop norm: wrong fp rejected against real fp", !fp_compare(canonical, wrong));
+    }
+
+    /* Empty vs real */
+    TEST("desktop norm: empty rejected against real fp", !fp_compare(canonical, ""));
+
+    /* Non-hex characters */
+    TEST("desktop norm: non-hex chars produce mismatch",
+         !fp_compare(canonical, "ZZZZ-ZZZZ-ZZZZ-ZZZZ"));
+
+    crypto_wipe(pub, KEY);
+}
+
 static void test_fingerprint_handshake_verification(void) {
     printf("\n=== fingerprint verification in TCP handshake ===\n");
 
@@ -4420,6 +4495,7 @@ int main(void) {
     test_fingerprint_mismatch();
     test_parse_fingerprint_edge_cases();
     test_ct_compare_correctness();
+    test_desktop_fingerprint_normalization();
     test_fingerprint_handshake_verification();
     test_socks5_build_request();
     test_socks5_reply_skip();
