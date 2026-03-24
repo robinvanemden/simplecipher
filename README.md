@@ -23,10 +23,12 @@ $ simplecipher listen
   Waiting for connection...
 ```
 
-**Step 2 — Bob connects using Alice's IP:**
+**Step 2 — Bob connects (interactive — keeps the address out of shell history):**
 
 ```
-$ simplecipher connect 192.168.1.208
+$ simplecipher connect
+  Host: 192.168.1.208
+  Port [7777]:
 ```
 
 **Step 3 — Both see the same safety code:**
@@ -82,8 +84,8 @@ tailscale up
 # Person A: listen for a connection
 simplecipher listen
 
-# Person B: connect using Person A's Tailscale IP
-simplecipher connect 100.x.y.z
+# Person B: connect (interactive prompt — address stays out of shell history)
+simplecipher connect
 ```
 
 On the same Wi-Fi or LAN, skip Tailscale entirely — just use the local IP:
@@ -92,8 +94,8 @@ On the same Wi-Fi or LAN, skip Tailscale entirely — just use the local IP:
 # Person A
 simplecipher listen
 
-# Person B
-simplecipher connect 192.168.1.42
+# Person B (interactive — or: simplecipher connect 192.168.1.42)
+simplecipher connect
 ```
 
 ### Other ways to connect

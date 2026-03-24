@@ -454,6 +454,7 @@ static void *session_thread(void *arg) {
             jstring fp_jstr = (*env)->NewStringUTF(env, peer_fp_str);
             jboolean verified = fp_matched ? JNI_TRUE : JNI_FALSE;
             (*env)->CallVoidMethod(env, cb, mid_onPeerFingerprintReady, fp_jstr, verified);
+            (*env)->DeleteLocalRef(env, fp_jstr);
             crypto_wipe(peer_hash, sizeof peer_hash);
             crypto_wipe(peer_fp_str, sizeof peer_fp_str);
         }
@@ -480,6 +481,7 @@ static void *session_thread(void *arg) {
         jstring sas_jstr = (*env)->NewStringUTF(env, sas);
         crypto_wipe(sas, sizeof sas);
         (*env)->CallVoidMethod(env, cb, mid_onSasReady, sas_jstr);
+        (*env)->DeleteLocalRef(env, sas_jstr);
     }
 
     /* ================================================================
@@ -559,6 +561,7 @@ static void *session_thread(void *arg) {
                     crypto_wipe(frame, sizeof frame);
                     jstring reason = (*env)->NewStringUTF(env, "Peer disconnected");
                     (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+                    (*env)->DeleteLocalRef(env, reason);
                     break;
                 }
 
@@ -568,6 +571,7 @@ static void *session_thread(void *arg) {
                     crypto_wipe(plain, sizeof plain);
                     jstring reason = (*env)->NewStringUTF(env, "Decryption failed");
                     (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+                    (*env)->DeleteLocalRef(env, reason);
                     break;
                 }
 
@@ -576,6 +580,7 @@ static void *session_thread(void *arg) {
 
                 jstring text = (*env)->NewStringUTF(env, (char *)plain);
                 (*env)->CallVoidMethod(env, cb, mid_onMessageReceived, text);
+                (*env)->DeleteLocalRef(env, text);
 
                 crypto_wipe(frame, sizeof frame);
                 crypto_wipe(plain, sizeof plain);
@@ -605,6 +610,7 @@ static void *session_thread(void *arg) {
                     }
                     jstring reason = (*env)->NewStringUTF(env, "Session ended");
                     (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+                    (*env)->DeleteLocalRef(env, reason);
                     running = 0;
 
                 } else if (cmd == CMD_SEND) {
@@ -650,6 +656,7 @@ static void *session_thread(void *arg) {
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
                         jstring reason = (*env)->NewStringUTF(env, "Send failed (connection lost)");
                         (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+                        (*env)->DeleteLocalRef(env, reason);
                         running = 0;
                         continue;
                     }
@@ -707,19 +714,17 @@ cleanup:
         close_sock(fd);
     }
 
-    /* Wipe and close the pipe.  Write zeros to flush any plaintext
-     * command payload lingering in the kernel pipe buffer, then close
-     * both ends so the kernel frees the pages. */
-    {
-        int wr = g_pipe_wr;
-        g_pipe_wr = -1;  /* prevent races with nativePostCommand */
-        if (wr >= 0) {
-            uint8_t zeros[512];
-            memset(zeros, 0, sizeof zeros);
-            (void)write(wr, zeros, sizeof zeros);
-            close(wr);
-        }
-    }
+    /* Close the read end of the pipe.  The WRITE end is managed by
+     * nativeStart() — it closes the old write fd before creating a new
+     * pipe for the next session.  We must NOT touch g_pipe_wr here:
+     * if a new session has already started, g_pipe_wr points to the
+     * NEW session's pipe, and closing it would break that session.
+     *
+     * The old zero-write "wipe" was removed: writing zeros to a pipe
+     * appends to the buffer — it does not overwrite queued data.  On a
+     * full pipe it can block, stalling cleanup.  Closing both ends is
+     * sufficient: the kernel frees the pipe buffer pages on close, and
+     * pipe data is never written to disk. */
     close(pipe_rd);
 
     /* Delete the JNI global ref to the callback */

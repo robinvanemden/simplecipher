@@ -35,7 +35,8 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Lock memory (prevent swap) | `mlockall` | — | — |
 | Disable core dumps | `RLIMIT_CORE=0` | `SetErrorMode` (WER off) | — |
 | Block ptrace / memory inspection | `PR_SET_DUMPABLE=0` | — | — |
-| Seccomp-BPF syscall filter | yes (chat loop) | — | — |
+| Seccomp-BPF syscall filter (two-phase) | yes: phase 1 after TCP connect (blocks new sockets), phase 2 after handshake (tightest) | — | — |
+| OpenBSD pledge/unveil | — | — | — |
 | **Key management** | | | |
 | Wipe all keys after use (`crypto_wipe`) | yes | yes | yes (native layer) |
 | Ephemeral keys only (nothing on disk) | yes | yes | yes |

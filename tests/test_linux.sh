@@ -146,6 +146,9 @@ check "no 'SAS:' debug string" \
 check "no 'handshake complete' debug string" \
     "test \"\$(strings '$BIN' | grep -ci 'handshake complete.*SAS')\" -eq 0"
 
+# Source root — needed for source-level checks below.
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd 2>/dev/null || echo "")"
+
 # Seccomp: source-level check only.  The release binary is stripped so
 # symbol names are not available.  We verify the source code contains the
 # seccomp setup — this catches accidental deletion but does NOT prove the

@@ -134,12 +134,15 @@ void harden(void);
 
 /* Two-phase syscall sandboxing.
  *
- * sandbox_phase1() — call after argument parsing, before network I/O.
- *   On Linux (seccomp-BPF): allows socket, connect, bind, listen, accept,
- *   read, write, close, poll/ppoll, getrandom, mmap/mprotect/brk, sigaction,
- *   mlockall, prctl, exit/exit_group, clock_gettime, nanosleep, ioctl, and
- *   other syscalls needed for the handshake phase.
- *   On OpenBSD: pledge("stdio inet dns", NULL) + unveil lock.
+ * sandbox_phase1() — call AFTER the TCP connection is established, BEFORE
+ *   the handshake.  Connection setup (getifaddrs, getaddrinfo, socket,
+ *   connect, bind, listen, accept) runs unrestricted.  Phase 1 blocks
+ *   new connections — a compromised process cannot open additional sockets.
+ *   On Linux (seccomp-BPF): allows read, write, close, poll/ppoll, getrandom,
+ *   mmap/mprotect/brk, sigaction, exit/exit_group, clock_gettime, nanosleep,
+ *   ioctl, shutdown.  Does NOT allow socket, connect, bind, listen, accept.
+ *   On OpenBSD: pledge("stdio") + unveil(NULL, NULL) — filesystem locked,
+ *   no new network connections.
  *   No-op on other platforms or when CIPHER_HARDEN is not set.
  *
  * sandbox_phase2() — call after handshake completes, before the chat loop.
