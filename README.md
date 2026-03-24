@@ -9,6 +9,29 @@ Run the program, compare a short code over the phone to make sure nobody's liste
 
 SimpleCipher is a single tiny binary (~80 KB) with zero dependencies. The protocol is implemented in a handful of focused C modules, designed to be audited in an afternoon — built for privacy and for teaching.
 
+```
+ ALICE (listener)                          BOB (connector)
+ ─────────────────                         ────────────────
+ $ simplecipher listen
+                                            $ simplecipher connect 192.168.1.42
+   Safety code:  A3F2-91BC                    Safety code:  A3F2-91BC
+
+   Alice calls Bob: "I see A3F2-91BC"       Bob: "Same here"
+
+   Confirm: A3F291BC                          Confirm: A3F291BC
+
+   Secure session active.                     Secure session active.
+
+ > hey, is this channel safe?
+                                            [12:01:03] peer: hey, is this channel safe?
+                                            > yes — keys are ephemeral, wiped on exit
+ [12:01:07] peer: yes — keys are
+   ephemeral, wiped on exit
+
+   ^C                                         [peer disconnected]
+   Keys wiped. Session over.                  Keys wiped. Session over.
+```
+
 **Deep dives:** [Protocol and Security](docs/PROTOCOL.md) &#183; [Platform Hardening](docs/HARDENING.md) &#183; [Building and Development](docs/BUILDING.md) &#183; [Security Policy](SECURITY.md)
 
 ## Download
