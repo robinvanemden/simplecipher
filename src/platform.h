@@ -29,6 +29,13 @@
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
+/* On FreeBSD/OpenBSD, _POSIX_C_SOURCE hides BSD extensions like getentropy().
+ * __BSD_VISIBLE re-exposes them without removing POSIX declarations. */
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#ifndef __BSD_VISIBLE
+#define __BSD_VISIBLE 1
+#endif
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
