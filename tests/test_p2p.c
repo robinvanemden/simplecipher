@@ -4139,9 +4139,9 @@ static void test_desktop_fingerprint_normalization(void) {
         TEST("desktop norm: no dashes matches real fp", fp_compare(canonical, nodash));
     }
 
-    /* Extra dashes in wrong positions */
+    /* Extra dashes in wrong positions (16 hex chars + 16 dashes + null = 33) */
     {
-        char extra[25] = {0};
+        char extra[33] = {0};
         int j = 0;
         for (int i = 0; canonical[i]; i++) {
             if (canonical[i] != '-') {
