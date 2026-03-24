@@ -44,7 +44,7 @@ See [HARDENING.md](HARDENING.md) for the complete list of security compiler and 
 ## Tests
 
 ```bash
-# Run the P2P integration tests (617 tests)
+# Run the P2P integration tests (665 tests)
 make test
 
 # Run the full local test suite (P2P + build + binary analysis)
@@ -79,7 +79,7 @@ See [HARDENING.md](HARDENING.md) for the full verification stack (sanitizers, fu
 ├── cmake/toolchains/             # musl + llvm-mingw toolchain files
 ├── android/                      # Android app (JNI bridge + Java UI)
 ├── tests/
-│   ├── test_p2p.c                # 617-test P2P integration suite
+│   ├── test_p2p.c                # 665-test P2P integration suite
 │   ├── test_constant_time.c      # dudect timing side-channel verification
 │   ├── test_timecop.c            # Valgrind-based constant-time verification
 │   ├── cbmc_harness.py           # CBMC formal verification (57K properties)
