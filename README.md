@@ -3,7 +3,7 @@
 [![CI](https://github.com/robinvanemden/simplecipher/actions/workflows/ci.yml/badge.svg)](https://github.com/robinvanemden/simplecipher/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Private chat between two people. No server. No account. No trace.
+Private chat between two people. No server. No account. Nothing stored to disk.
 
 Run the program, compare a short code over the phone to make sure nobody's listening in, and start talking. Everything is encrypted end-to-end. When the session ends, the keys are gone — even if someone recorded the entire conversation, they cannot decrypt it after the fact. Nothing is stored to disk. No sign-up required.
 
@@ -197,7 +197,7 @@ SimpleCipher runs on Linux, Windows, and Android. The encryption is identical ev
 
 | Platform | Security | Ease of use | Best for |
 |----------|----------|-------------|----------|
-| **Desktop CLI/TUI** on a hardened OS | Strongest | Requires terminal | When leaving no trace matters most |
+| **Desktop CLI/TUI** on a hardened OS | Strongest | Requires terminal | When minimizing forensic traces matters most |
 | **Desktop CLI/TUI** on a standard OS | Strong | Requires terminal | Everyday private conversations |
 | **Android app** (minimal) | Good | Easiest | Quick, convenient chats on the go |
 | **Android app** (full) | Good | Easiest + QR scanning | Same, with camera-based verification |
@@ -239,7 +239,7 @@ They can try, but the safety code comparison stops them. Both sides lock in thei
 The session is gone. Keys exist only in memory. Reconnect and start fresh — you'll get a new code.
 
 **Why not just use Signal?**
-Signal requires a phone number, an account, and a central server that knows who talks to whom. SimpleCipher has none of that. Nothing is stored, no sign-up needed. Use Signal when you need persistent contacts. Use SimpleCipher when leaving no trace matters more.
+Signal requires a phone number, an account, and a central server that knows who talks to whom. SimpleCipher has none of that. Nothing is stored, no sign-up needed. Use Signal when you need persistent contacts. Use SimpleCipher when storing nothing to disk matters more.
 
 **Can I use this over the internet without a VPN?**
 Yes, if one side has a reachable IP (port forwarding, cloud server, etc.). See [Quick start](#quick-start) for options. For anonymity, use [Tor](#other-ways-to-connect).

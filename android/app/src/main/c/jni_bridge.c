@@ -91,6 +91,12 @@ static volatile socket_t g_listen_sock = INVALID_SOCK;
 static pthread_t g_session_thread;
 static volatile int g_session_active = 0;
 
+/* Session generation counter.  Incremented by nativeStart() each time a
+ * new session is spawned.  The session thread stores its own generation
+ * at birth and only clears g_session_active if the generation still
+ * matches — preventing a stale thread from marking a newer session inactive. */
+static volatile int g_session_gen = 0;
+
 /* ---- Pre-generated key (set by MainActivity before nativeStart) --------- */
 
 static uint8_t  g_prekey_priv[KEY];
@@ -109,6 +115,8 @@ typedef struct {
     char     *host;       /* strdup'd host string (connect only), or NULL */
     int       port;
     int       pipe_rd;    /* read end of command pipe                    */
+    int       pipe_wr;    /* write end — thread closes this on exit      */
+    int       gen;        /* session generation (for stale-thread guard)  */
     jobject   callback;   /* JNI global ref to NativeCallback            */
 
     /* Pre-resolved JNI method IDs — looked up on the calling thread
@@ -193,6 +201,8 @@ static void *session_thread(void *arg) {
     char     *host    = ta->host;       /* we own this (strdup'd) */
     int       port    = ta->port;
     int       pipe_rd = ta->pipe_rd;
+    int       pipe_wr = ta->pipe_wr;    /* our own copy — we close on exit */
+    int       my_gen  = ta->gen;        /* session generation at birth */
     jobject   cb      = ta->callback;   /* global ref — we delete on exit */
 
     jmethodID mid_onConnected        = ta->mid_onConnected;
@@ -714,18 +724,12 @@ cleanup:
         close_sock(fd);
     }
 
-    /* Close the read end of the pipe.  The WRITE end is managed by
-     * nativeStart() — it closes the old write fd before creating a new
-     * pipe for the next session.  We must NOT touch g_pipe_wr here:
-     * if a new session has already started, g_pipe_wr points to the
-     * NEW session's pipe, and closing it would break that session.
-     *
-     * The old zero-write "wipe" was removed: writing zeros to a pipe
-     * appends to the buffer — it does not overwrite queued data.  On a
-     * full pipe it can block, stalling cleanup.  Closing both ends is
-     * sufficient: the kernel frees the pipe buffer pages on close, and
-     * pipe data is never written to disk. */
+    /* Close both ends of the pipe.  Each thread owns its own copy of
+     * pipe_wr (stored at thread creation, not read from the global).
+     * This avoids the old bug where a stale thread could close the
+     * NEW session's pipe fd via g_pipe_wr. */
     close(pipe_rd);
+    close(pipe_wr);
 
     /* Delete the JNI global ref to the callback */
     (*env)->DeleteGlobalRef(env, cb);
@@ -733,8 +737,12 @@ cleanup:
     /* Detach from JVM */
     (*g_jvm)->DetachCurrentThread(g_jvm);
 
-    g_session_active = 0;
-    LOGI("session thread exiting");
+    /* Only clear g_session_active if our generation still matches.
+     * If nativeStart() already spawned a newer session (incremented
+     * g_session_gen), we must not clobber the newer session's active bit. */
+    if (g_session_gen == my_gen)
+        g_session_active = 0;
+    LOGI("session thread exiting (gen=%d)", my_gen);
     return NULL;
 }
 
@@ -772,6 +780,14 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
 
     plat_init();
 
+    /* Close any stale pipe write fd — even if g_session_active is already 0.
+     * Without this, a finished session leaves g_pipe_wr open (fd leak). */
+    {
+        int wr = g_pipe_wr;
+        g_pipe_wr = -1;
+        if (wr >= 0) close(wr);
+    }
+
     /* Wait for any previous session thread to finish.  This ensures the
      * old socket is fully closed before we try to bind the same port.
      * Without this, listen→back→listen fails with "address in use". */
@@ -782,10 +798,6 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
             g_listen_sock = INVALID_SOCK;
             close_sock(ls);
         }
-        /* Close the pipe write end to signal quit */
-        int wr = g_pipe_wr;
-        g_pipe_wr = -1;
-        if (wr >= 0) close(wr);
         /* Wait for thread to exit.  Poll g_session_active with short
          * sleeps rather than pthread_timedjoin_np (not available on Bionic). */
         for (int i = 0; i < 20 && g_session_active; i++) {
@@ -833,6 +845,8 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     ta->mode    = (int)mode;
     ta->port    = (int)port;
     ta->pipe_rd = pipefd[0];
+    ta->pipe_wr = pipefd[1];   /* thread's own copy — closes on exit */
+    ta->gen     = ++g_session_gen;  /* unique generation for this session */
 
     /* Copy host string (connect mode only) */
     if (host) {

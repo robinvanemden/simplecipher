@@ -4,7 +4,7 @@
 
 ## What SimpleCipher is
 
-SimpleCipher is a tool for one conversation between two people who can verify each other's identity. It is designed to leave no trace.
+SimpleCipher is a tool for one conversation between two people who can verify each other's identity. It stores nothing to disk and wipes keys from memory on exit, but it cannot guarantee zero OS-level traces (see caveats below).
 
 ## What SimpleCipher is not
 
@@ -51,7 +51,7 @@ Common feature requests and why they conflict with the design:
 
 ## When to use SimpleCipher
 
-- You need a private conversation that leaves no trace on either device
+- You need a private conversation that stores nothing to disk on either device
 - You can reach the other person over TCP (same network, VPN, Tor, port forward)
 - You can verify their identity through another channel (phone call, in person, pre-shared fingerprint)
 - You don't need message history, contacts, or offline delivery
