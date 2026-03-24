@@ -74,6 +74,19 @@ echo "Captured local IP: ${LOCAL_IP:-192.168.1.42}"
 
 IP="${LOCAL_IP:-192.168.1.42}"
 
+# Build the phone call box with proper alignment.
+# The 📞 emoji is 4 bytes but 2 display columns, so printf %-Ns
+# undercounts by 2.  We add 2 extra bytes to the emoji line width.
+W=50  # inner width (display columns)
+BOX_TOP="         ╔$(printf '═%.0s' $(seq 1 $W))╗"
+BOX_BOT="         ╚$(printf '═%.0s' $(seq 1 $W))╝"
+box_line() { printf '         ║  %-*s║' "$((W-2))" "$1"; }
+# +2 bytes for emoji display-width compensation
+box_line_emoji() { printf '         ║  %-*s║' "$((W))" "$1"; }
+PHONE1=$(box_line_emoji "📞  Phone call:")
+PHONE2=$(box_line "Alice: \"I see $SAS -- same for you?\"")
+PHONE3=$(box_line "Bob:   \"Yes, same code.\"")
+
 # Generate the demo block
 DEMO=$(cat << DEMOEOF
 \`\`\`
@@ -89,11 +102,11 @@ DEMO=$(cat << DEMOEOF
                                             \$ simplecipher connect $IP
    Safety code:  $SAS                    Safety code:  $SAS
 
-              ┌─────────────────────────────────────┐
-              │  Alice calls Bob on the phone:       │
-              │  "I see $SAS — do you?"          │
-              │  Bob: "Yes, same code."              │
-              └─────────────────────────────────────┘
+$BOX_TOP
+$PHONE1
+$PHONE2
+$PHONE3
+$BOX_BOT
 
    Confirm: $SAS_NODASH                          Confirm: $SAS_NODASH
 

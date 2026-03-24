@@ -17,18 +17,18 @@ SimpleCipher is a single tiny binary (~80 KB) with zero dependencies. The protoc
    Listening on port 7777
    Tell your peer to run:
      simplecipher connect 192.168.1.208
-   Your fingerprint: DF3F-B87E-4C9C-E240
+   Your fingerprint: 8C87-E3B1-7EA0-5822
    Waiting for connection...
                                             $ simplecipher connect 192.168.1.208
-   Safety code:  DF3F-B87E                    Safety code:  DF3F-B87E
+   Safety code:  8C87-E3B1                    Safety code:  8C87-E3B1
 
-              ┌─────────────────────────────────────┐
-              │  Alice calls Bob on the phone:       │
-              │  "I see DF3F-B87E — do you?"          │
-              │  Bob: "Yes, same code."              │
-              └─────────────────────────────────────┘
+         ╔══════════════════════════════════════════════════╗
+         ║  📞  Phone call:                                 ║
+         ║  Alice: "I see 8C87-E3B1 -- same for you?"       ║
+         ║  Bob:   "Yes, same code."                        ║
+         ╚══════════════════════════════════════════════════╝
 
-   Confirm: DF3FB87E                          Confirm: DF3FB87E
+   Confirm: 8C87E3B1                          Confirm: 8C87E3B1
 
    Secure session active.                     Secure session active.
 
