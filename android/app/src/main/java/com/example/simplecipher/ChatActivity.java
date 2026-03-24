@@ -70,6 +70,10 @@ public class ChatActivity extends Activity implements NativeCallback {
      * leaking plaintext into the Java heap while the app is backgrounded. */
     private boolean paused = false;
 
+    /** True if the peer fingerprint was pre-verified by native during handshake.
+     *  Set from native thread via onPeerFingerprintReady, read on UI thread. */
+    private volatile boolean fingerprintVerified = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -220,6 +224,21 @@ public class ChatActivity extends Activity implements NativeCallback {
     @Override
     public void onSasReady(String code) {
         uiHandler.post(() -> {
+            /* If peer fingerprint was pre-verified, skip SAS input */
+            if (fingerprintVerified) {
+                nativePostCommand(CMD_CONFIRM_SAS, null);
+
+                sasLayout.setVisibility(View.GONE);
+                chatLayout.setVisibility(View.VISIBLE);
+                statusText.setText("\uD83D\uDD12 Peer fingerprint verified");
+                statusText.setTextColor(0xFF4DD0B0);
+
+                inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
+                inAppKeyboard.setTarget(chatInput);
+                chatInput.requestFocus();
+                hideSystemKeyboard(chatInput);
+                return;
+            }
             pendingSas = code;
             statusText.setText("Verify safety code with your peer");
             sasCodeText.setText(code);
@@ -272,6 +291,16 @@ public class ChatActivity extends Activity implements NativeCallback {
                 hideSystemKeyboard(chatInput);
             });
         });
+    }
+
+    @Override
+    public void onPeerFingerprintReady(String fingerprint, boolean verified) {
+        /* Set directly — this is a simple boolean write with no UI dependency.
+         * The native thread calls this BEFORE onSasReady, and Android's Handler
+         * queue is strictly FIFO, so the onSasReady handler will see the
+         * updated value. Using a volatile field instead of uiHandler.post
+         * makes the ordering guarantee explicit. */
+        fingerprintVerified = verified;
     }
 
     @Override

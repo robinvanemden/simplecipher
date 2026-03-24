@@ -13,6 +13,7 @@ android {
         targetSdk 35
         versionCode 1
         versionName '1.0'
+        buildConfigField 'boolean', 'HAS_QR_SCANNER', 'false'
 
         ndk {
             /* Release APKs ship ARM only.  CI emulator tests pass
@@ -68,6 +69,26 @@ android {
         }
     }
 
+    flavorDimensions 'variant'
+    productFlavors {
+        minimal {
+            dimension 'variant'
+            /* No QR scanner, no camera permission, smallest APK.
+             * Fingerprint verification via manual text input only. */
+            buildConfigField 'boolean', 'HAS_QR_SCANNER', 'false'
+        }
+        full {
+            dimension 'variant'
+            /* QR code display + scanning via ZXing.  Requires CAMERA
+             * permission (requested at runtime, only when user taps Scan). */
+            buildConfigField 'boolean', 'HAS_QR_SCANNER', 'true'
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
     lint {
         fatal 'MutableImplicitPendingIntent'
     }
@@ -77,4 +98,12 @@ android {
             path 'src/main/c/CMakeLists.txt'
         }
     }
+}
+
+dependencies {
+    /* ZXing: only included in the 'full' flavor.
+     * core = QR code generation (display your fingerprint as QR)
+     * embedded = QR code scanning with camera */
+    fullImplementation 'com.google.zxing:core:3.5.3'
+    fullImplementation 'com.journeyapps:zxing-android-embedded:4.3.0'
 }

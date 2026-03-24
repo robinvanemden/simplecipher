@@ -19,6 +19,8 @@ import android.widget.TextView;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import android.widget.ImageView;
+
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -28,11 +30,27 @@ import java.util.List;
 
 public class MainActivity extends Activity {
 
+    static { System.loadLibrary("simplecipher"); }
+
+    private native String nativeGenerateKey();
+    private native void   nativeWipePreKey();
+    private native void   nativeSetPeerFingerprint(String fingerprint);
+
     private RadioGroup    modeGroup;
     private TextView      connectLabel;
     private EditText      hostInput;
     private EditText      portInput;
     private LinearLayout  localIpsContainer;
+    private LinearLayout  fpContent;
+    private ImageView     fpQrImage;
+    private TextView      fpSelfText;
+    private Button        fpScanBtn;
+    private EditText      fpManualInput;
+    private TextView      fpPeerStatus;
+    private boolean       fpExpanded = false;
+    private String        selfFingerprint = null;
+    private String        peerFingerprint = null;
+    private final QrHelper qr = new QrHelperImpl();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +75,56 @@ public class MainActivity extends Activity {
         portInput.setImeOptions(portInput.getImeOptions() | noLearn);
 
         showLocalIps();
+
+        /* Fingerprint verification panel */
+        TextView fpToggle   = findViewById(R.id.fpToggle);
+        fpContent     = findViewById(R.id.fpContent);
+        fpQrImage     = findViewById(R.id.fpQrImage);
+        fpSelfText    = findViewById(R.id.fpSelfText);
+        fpScanBtn     = findViewById(R.id.fpScanBtn);
+        fpManualInput = findViewById(R.id.fpManualInput);
+        fpPeerStatus  = findViewById(R.id.fpPeerStatus);
+
+        int noLearnFp = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
+        fpManualInput.setImeOptions(fpManualInput.getImeOptions() | noLearnFp);
+
+        fpToggle.setOnClickListener(v -> {
+            fpExpanded = !fpExpanded;
+            fpContent.setVisibility(fpExpanded ? View.VISIBLE : View.GONE);
+            if (fpExpanded && selfFingerprint == null) {
+                selfFingerprint = nativeGenerateKey();
+                fpSelfText.setText(selfFingerprint);
+                if (qr.hasScanner()) {
+                    fpQrImage.setImageBitmap(qr.generateBitmap(selfFingerprint, 512));
+                }
+            }
+        });
+
+        if (qr.hasScanner()) {
+            fpScanBtn.setOnClickListener(v -> {
+                if (checkSelfPermission(android.Manifest.permission.CAMERA)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 100);
+                } else {
+                    qr.launchScanner(this);
+                }
+            });
+        } else {
+            /* Minimal flavor: hide scan button and QR image */
+            fpScanBtn.setVisibility(View.GONE);
+            fpQrImage.setVisibility(View.GONE);
+        }
+
+        fpManualInput.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            public void afterTextChanged(android.text.Editable s) {
+                String text = s.toString().trim();
+                if (text.replace("-", "").length() == 16) {
+                    setPeerFingerprint(text);
+                }
+            }
+        });
 
         /* Refresh IP commands when port changes so the displayed
          * connect commands always show the correct port number. */
@@ -103,6 +171,32 @@ public class MainActivity extends Activity {
             intent.putExtra("port", port);
             startActivity(intent);
         });
+    }
+
+    @Override
+    protected void onStop() {
+        /* Wipe pre-generated key when app is backgrounded.
+         * LIFECYCLE INVARIANT: when MainActivity starts ChatActivity,
+         * Android guarantees: A.onPause -> B.onCreate -> ... -> A.onStop.
+         * So nativeStart() (in ChatActivity.onCreate) copies+wipes globals
+         * before this runs. This is the cleanup path for backgrounding
+         * without connecting. */
+        nativeWipePreKey();
+        selfFingerprint = null;
+        peerFingerprint = null;
+        if (fpQrImage != null) fpQrImage.setImageBitmap(null);
+        if (fpSelfText != null) fpSelfText.setText("");
+        if (fpManualInput != null) fpManualInput.setText("");
+        if (fpPeerStatus != null) fpPeerStatus.setText(R.string.fp_peer_none);
+        fpExpanded = false;
+        if (fpContent != null) fpContent.setVisibility(View.GONE);
+        super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        nativeWipePreKey();
+        super.onDestroy();
     }
 
     private void showLocalIps() {
@@ -216,5 +310,42 @@ public class MainActivity extends Activity {
         /* Prefer IPv4 -- shorter, easier to read aloud and type.
          * Only show IPv6 if no IPv4 addresses are available. */
         return ipv4.isEmpty() ? ipv6 : ipv4;
+    }
+
+    /* ---- QR result handling (delegates to flavor-specific QrHelper) -------- */
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        String scanned = qr.parseScanResult(requestCode, resultCode, data);
+        if (scanned != null) {
+            setPeerFingerprint(scanned);
+        } else {
+            super.onActivityResult(requestCode, resultCode, data);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (qr.hasScanner() && requestCode == 100 && grantResults.length > 0
+                && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            qr.launchScanner(this);
+        } else if (requestCode == 100) {
+            Toast.makeText(this, R.string.fp_camera_denied, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void setPeerFingerprint(String fp) {
+        String normalized = fp.trim().toUpperCase(java.util.Locale.ROOT);
+        String stripped = normalized.replace("-", "");
+        if (stripped.length() != 16 || !stripped.matches("[0-9A-F]+")) {
+            Toast.makeText(this, "Invalid fingerprint format", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        peerFingerprint = stripped.substring(0,4) + "-" + stripped.substring(4,8)
+                + "-" + stripped.substring(8,12) + "-" + stripped.substring(12,16);
+        nativeSetPeerFingerprint(peerFingerprint);
+        fpPeerStatus.setText(getString(R.string.fp_peer_set, peerFingerprint));
+        fpPeerStatus.setTextColor(0xFF4DD0B0);
+        fpManualInput.setText(peerFingerprint);
     }
 }
