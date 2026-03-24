@@ -83,40 +83,49 @@ PHONE1=$(box_line "PHONE CALL:")
 PHONE2=$(box_line "Alice: \"I see $SAS -- same for you?\"")
 PHONE3=$(box_line "Bob:   \"Yes, same code.\"")
 
-# Generate the demo block
+# Generate the demo block — sequential steps, one thing at a time.
 DEMO=$(cat << DEMOEOF
+**Step 1 — Alice starts listening:**
+
 \`\`\`
- ALICE (listener)                          BOB (connector)
- ─────────────────                         ────────────────
- \$ simplecipher listen
+\$ simplecipher listen
 
-   Listening on port 7777
-   Tell your peer to run:
-     simplecipher connect $IP
-   Your fingerprint: ${FINGERPRINT:-B4C7-2E19-A5D3-F801}
-   Waiting for connection...
-                                            \$ simplecipher connect $IP
-   Safety code:  $SAS                    Safety code:  $SAS
-
-$BOX_TOP
-$PHONE1
-$PHONE2
-$PHONE3
-$BOX_BOT
-
-   Confirm: $SAS_NODASH                          Confirm: $SAS_NODASH
-
-   Secure session active.                     Secure session active.
-
- > hey, is this channel safe?
-                                            [12:01:03] peer: hey, is this channel safe?
-                                            > yes — keys are ephemeral, wiped on exit
- [12:01:07] peer: yes — keys are
-   ephemeral, wiped on exit
-
-   ^C                                         [peer disconnected]
-   Keys wiped. Session over.                  Keys wiped. Session over.
+  Listening on port 7777
+  Tell your peer to run:
+    simplecipher connect $IP
+  Your fingerprint: ${FINGERPRINT:-B4C7-2E19-A5D3-F801}
+  Waiting for connection...
 \`\`\`
+
+**Step 2 — Bob connects using Alice's IP:**
+
+\`\`\`
+\$ simplecipher connect $IP
+\`\`\`
+
+**Step 3 — Both see the same safety code:**
+
+\`\`\`
+  Safety code:  $SAS          (both screens show this)
+\`\`\`
+
+They call each other on the phone (or compare in person): *"I see $SAS — same for you?" "Yes."*
+
+Both type the code to confirm:
+
+\`\`\`
+  Confirm: $SAS_NODASH
+  Secure session active. Ctrl+C to quit.
+\`\`\`
+
+**Step 4 — They chat. Everything is encrypted.**
+
+\`\`\`
+  > hey, is this safe?
+  [12:01:03] peer: yes — keys are ephemeral, wiped on exit
+\`\`\`
+
+**Step 5 — Either side presses Ctrl+C. Keys are wiped. Nothing is stored.**
 DEMOEOF
 )
 
@@ -139,8 +148,8 @@ with open(readme_path) as f:
 with open(demo_path) as f:
     demo = f.read().strip()
 
-# Match: ``` ... ``` block that starts with " ALICE (listener)"
-pattern = r'(?s)```\n ALICE \(listener\).*?```'
+# Match: the demo block from "**Step 1" to "Nothing is stored.**"
+pattern = r'(?s)\*\*Step 1.*?Nothing is stored\.\*\*'
 if re.search(pattern, content):
     content = re.sub(pattern, demo, content)
     with open(readme_path, "w") as f:

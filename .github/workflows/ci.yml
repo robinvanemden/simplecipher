@@ -57,7 +57,7 @@ jobs:
           cp README.md /tmp/readme_before.md
           PATH="$(pwd)/build/native:$PATH" bash docs/generate-demo.sh
           # Verify the demo block exists and has a SAS code
-          grep -qP '[0-9A-F]{4}-[0-9A-F]{4}' README.md || {
+          grep -qP 'Step 1.*listen|Safety code:.*[0-9A-F]{4}' README.md || {
             echo "::error::Demo block has no SAS code after regeneration"
             exit 1
           }

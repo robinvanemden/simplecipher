@@ -9,38 +9,47 @@ Run the program, compare a short code over the phone to make sure nobody's liste
 
 SimpleCipher is a single tiny binary (~80 KB) with zero dependencies. The protocol is implemented in a handful of focused C modules, designed to be audited in an afternoon — built for privacy and for teaching.
 
+**Step 1 — Alice starts listening:**
+
 ```
- ALICE (listener)                          BOB (connector)
- ─────────────────                         ────────────────
- $ simplecipher listen
+$ simplecipher listen
 
-   Listening on port 7777
-   Tell your peer to run:
-     simplecipher connect 192.168.1.208
-   Your fingerprint: BAAE-08A3-D0DC-9B36
-   Waiting for connection...
-                                            $ simplecipher connect 192.168.1.208
-   Safety code:  BAAE-08A3                    Safety code:  BAAE-08A3
-
-         ╔══════════════════════════════════════════════════╗
-         ║  PHONE CALL:                                     ║
-         ║  Alice: "I see BAAE-08A3 -- same for you?"       ║
-         ║  Bob:   "Yes, same code."                        ║
-         ╚══════════════════════════════════════════════════╝
-
-   Confirm: BAAE08A3                          Confirm: BAAE08A3
-
-   Secure session active.                     Secure session active.
-
- > hey, is this channel safe?
-                                            [12:01:03] peer: hey, is this channel safe?
-                                            > yes — keys are ephemeral, wiped on exit
- [12:01:07] peer: yes — keys are
-   ephemeral, wiped on exit
-
-   ^C                                         [peer disconnected]
-   Keys wiped. Session over.                  Keys wiped. Session over.
+  Listening on port 7777
+  Tell your peer to run:
+    simplecipher connect 192.168.1.208
+  Your fingerprint: D629-4DB6-9B8C-2CE1
+  Waiting for connection...
 ```
+
+**Step 2 — Bob connects using Alice's IP:**
+
+```
+$ simplecipher connect 192.168.1.208
+```
+
+**Step 3 — Both see the same safety code:**
+
+```
+  Safety code:  D629-4DB6          (both screens show this)
+```
+
+They call each other on the phone (or compare in person): *"I see D629-4DB6 — same for you?" "Yes."*
+
+Both type the code to confirm:
+
+```
+  Confirm: D6294DB6
+  Secure session active. Ctrl+C to quit.
+```
+
+**Step 4 — They chat. Everything is encrypted.**
+
+```
+  > hey, is this safe?
+  [12:01:03] peer: yes — keys are ephemeral, wiped on exit
+```
+
+**Step 5 — Either side presses Ctrl+C. Keys are wiped. Nothing is stored.**
 
 **Deep dives:** [Protocol and Security](docs/PROTOCOL.md) &#183; [Platform Hardening](docs/HARDENING.md) &#183; [Building and Development](docs/BUILDING.md) &#183; [Security Policy](SECURITY.md)
 
