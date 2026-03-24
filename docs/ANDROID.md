@@ -70,7 +70,7 @@ After connecting, both sides see the same 8-character hex code (e.g., `A3F2-91BC
 
 This requires a live channel at connection time but no advance preparation.
 
-### Fingerprint QR exchange — optional, stronger (planned)
+### Fingerprint QR exchange — optional, stronger
 
 Each side generates an ephemeral fingerprint (16-character hex code derived from the session's public key). This fingerprint can be displayed as a QR code and scanned by the peer before connecting. After the handshake, the fingerprint is verified automatically — no manual code comparison needed.
 
@@ -142,7 +142,7 @@ cd android && ./gradlew connectedAndroidTest
 | Permission | When requested | Required |
 |------------|---------------|----------|
 | `INTERNET` | Always (TCP connection) | Yes |
-| `CAMERA` | When user taps "Scan peer fingerprint" (planned) | No — only for QR scanning, runtime request |
+| `CAMERA` | When user taps "Scan peer fingerprint" | No — only for QR scanning, runtime request |
 
 No storage, contacts, location, microphone, or background permissions. The app does nothing in the background.
 
@@ -151,8 +151,8 @@ No storage, contacts, location, microphone, or background permissions. The app d
 | Dependency | Purpose | License |
 |------------|---------|---------|
 | Monocypher (vendored C) | All cryptography | BSD-2-Clause / CC0 |
-| ZXing core (planned) | QR code generation | Apache 2.0 |
-| ZXing Android embedded (planned) | QR code scanning with camera | Apache 2.0 |
+| ZXing core | QR code generation | Apache 2.0 |
+| ZXing Android embedded | QR code scanning with camera | Apache 2.0 |
 
 No Google Play Services dependency. Works on all Android devices including degoogled phones (LineageOS, GrapheneOS, etc.).
 

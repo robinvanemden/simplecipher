@@ -107,6 +107,14 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 | **Post-compromise security** | DH ratchet mixes fresh X25519 entropy on each direction switch |
 | **Ephemeral keys** | New keypair every session; nothing stored to disk |
 
+### Fingerprint verification (optional)
+
+In addition to SAS comparison, peers can exchange fingerprints out-of-band before connecting. A fingerprint is the first 8 bytes of `BLAKE2b(pub_key)` formatted as `XXXX-XXXX-XXXX-XXXX`. Since the fingerprint is derived from the public key (which is exchanged openly during the handshake), it has zero secret value — sharing it on paper, QR code, or any channel carries no risk.
+
+After the commitment and key exchange phases, the native layer compares the received peer public key's fingerprint against the pre-shared value using a constant-time comparison. If they match, the SAS step is skipped. If they don't match, the connection is aborted immediately.
+
+This provides 64 bits of entropy (vs 32 for SAS) and removes the human comparison step, making it stronger when pre-arrangement is possible.
+
 ### What it does NOT provide
 
 - **Post-compromise security is per-session**: the DH ratchet recovers from key theft within a session, but there is no cross-session recovery. Each session starts fresh — if an attacker is present at session start, the entire session is compromised. This is inherent to the ephemeral design.
