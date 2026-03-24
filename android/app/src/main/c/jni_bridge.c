@@ -138,18 +138,8 @@ static int pipe_read_exact(int fd, void *buf, size_t n) {
     return 0;
 }
 
-/* Constant-time comparison of n bytes.  Returns 0 if equal, non-zero
- * if different.  The volatile accumulator prevents the compiler from
- * short-circuiting on the first difference, which would leak the
- * position of the mismatch through timing.  Used for fingerprint
- * verification — even though fingerprints are public data, constant-time
- * comparison is our policy for all security-relevant comparisons. */
-static int ct_compare(const uint8_t *a, const uint8_t *b, size_t n) {
-    volatile uint8_t diff = 0;
-    for (size_t i = 0; i < n; i++)
-        diff |= a[i] ^ b[i];
-    return diff;
-}
+/* ct_compare is declared in crypto.h — shared with desktop code and
+ * testable by the timing verification suite (dudect/timecop). */
 
 /* Parse a fingerprint string "XXXX-XXXX-XXXX-XXXX" into 8 raw bytes.
  * Accepts uppercase, lowercase, and mixed-case hex.  Dashes are skipped.

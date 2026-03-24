@@ -111,6 +111,16 @@ typedef struct {
  * through timing differences. */
 [[nodiscard]] bool is_zero32(const uint8_t x[32]);
 
+/* Constant-time comparison of n bytes.  Returns 0 if equal, non-zero
+ * if different.  The volatile accumulator prevents the compiler from
+ * short-circuiting on the first difference, which would leak the
+ * mismatch position through timing.
+ *
+ * Unlike crypto_verify16/32/64 (which require fixed-size buffers),
+ * this works for any length — used for fingerprint comparison (8 bytes)
+ * and anywhere else a variable-length constant-time check is needed. */
+[[nodiscard]] int ct_compare(const uint8_t *a, const uint8_t *b, size_t n);
+
 /* domain_hash: BLAKE2b keyed with a public domain label.
  *
  * Domain separation ensures that hashing the same data for different

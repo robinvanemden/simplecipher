@@ -3968,13 +3968,9 @@ static void test_parse_fingerprint_edge_cases(void) {
 
 /* ---- test: constant-time comparison correctness ------------------------- */
 
-/* Reimplementation of jni_bridge.c ct_compare for testing. */
-static int test_ct_cmp(const uint8_t *a, const uint8_t *b, size_t n) {
-    volatile uint8_t diff = 0;
-    for (size_t i = 0; i < n; i++)
-        diff |= a[i] ^ b[i];
-    return diff;
-}
+/* Use the shared ct_compare from crypto.h — the same function used by
+ * both the desktop CLI (main.c) and the Android JNI bridge. */
+#define test_ct_cmp ct_compare
 
 static void test_ct_compare_correctness(void) {
     printf("\n=== ct_compare correctness ===\n");

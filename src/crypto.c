@@ -27,6 +27,14 @@
     return acc == 0;
 }
 
+/* Constant-time comparison of n bytes. */
+[[nodiscard]] int ct_compare(const uint8_t *a, const uint8_t *b, size_t n){
+    volatile uint8_t diff = 0;
+    for (size_t i = 0; i < n; i++)
+        diff |= a[i] ^ b[i];
+    return diff;
+}
+
 /* domain_hash: BLAKE2b keyed with a public domain label.
  *
  * Domain separation ensures that hashing the same data for different

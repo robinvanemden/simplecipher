@@ -427,15 +427,9 @@ int main(int argc, char *argv[]){
                 if (c >= 'a' && c <= 'z') c -= 32;
                 np[pi++] = c;
             }
-            /* Constant-time comparison: avoid leaking mismatch position
-             * through timing.  Lengths are checked separately because
-             * the stripped fingerprint is derived from public data, but
-             * we follow the project convention of constant-time for all
-             * security-relevant comparisons. */
-            volatile uint8_t ct_diff = (ei != pi) ? 1 : 0;
-            for (int k = 0; k < ei && k < pi; k++)
-                ct_diff |= (uint8_t)(ne[k] ^ np[k]);
-            int mismatch = (ct_diff != 0);
+            int mismatch = (ei != pi) || ct_compare((const uint8_t *)ne,
+                                                    (const uint8_t *)np,
+                                                    (size_t)ei) != 0;
             crypto_wipe(ne, sizeof ne);
             crypto_wipe(np, sizeof np);
             if (mismatch){
