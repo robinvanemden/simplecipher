@@ -57,7 +57,14 @@ void fill_random(uint8_t *b, size_t n){
 #if defined(__linux__)
     if (getrandom(b, n, 0) != (ssize_t)n){ perror("getrandom"); _exit(1); }
 #else
-    if (getentropy(b, n) != 0){ perror("getentropy"); _exit(1); }
+    /* getentropy(3) is limited to 256 bytes per call on all BSDs.
+     * Loop in chunks to support larger requests (e.g. test harnesses). */
+    while (n > 0) {
+        size_t chunk = n > 256 ? 256 : n;
+        if (getentropy(b, chunk) != 0){ perror("getentropy"); _exit(1); }
+        b += chunk;
+        n -= chunk;
+    }
 #endif
 }
 
