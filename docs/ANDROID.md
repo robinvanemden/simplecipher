@@ -1,5 +1,7 @@
 # Android App — SimpleCipher
 
+> **Audience:** Everyone — from first-time users choosing an APK, to developers building from source, to security researchers auditing the trust boundaries between Java and native code.
+
 ## What is this?
 
 SimpleCipher is a private chat app. Two people connect directly — no server, no account, no sign-up. Everything is encrypted end-to-end. When the session ends, the keys are gone. Nothing is stored to disk.

@@ -63,9 +63,10 @@ Grab a binary from the [latest release](https://github.com/robinvanemden/simplec
 | **Linux** (Raspberry Pi, ARM) | [simplecipher-linux-aarch64](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-linux-aarch64) | ~91 KB |
 | **Windows** (most PCs) | [simplecipher-win-x86_64.exe](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-win-x86_64.exe) | ~65 KB |
 | **Windows** (ARM laptops) | [simplecipher-win-aarch64.exe](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-win-aarch64.exe) | ~58 KB |
-| **Android** | [simplecipher-android.apk](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-android.apk) | ~164 KB |
+| **Android** (minimal) | [simplecipher-minimal.apk](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-minimal.apk) | ~154 KB, no extra permissions |
+| **Android** (full) | [simplecipher-full.apk](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-full.apk) | ~854 KB, adds QR scanning |
 
-All desktop binaries are fully static with zero runtime dependencies.
+All desktop binaries are fully static with zero runtime dependencies. Both Android APKs use the same encryption — the difference is QR code support. See [Android App](docs/ANDROID.md) for details.
 
 ## Quick start
 
@@ -225,7 +226,7 @@ SimpleCipher encrypts your conversation. The operating system protects everythin
 ## FAQ
 
 **Can someone read my messages?**
-Not if you compare the safety code. The encryption uses the same industry-standard algorithms as Signal and WhatsApp (X25519, XChaCha20-Poly1305). The code has been tested with 605 automated tests, formally verified with CBMC, and the crypto library ([Monocypher](https://monocypher.org/)) has been [professionally audited](https://monocypher.org/quality-assurance/audit). That said, SimpleCipher itself has not been formally audited as a complete system — use your judgment.
+Not if you compare the safety code. The encryption uses the same industry-standard algorithms as Signal and WhatsApp (X25519, XChaCha20-Poly1305). The code has been tested with 617 automated tests, formally verified with CBMC, and the crypto library ([Monocypher](https://monocypher.org/)) has been [professionally audited](https://monocypher.org/quality-assurance/audit). That said, SimpleCipher itself has not been formally audited as a complete system — use your judgment.
 
 **Can someone intercept the connection?**
 They can try, but the safety code comparison stops them. Both sides lock in their keys before revealing them, then derive a code that must match. If it matches, no one is in the middle. If you skip the comparison, all bets are off.

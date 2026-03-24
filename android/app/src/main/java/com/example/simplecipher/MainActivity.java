@@ -88,6 +88,10 @@ public class MainActivity extends Activity {
         int noLearnFp = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
         fpManualInput.setImeOptions(fpManualInput.getImeOptions() | noLearnFp);
 
+        /* Expand/collapse: on first expand, generate an ephemeral keypair
+         * and display the self fingerprint.  The user shares this with their
+         * peer (QR code, paper, or read aloud) so the peer can verify our
+         * identity after the handshake completes. */
         fpToggle.setOnClickListener(v -> {
             fpExpanded = !fpExpanded;
             fpContent.setVisibility(fpExpanded ? View.VISIBLE : View.GONE);
@@ -115,6 +119,10 @@ public class MainActivity extends Activity {
             fpQrImage.setVisibility(View.GONE);
         }
 
+        /* Manual text entry: when the user types all 16 hex digits of the
+         * peer's fingerprint, store it in native memory for verification
+         * after the handshake.  This is the fallback for devices without
+         * cameras or when the minimal (no-QR) flavor is installed. */
         fpManualInput.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             public void onTextChanged(CharSequence s, int a, int b, int c) {}

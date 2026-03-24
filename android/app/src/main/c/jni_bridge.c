@@ -138,6 +138,12 @@ static int pipe_read_exact(int fd, void *buf, size_t n) {
     return 0;
 }
 
+/* Constant-time comparison of n bytes.  Returns 0 if equal, non-zero
+ * if different.  The volatile accumulator prevents the compiler from
+ * short-circuiting on the first difference, which would leak the
+ * position of the mismatch through timing.  Used for fingerprint
+ * verification — even though fingerprints are public data, constant-time
+ * comparison is our policy for all security-relevant comparisons. */
 static int ct_compare(const uint8_t *a, const uint8_t *b, size_t n) {
     volatile uint8_t diff = 0;
     for (size_t i = 0; i < n; i++)
@@ -145,6 +151,11 @@ static int ct_compare(const uint8_t *a, const uint8_t *b, size_t n) {
     return diff;
 }
 
+/* Parse a fingerprint string "XXXX-XXXX-XXXX-XXXX" into 8 raw bytes.
+ * Accepts uppercase, lowercase, and mixed-case hex.  Dashes are skipped.
+ * Returns 0 on success, -1 if the string is malformed or wrong length.
+ * Used to convert the scanned/typed peer fingerprint for comparison
+ * against the hash of the peer's actual public key after handshake. */
 static int parse_fingerprint(uint8_t out[8], const char *s) {
     uint8_t buf[8];
     int bi = 0;
@@ -192,6 +203,10 @@ static void *session_thread(void *arg) {
     jmethodID mid_onDisconnected     = ta->mid_onDisconnected;
     jmethodID mid_onPeerFingerprintReady = ta->mid_onPeerFingerprintReady;
 
+    /* Pre-generated keypair: if the user expanded the fingerprint panel
+     * on the connect screen, MainActivity called nativeGenerateKey() and
+     * the key was copied into the thread arg by nativeStart().  We move
+     * it to the stack and wipe the arg copy immediately. */
     int       has_prekey  = ta->has_prekey;
     uint8_t   prekey_priv[KEY], prekey_pub[KEY];
     if (has_prekey) {
@@ -201,6 +216,10 @@ static void *session_thread(void *arg) {
         crypto_wipe(ta->prekey_pub,  KEY);
     }
 
+    /* Expected peer fingerprint: if the user scanned or typed a peer
+     * fingerprint, it was parsed to 8 raw bytes by nativeSetPeerFingerprint()
+     * and copied into the thread arg by nativeStart().  After the handshake,
+     * we compare this against the hash of the peer's actual public key. */
     int       has_peer_fp = ta->has_peer_fp;
     uint8_t   expected_peer_fp[8];
     if (has_peer_fp) {
