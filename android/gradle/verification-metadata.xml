@@ -3,6 +3,14 @@
    <configuration>
       <verify-metadata>true</verify-metadata>
       <verify-signatures>false</verify-signatures>
+      <!-- Trust build toolchain groups whose transitive dependencies vary
+           between local dev and CI runners.  App dependencies (ZXing,
+           AndroidX, Monocypher) are still checksum-verified. -->
+      <trusted-artifacts>
+         <trust group="org.junit" reason="Build toolchain transitive dep, varies across Gradle/AGP versions"/>
+         <trust group="org.junit.jupiter" reason="Build toolchain transitive dep"/>
+         <trust group="org.junit.platform" reason="Build toolchain transitive dep"/>
+      </trusted-artifacts>
    </configuration>
    <components>
       <component group="androidx.databinding" name="databinding-common" version="8.7.3">
