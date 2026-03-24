@@ -3785,6 +3785,95 @@ static void test_fingerprint_wipe(void) {
     crypto_wipe(pub2, KEY);
 }
 
+/* ---- test: fingerprint round-trip (format → parse → compare) ------------ */
+
+static void test_fingerprint_roundtrip(void) {
+    printf("\n=== fingerprint round-trip ===\n");
+
+    uint8_t priv[KEY], pub[KEY];
+    gen_keypair(priv, pub);
+    crypto_wipe(priv, KEY);
+
+    char fp[20];
+    format_fingerprint(fp, pub);
+
+    /* Parse the formatted fingerprint back to raw bytes */
+    uint8_t parsed[8];
+    int bi = 0;
+    for (int i = 0; fp[i] && bi < 8; i++) {
+        char c = fp[i];
+        if (c == '-') continue;
+        int hi = (c >= '0' && c <= '9') ? c - '0' :
+                 (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+        i++;
+        c = fp[i];
+        int lo = (c >= '0' && c <= '9') ? c - '0' :
+                 (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+        TEST("fingerprint hex digits valid", hi >= 0 && lo >= 0);
+        parsed[bi++] = (uint8_t)((hi << 4) | lo);
+    }
+    TEST("fingerprint parses to 8 bytes", bi == 8);
+
+    /* Recompute hash and compare first 8 bytes */
+    uint8_t hash[32];
+    domain_hash(hash, "cipher fingerprint v2", pub, KEY);
+
+    volatile uint8_t diff = 0;
+    for (int i = 0; i < 8; i++)
+        diff |= parsed[i] ^ hash[i];
+    TEST("fingerprint round-trip matches hash", diff == 0);
+
+    crypto_wipe(hash, sizeof hash);
+    crypto_wipe(pub, KEY);
+}
+
+/* ---- test: different keys produce different fingerprints ----------------- */
+
+static void test_fingerprint_different_keys(void) {
+    printf("\n=== fingerprint different keys ===\n");
+
+    uint8_t priv1[KEY], pub1[KEY], priv2[KEY], pub2[KEY];
+    gen_keypair(priv1, pub1);
+    gen_keypair(priv2, pub2);
+    crypto_wipe(priv1, KEY);
+    crypto_wipe(priv2, KEY);
+
+    char fp1[20], fp2[20];
+    format_fingerprint(fp1, pub1);
+    format_fingerprint(fp2, pub2);
+
+    TEST("different keys produce different fingerprints",
+         memcmp(fp1, fp2, 19) != 0);
+
+    crypto_wipe(pub1, KEY);
+    crypto_wipe(pub2, KEY);
+}
+
+/* ---- test: fingerprint mismatch detection -------------------------------- */
+
+static void test_fingerprint_mismatch(void) {
+    printf("\n=== fingerprint mismatch detection ===\n");
+
+    uint8_t priv[KEY], pub[KEY];
+    gen_keypair(priv, pub);
+    crypto_wipe(priv, KEY);
+
+    uint8_t actual_hash[32];
+    domain_hash(actual_hash, "cipher fingerprint v2", pub, KEY);
+
+    uint8_t wrong_fp[8];
+    memcpy(wrong_fp, actual_hash, 8);
+    wrong_fp[0] ^= 0xFF;
+
+    volatile uint8_t diff = 0;
+    for (int i = 0; i < 8; i++)
+        diff |= wrong_fp[i] ^ actual_hash[i];
+    TEST("corrupted fingerprint detected as mismatch", diff != 0);
+
+    crypto_wipe(actual_hash, sizeof actual_hash);
+    crypto_wipe(pub, KEY);
+}
+
 /* ---- test: SOCKS5 pure functions ---------------------------------------- */
 
 static void test_socks5_build_request(void) {
@@ -3944,6 +4033,9 @@ int main(void) {
     test_fingerprint_known_vector();
     test_fingerprint_comparison_cases();
     test_fingerprint_wipe();
+    test_fingerprint_roundtrip();
+    test_fingerprint_different_keys();
+    test_fingerprint_mismatch();
     test_socks5_build_request();
     test_socks5_reply_skip();
 
