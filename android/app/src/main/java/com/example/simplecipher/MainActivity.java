@@ -19,15 +19,7 @@ import android.widget.TextView;
 import android.view.WindowManager;
 import android.widget.Toast;
 
-import android.Manifest;
-import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
 import android.widget.ImageView;
-import com.google.zxing.BarcodeFormat;
-import com.google.zxing.common.BitMatrix;
-import com.google.zxing.qrcode.QRCodeWriter;
-import com.google.zxing.integration.android.IntentIntegrator;
-import com.google.zxing.integration.android.IntentResult;
 
 import java.net.Inet6Address;
 import java.net.InetAddress;
@@ -58,6 +50,7 @@ public class MainActivity extends Activity {
     private boolean       fpExpanded = false;
     private String        selfFingerprint = null;
     private String        peerFingerprint = null;
+    private final QrHelper qr = new QrHelperImpl();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -101,17 +94,26 @@ public class MainActivity extends Activity {
             if (fpExpanded && selfFingerprint == null) {
                 selfFingerprint = nativeGenerateKey();
                 fpSelfText.setText(selfFingerprint);
-                fpQrImage.setImageBitmap(generateQrBitmap(selfFingerprint, 512));
+                if (qr.hasScanner()) {
+                    fpQrImage.setImageBitmap(qr.generateBitmap(selfFingerprint, 512));
+                }
             }
         });
 
-        fpScanBtn.setOnClickListener(v -> {
-            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.CAMERA}, 100);
-            } else {
-                launchQrScanner();
-            }
-        });
+        if (qr.hasScanner()) {
+            fpScanBtn.setOnClickListener(v -> {
+                if (checkSelfPermission(android.Manifest.permission.CAMERA)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 100);
+                } else {
+                    qr.launchScanner(this);
+                }
+            });
+        } else {
+            /* Minimal flavor: hide scan button and QR image */
+            fpScanBtn.setVisibility(View.GONE);
+            fpQrImage.setVisibility(View.GONE);
+        }
 
         fpManualInput.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
@@ -310,36 +312,13 @@ public class MainActivity extends Activity {
         return ipv4.isEmpty() ? ipv6 : ipv4;
     }
 
-    private Bitmap generateQrBitmap(String content, int size) {
-        try {
-            QRCodeWriter writer = new QRCodeWriter();
-            BitMatrix matrix = writer.encode(content, BarcodeFormat.QR_CODE, size, size);
-            Bitmap bmp = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565);
-            for (int x = 0; x < size; x++) {
-                for (int y = 0; y < size; y++) {
-                    bmp.setPixel(x, y, matrix.get(x, y) ? 0xFF000000 : 0xFFFFFFFF);
-                }
-            }
-            return bmp;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private void launchQrScanner() {
-        IntentIntegrator integrator = new IntentIntegrator(this);
-        integrator.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
-        integrator.setPrompt("Scan peer fingerprint QR code");
-        integrator.setBeepEnabled(false);
-        integrator.setOrientationLocked(true);
-        integrator.initiateScan();
-    }
+    /* ---- QR result handling (delegates to flavor-specific QrHelper) -------- */
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
-        IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
-        if (result != null && result.getContents() != null) {
-            setPeerFingerprint(result.getContents());
+        String scanned = qr.parseScanResult(requestCode, resultCode, data);
+        if (scanned != null) {
+            setPeerFingerprint(scanned);
         } else {
             super.onActivityResult(requestCode, resultCode, data);
         }
@@ -347,10 +326,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        if (requestCode == 100 && grantResults.length > 0
-                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            launchQrScanner();
-        } else {
+        if (qr.hasScanner() && requestCode == 100 && grantResults.length > 0
+                && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            qr.launchScanner(this);
+        } else if (requestCode == 100) {
             Toast.makeText(this, R.string.fp_camera_denied, Toast.LENGTH_SHORT).show();
         }
     }

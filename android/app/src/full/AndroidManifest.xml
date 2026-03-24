@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- QR scanning requires CAMERA — requested at runtime only when
+         the user taps "Scan peer fingerprint".  required=false so the
+         app installs on devices without a camera. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+</manifest>
