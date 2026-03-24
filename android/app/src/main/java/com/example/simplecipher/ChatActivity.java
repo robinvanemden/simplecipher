@@ -40,14 +40,14 @@ public class ChatActivity extends Activity implements NativeCallback {
 
     static { System.loadLibrary("simplecipher"); }
 
-    /* Only two native methods — everything goes through the pipe. */
+    /* Native methods. */
     private native int  nativeStart(int mode, String host, int port, NativeCallback callback);
     private native void nativePostCommand(int cmd, byte[] payload);
+    private native void nativeStop();  /* out-of-band forced teardown */
 
     /* Command constants — must match jni_bridge.c */
     private static final int CMD_SEND        = 0x01;
     private static final int CMD_CONFIRM_SAS = 0x02;
-    private static final int CMD_QUIT        = 0x03;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
@@ -268,7 +268,7 @@ public class ChatActivity extends Activity implements NativeCallback {
                 if (!typed.equals(expected)) {
                     Toast.makeText(this, "Code mismatch \u2014 aborting",
                                    Toast.LENGTH_LONG).show();
-                    nativePostCommand(CMD_QUIT, null);
+                    nativeStop();
                     finish();
                     return;
                 }
@@ -423,11 +423,15 @@ public class ChatActivity extends Activity implements NativeCallback {
          * that switching apps, pressing home, or locking the screen kills
          * the session immediately.  Users must reconnect when they return.
          *
+         * nativeStop() is out-of-band: it directly closes/shuts down the
+         * pipe, socket, and listen socket, unblocking the session thread
+         * regardless of pipe backpressure or network conditions.
+         *
          * Rationale: a backgrounded app with live crypto state in memory
          * is a target for memory-dumping attacks.  Ending the session on
          * stop reduces the exposure window to only the time the user is
          * actively looking at the screen. */
-        nativePostCommand(CMD_QUIT, null);
+        nativeStop();
         if (sasInput != null) sasInput.setText("");
         if (sasCodeText != null) sasCodeText.setText("");
         if (chatLog != null) chatLog.setText("");
@@ -438,15 +442,17 @@ public class ChatActivity extends Activity implements NativeCallback {
     @Override
     public void onBackPressed() {
         /* Clean disconnect when the user presses the back button. */
-        nativePostCommand(CMD_QUIT, null);
+        nativeStop();
         super.onBackPressed();
     }
 
     @Override
     protected void onDestroy() {
-        /* Belt-and-suspenders: post quit again in case onStop didn't run
-         * (e.g. the system killed the process). */
-        nativePostCommand(CMD_QUIT, null);
+        /* Belt-and-suspenders: call nativeStop again in case onStop didn't
+         * run (e.g. the system killed the process). nativeStop is idempotent:
+         * closing an already-closed fd or shutting down an already-shut-down
+         * socket is harmless. */
+        nativeStop();
         super.onDestroy();
     }
 

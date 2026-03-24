@@ -44,7 +44,13 @@
  *
  * CMD_SEND         = 0x01  (payload = UTF-8 message, max 486 bytes)
  * CMD_CONFIRM_SAS  = 0x02  (no payload)
- * CMD_QUIT         = 0x03  (no payload)
+ *
+ * Session teardown uses nativeStop() — an out-of-band mechanism that
+ * directly closes the pipe write end, shuts down the session socket,
+ * and closes the listen socket.  This is non-droppable: it works even
+ * when the pipe is full or the session thread is blocked in I/O.
+ * CMD_QUIT (0x03) is still handled in the event loop for robustness
+ * but is no longer the primary quit path.
  */
 
 #include "platform.h"
@@ -105,9 +111,14 @@ static JavaVM *g_jvm = NULL;
 static _Atomic int g_pipe_wr = -1;
 
 /* Listen socket — set while the native thread is blocked in accept().
- * nativePostCommand(CMD_QUIT) closes this to unblock accept() so the
- * thread can exit promptly when the user presses Back. */
+ * nativeStop() closes this to unblock accept(). */
 static _Atomic socket_t g_listen_sock = INVALID_SOCK;
+
+/* Session socket — set by the session thread after connect/accept.
+ * nativeStop() calls shutdown() on this to unblock any stuck
+ * read_exact()/write_exact() in the session thread.  The thread
+ * still owns the fd for close(). */
+static _Atomic socket_t g_session_sock = INVALID_SOCK;
 
 /* Session thread handle — used to join the thread before starting a new
  * session, ensuring the previous socket is fully closed. */
@@ -444,6 +455,7 @@ static void *session_thread(void *arg) {
     }
 
     LOGI("connected (we_init=%d)", we_init);
+    g_session_sock = fd;  /* publish so nativeStop() can shutdown() */
     (*env)->CallVoidMethod(env, cb, mid_onConnected);
 
     /* ================================================================
@@ -804,7 +816,9 @@ cleanup:
     /* Wipe pre-generated key material if still on the stack */
     crypto_wipe(prekey_priv, sizeof prekey_priv);
     crypto_wipe(prekey_pub,  sizeof prekey_pub);
-    /* Close socket */
+    /* Close socket — clear the global first so nativeStop() won't
+     * try to shutdown() a closed fd. */
+    g_session_sock = INVALID_SOCK;
     if (fd != INVALID_SOCK) {
         sock_shutdown_both(fd);
         close_sock(fd);
@@ -885,6 +899,11 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
      * old socket is fully closed before we try to bind the same port.
      * Without this, listen→back→listen fails with "address in use". */
     if (g_session_active) {
+        /* Shutdown session socket to unblock read_exact/write_exact */
+        {
+            socket_t s = g_session_sock;
+            if (s != INVALID_SOCK) sock_shutdown_both(s);
+        }
         /* Close the listen socket to unblock accept() if still waiting */
         socket_t ls = g_listen_sock;
         if (ls != INVALID_SOCK) {
@@ -1089,6 +1108,54 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
 
     if (pbuf) {
         (*env)->ReleaseByteArrayElements(env, payload, pbuf, JNI_ABORT);
+    }
+}
+
+/*
+ * nativeStop — forced, non-droppable session teardown.
+ *
+ * Unlike CMD_QUIT (which goes through the pipe and can be dropped if the
+ * pipe is full), this function acts out-of-band by directly closing and
+ * shutting down the resources the session thread is blocked on:
+ *
+ *   1. Close the pipe write end → pipe_read_exact() returns EOF
+ *   2. Shutdown the session socket → read_exact()/write_exact() return -1
+ *   3. Close the listen socket → select()/accept() return -1
+ *
+ * The session thread detects these errors, breaks out of whatever phase
+ * it is in, and exits via cleanup.  This guarantees the thread unblocks
+ * promptly regardless of peer behavior or network conditions.
+ *
+ * Called from ChatActivity.onStop(), onBackPressed(), and onDestroy().
+ */
+JNIEXPORT void JNICALL
+Java_com_example_simplecipher_ChatActivity_nativeStop(
+        JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+
+    /* 1. Close pipe write end → EOF on read end */
+    {
+        int wr = g_pipe_wr;
+        g_pipe_wr = -1;
+        if (wr >= 0) close(wr);
+    }
+
+    /* 2. Shutdown session socket → unblock read_exact/write_exact */
+    {
+        socket_t s = g_session_sock;
+        if (s != INVALID_SOCK) {
+            /* shutdown() signals the thread without closing the fd.
+             * The thread still owns the fd for close() in cleanup. */
+            sock_shutdown_both(s);
+        }
+    }
+
+    /* 3. Close listen socket → unblock select/accept */
+    {
+        socket_t ls = g_listen_sock;
+        g_listen_sock = INVALID_SOCK;
+        if (ls != INVALID_SOCK) close_sock(ls);
     }
 }
 

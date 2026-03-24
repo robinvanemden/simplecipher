@@ -130,6 +130,7 @@ The chat is still encrypted. But without verification, you can't be sure who you
 │        ▲                                  │
 │        │  command pipe (atomic writes)    │
 │ nativePostCommand(cmd, payload)           │
+│ nativeStop() — out-of-band forced quit    │
 └───────────────────────────────────────────┘
 ```
 
@@ -145,7 +146,7 @@ The chat is still encrypted. But without verification, you can't be sure who you
 | Overlay blocking (`HIDE_OVERLAY_WINDOWS`) | Other apps drawing on top of the screen to read your safety code |
 | Custom keyboard (`SimpleKeyboard`) | Keystroke logging by third-party keyboards — covers all inputs: host, port, fingerprint (connect screen) and SAS, chat (chat screen). The system keyboard is never shown. |
 | No keyboard learning (`IME_FLAG_NO_PERSONALIZED_LEARNING`) | System keyboard caching what you type (defence in depth, all inputs) |
-| Session kill on background (`onStop`) | Keys sitting in memory while the app is not visible |
+| Session kill on background (`onStop` → `nativeStop()`) | Keys sitting in memory while the app is not visible. Uses out-of-band forced teardown (socket shutdown + pipe close), not the command pipe, so quit cannot be blocked by network backpressure. |
 | Widget clearing on pause (`onPause`) | Plaintext lingering in UI text fields |
 | Native key wiping (`crypto_wipe`) | Every key and secret is zeroed in C on every exit path |
 | No persistent storage | Nothing written to disk — no databases, no saved keys, no logs |
