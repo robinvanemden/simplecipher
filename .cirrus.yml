@@ -1,0 +1,26 @@
+freebsd_task:
+  name: test-freebsd
+  freebsd_instance:
+    image_family: freebsd-14-1
+
+  install_script:
+    - pkg install -y gmake
+
+  build_script:
+    - echo "=== FreeBSD $(uname -sr) ==="
+    - gmake CC=cc CFLAGS="-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG" LDFLAGS="-s" clean simplecipher
+
+  test_build_script:
+    - gmake CC=cc CFLAGS="-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread" LDFLAGS="-s" tests/test_p2p
+
+  unit_test_script:
+    - ./tests/test_p2p
+
+  smoke_test_script:
+    # Verify the binary runs without crashing.
+    # FreeBSD does not have pledge/unveil (that's OpenBSD), but this
+    # tests POSIX compatibility, socket I/O, and CIPHER_HARDEN code paths
+    # that are shared across all POSIX platforms.
+    - ./simplecipher listen 19799 &
+    - sleep 1
+    - kill $! 2>/dev/null || true

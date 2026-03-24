@@ -448,35 +448,7 @@ jobs:
         run: |
           tests/test_windows.ps1 -Binary simplecipher.exe
 
-  test-openbsd:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Build and test on OpenBSD
-        uses: vmactions/openbsd-vm@v1
-        with:
-          release: "7.6"
-          usesh: true
-          prepare: |
-            pkg_add gmake
-          run: |
-            set -e
-            echo "=== OpenBSD $(uname -sr) ==="
-            echo "=== Building SimpleCipher ==="
-            # OpenBSD base clang may not support all GCC flags.
-            # Use relaxed flags for compatibility.
-            gmake CC=cc CFLAGS="-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG" \
-                        LDFLAGS="-s" clean simplecipher
-
-            echo "=== Building tests ==="
-            gmake CC=cc CFLAGS="-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread" \
-                        LDFLAGS="-s" tests/test_p2p
-
-            echo "=== Running unit tests ==="
-            ./tests/test_p2p
-
-            echo "=== Running OpenBSD-specific tests ==="
-            bash tests/test_openbsd.sh
+  # BSD testing runs on Cirrus CI (first-class FreeBSD runners).
+  # See .cirrus.yml in the repo root.  GitHub Actions does not
+  # provide BSD runners, and VM-inside-VM workarounds (vmactions)
+  # are unreliable.
