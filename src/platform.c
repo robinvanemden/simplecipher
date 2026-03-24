@@ -98,7 +98,18 @@ void harden(void){
     /* Best-effort: succeeds as root or with ulimit -l unlimited,
      * silently fails for unprivileged users (expected, not fatal). */
     (void)mlockall(MCL_CURRENT | MCL_FUTURE);
-    { struct rlimit z = {0,0}; setrlimit(RLIMIT_CORE, &z); }
+    /* Disable core dumps so a crash never writes key material to disk.
+     * Set soft limit to 0 first (always allowed), then try to drop the
+     * hard limit too (requires privilege — best-effort). */
+    {
+        struct rlimit rl;
+        if (getrlimit(RLIMIT_CORE, &rl) == 0) {
+            rl.rlim_cur = 0;
+            setrlimit(RLIMIT_CORE, &rl);      /* soft = 0, keep hard */
+            rl.rlim_max = 0;
+            (void)setrlimit(RLIMIT_CORE, &rl); /* try hard = 0 too   */
+        }
+    }
   #ifdef __linux__
     prctl(PR_SET_DUMPABLE, 0);
   #endif

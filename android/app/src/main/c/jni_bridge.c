@@ -76,9 +76,16 @@
  * Needed to attach the native thread to the JVM so it can call back. */
 static JavaVM *g_jvm = NULL;
 
-/* Write end of the command pipe.  This is the ONLY mutable global that
- * Java touches (via nativePostCommand).  Writes are atomic because the
- * command header + payload is always < PIPE_BUF (4096 bytes). */
+/* Write end of the command pipe — exclusively owned by the Java side.
+ * Only nativeStart() sets it (after pipe()), only nativeStart() closes it
+ * (when starting a new session or on error), and only nativePostCommand()
+ * reads it for writing commands.  The session thread never touches this fd;
+ * it only owns the read end (pipe_rd).  This single-owner design prevents
+ * stale-fd and double-close bugs that arise when the same fd number is
+ * closed by two different code paths.
+ *
+ * Writes are atomic because the command header + payload is always
+ * < PIPE_BUF (4096 bytes). */
 static int g_pipe_wr = -1;
 
 /* Listen socket — set while the native thread is blocked in accept().
@@ -115,7 +122,6 @@ typedef struct {
     char     *host;       /* strdup'd host string (connect only), or NULL */
     int       port;
     int       pipe_rd;    /* read end of command pipe                    */
-    int       pipe_wr;    /* write end — thread closes this on exit      */
     int       gen;        /* session generation (for stale-thread guard)  */
     jobject   callback;   /* JNI global ref to NativeCallback            */
 
@@ -201,7 +207,6 @@ static void *session_thread(void *arg) {
     char     *host    = ta->host;       /* we own this (strdup'd) */
     int       port    = ta->port;
     int       pipe_rd = ta->pipe_rd;
-    int       pipe_wr = ta->pipe_wr;    /* our own copy — we close on exit */
     int       my_gen  = ta->gen;        /* session generation at birth */
     jobject   cb      = ta->callback;   /* global ref — we delete on exit */
 
@@ -724,12 +729,11 @@ cleanup:
         close_sock(fd);
     }
 
-    /* Close both ends of the pipe.  Each thread owns its own copy of
-     * pipe_wr (stored at thread creation, not read from the global).
-     * This avoids the old bug where a stale thread could close the
-     * NEW session's pipe fd via g_pipe_wr. */
+    /* Close our read end of the pipe.  The write end (g_pipe_wr) is
+     * owned exclusively by the Java-side globals — the thread never
+     * touches it.  This single-owner design prevents stale-fd and
+     * double-close bugs: only nativeStart() opens and closes g_pipe_wr. */
     close(pipe_rd);
-    close(pipe_wr);
 
     /* Delete the JNI global ref to the callback */
     (*env)->DeleteGlobalRef(env, cb);
@@ -760,9 +764,17 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
      * of crypto keys by a compromised app or debugger. */
     prctl(PR_SET_DUMPABLE, 0);
 
-    /* Disable core dumps — a crash must never write key material to disk. */
-    struct rlimit z = {0, 0};
-    setrlimit(RLIMIT_CORE, &z);
+    /* Disable core dumps — a crash must never write key material to disk.
+     * Set soft limit first (always allowed), then try hard limit. */
+    {
+        struct rlimit rl;
+        if (getrlimit(RLIMIT_CORE, &rl) == 0) {
+            rl.rlim_cur = 0;
+            setrlimit(RLIMIT_CORE, &rl);
+            rl.rlim_max = 0;
+            (void)setrlimit(RLIMIT_CORE, &rl);
+        }
+    }
 
     return JNI_VERSION_1_6;
 }
@@ -845,7 +857,6 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     ta->mode    = (int)mode;
     ta->port    = (int)port;
     ta->pipe_rd = pipefd[0];
-    ta->pipe_wr = pipefd[1];   /* thread's own copy — closes on exit */
     ta->gen     = ++g_session_gen;  /* unique generation for this session */
 
     /* Copy host string (connect mode only) */
