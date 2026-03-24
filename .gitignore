@@ -24,3 +24,6 @@ docs/superpowers/
 # AI tooling
 CLAUDE.md
 android/app/.cxx/
+
+# Git worktrees
+.worktrees/
