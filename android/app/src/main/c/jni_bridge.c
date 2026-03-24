@@ -215,6 +215,9 @@ static void *session_thread(void *arg) {
     JNIEnv *env = NULL;
     if ((*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL) != JNI_OK) {
         LOGE("AttachCurrentThread failed");
+        crypto_wipe(prekey_priv, sizeof prekey_priv);
+        crypto_wipe(prekey_pub,  sizeof prekey_pub);
+        crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
         free(host);
         close(pipe_rd);
         return NULL;
@@ -665,6 +668,7 @@ cleanup_keys:
     crypto_wipe(self_priv, sizeof self_priv);
     crypto_wipe(self_pub,  sizeof self_pub);
     crypto_wipe(peer_pub,  sizeof peer_pub);
+    crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
     goto cleanup;
 
 cleanup_session:
@@ -674,6 +678,9 @@ cleanup_session:
     crypto_wipe(peer_pub,  sizeof peer_pub);
 
 cleanup:
+    /* Wipe pre-generated key material if still on the stack */
+    crypto_wipe(prekey_priv, sizeof prekey_priv);
+    crypto_wipe(prekey_pub,  sizeof prekey_pub);
     /* Close socket */
     if (fd != INVALID_SOCK) {
         sock_shutdown_both(fd);
