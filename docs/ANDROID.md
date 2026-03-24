@@ -72,6 +72,38 @@ Fingerprints are ephemeral. They change every session. A printed code works exac
 
 The chat is still encrypted. But without verification, you can't be sure who you're talking to. An attacker sitting between you could intercept and read everything. Verification is how you catch them.
 
+## Architecture
+
+```
+┌──────────────────────────────────────────────┐
+│  Java (UI)                                   │
+│  ┌────────────┐  ┌────────────┐              │
+│  │ MainActivity│  │ChatActivity│              │
+│  │ (connect)   │  │(SAS + chat)│              │
+│  └─────┬──────┘  └─────┬──────┘              │
+│        │               │                     │
+│        │  NativeCallback (interface)          │
+│        │       ▲                              │
+│        │       │ callbacks on UI thread       │
+├────────┼───────┼─────────────────────────────┤
+│  C (Native, via JNI)                         │
+│        │       │                              │
+│        ▼       │                              │
+│  ┌─────────────┴──────────┐                  │
+│  │  Single native thread   │                 │
+│  │  ┌─────────┐ ┌────────┐│                  │
+│  │  │protocol │ │ crypto ││                  │
+│  │  │network  │ │ratchet ││                  │
+│  │  └─────────┘ └────────┘│                  │
+│  └─────────────────────────┘                 │
+│        ▲                                     │
+│        │ command pipe (atomic writes)         │
+│  nativePostCommand(cmd, payload)             │
+└──────────────────────────────────────────────┘
+```
+
+**Why a single native thread?** All crypto, session, and socket state lives on one POSIX thread. Java communicates through a pipe. No mutexes, no shared mutable state, no possibility of nonce reuse or race conditions. Two threads reading the same key/nonce pair breaks XChaCha20-Poly1305 confidentiality completely — this architecture makes that structurally impossible.
+
 ## Security measures
 
 ### What the app does
@@ -112,38 +144,6 @@ The native C layer wipes everything it touches. But at the Java-to-native bounda
 ### If security is your top priority
 
 Use the desktop CLI on a hardened OS. For detailed platform recommendations — from Tails and Qubes to GrapheneOS — see [Choosing your platform](../README.md#choosing-your-platform) in the main README.
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────┐
-│  Java (UI)                                   │
-│  ┌────────────┐  ┌────────────┐              │
-│  │ MainActivity│  │ChatActivity│              │
-│  │ (connect)   │  │(SAS + chat)│              │
-│  └─────┬──────┘  └─────┬──────┘              │
-│        │               │                     │
-│        │  NativeCallback (interface)          │
-│        │       ▲                              │
-│        │       │ callbacks on UI thread       │
-├────────┼───────┼─────────────────────────────┤
-│  C (Native, via JNI)                         │
-│        │       │                              │
-│        ▼       │                              │
-│  ┌─────────────┴──────────┐                  │
-│  │  Single native thread   │                 │
-│  │  ┌─────────┐ ┌────────┐│                  │
-│  │  │protocol │ │ crypto ││                  │
-│  │  │network  │ │ratchet ││                  │
-│  │  └─────────┘ └────────┘│                  │
-│  └─────────────────────────┘                 │
-│        ▲                                     │
-│        │ command pipe (atomic writes)         │
-│  nativePostCommand(cmd, payload)             │
-└──────────────────────────────────────────────┘
-```
-
-**Why a single native thread?** All crypto, session, and socket state lives on one POSIX thread. Java communicates through a pipe. No mutexes, no shared mutable state, no possibility of nonce reuse or race conditions. Two threads reading the same key/nonce pair breaks XChaCha20-Poly1305 confidentiality completely — this architecture makes that structurally impossible.
 
 ## Building
 

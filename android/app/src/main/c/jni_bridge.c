@@ -18,6 +18,17 @@
  *   A single thread with exclusive ownership of all mutable state makes
  *   data races structurally impossible — no mutex needed.
  *
+ * Fingerprint verification (optional):
+ *   Before connecting, MainActivity can call nativeGenerateKey() to
+ *   pre-generate an ephemeral keypair and display its fingerprint as a
+ *   QR code or text.  The peer's fingerprint (scanned or typed) is stored
+ *   via nativeSetPeerFingerprint().  Both are passed to the session thread
+ *   through the thread_arg_t struct (globals wiped before thread spawn).
+ *   After the key exchange, the peer's public key is hashed and compared
+ *   against the expected fingerprint using ct_compare() (constant-time).
+ *   On match, onPeerFingerprintReady(fp, true) fires and SAS is skipped.
+ *   On mismatch, onHandshakeFailed() fires and the connection is torn down.
+ *
  * Command protocol (pipe):
  *   [1 byte: cmd] [2 bytes: payload length, little-endian] [payload]
  *   All writes are < PIPE_BUF (4096) so they are atomic from any thread.
