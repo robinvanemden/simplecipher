@@ -176,4 +176,11 @@ void le64_store(uint8_t out[8], uint64_t v);
 /* Decode a little-endian 64-bit integer from bytes. */
 uint64_t le64_load(const uint8_t in[8]);
 
+/* Best-effort terminal scrollback purge.  Emits ANSI escape sequences
+ * to clear the visible screen and scrollback buffer.  Only effective
+ * when stdout is a terminal — silently skipped when piping or redirecting.
+ * Not all terminals support \033[3J (scrollback clear), but it's harmless
+ * where unsupported. */
+void purge_terminal(void);
+
 #endif /* SIMPLECIPHER_PLATFORM_H */
