@@ -58,10 +58,14 @@ endif()
 # Linker hardening: full RELRO, no lazy binding, strip symbols and unused sections
 target_link_options(simplecipher PRIVATE
     -Wl,-z,relro,-z,now
-    -Wl,--gc-sections
     -Wl,--as-needed
     -Wl,-s
-    # Only export JNI entry points — everything else is hidden
+    # Only export JNI entry points — everything else is hidden.
+    # Note: --gc-sections is intentionally omitted here because combined
+    # with the version script + LTO + CFI, it strips internal functions
+    # that are called indirectly through the JNI bridge, producing a
+    # ~5KB .so that crashes on load.  The version script + -fvisibility=hidden
+    # already ensures no internal symbols are exported.
     -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jni_exports.map
     # CFI requires LTO at link time
     -fsanitize=cfi
