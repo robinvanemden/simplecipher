@@ -277,6 +277,22 @@ check "JNI has no pthread_mutex (single-threaded)" \
 check "JNI uses crypto_wipe for key material" \
     "grep -q 'crypto_wipe' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 
+# SimpleKeyboard on all inputs (host, port, fingerprint)
+check "MainActivity uses SimpleKeyboard for all inputs" \
+    "grep -q 'mainKeyboard' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml'"
+check "MainActivity suppresses system keyboard on host input" \
+    "grep -q 'hostInput.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+check "MainActivity suppresses system keyboard on port input" \
+    "grep -q 'portInput.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+check "MainActivity suppresses system keyboard on fingerprint input" \
+    "grep -q 'fpManualInput.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+check "MainActivity has hideSystemKeyboard helper" \
+    "grep -q 'hideSystemKeyboard' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+
+# Clipboard safety: warning on older Android versions
+check "MainActivity warns about clipboard on API < 30" \
+    "grep -q 'Build.VERSION.SDK_INT < 30' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+
 # NativeCallback interface exists
 check "NativeCallback.java interface exists" \
     "test -f '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/NativeCallback.java'"

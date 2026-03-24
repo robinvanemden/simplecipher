@@ -159,6 +159,33 @@ fi
 check "crypto_wipe pattern present" \
     "test \"\$(strings '$BIN' | grep -c 'cipher')\" -gt 0 || readelf -s '$BIN' | grep -q 'crypto_wipe'"
 
+# --- Source-level hardening checks ---
+
+echo ""
+echo "=== Source-level hardening tests ==="
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Two-phase seccomp: verify both phases are called in main.c
+check "main.c calls sandbox_phase1" \
+    "grep -q 'sandbox_phase1()' '$REPO_ROOT/src/main.c'"
+check "main.c calls sandbox_phase2" \
+    "grep -q 'sandbox_phase2()' '$REPO_ROOT/src/main.c'"
+check "platform.c implements sandbox_phase1" \
+    "grep -q 'void sandbox_phase1' '$REPO_ROOT/src/platform.c'"
+check "platform.c implements sandbox_phase2" \
+    "grep -q 'void sandbox_phase2' '$REPO_ROOT/src/platform.c'"
+
+# Terminal scrollback purge
+check "purge_terminal declared in platform.h" \
+    "grep -q 'purge_terminal' '$REPO_ROOT/src/platform.h'"
+check "purge_terminal called in main.c (guarded by tui_mode)" \
+    "grep -q 'purge_terminal' '$REPO_ROOT/src/main.c'"
+
+# OpenBSD pledge/unveil (compile-time, no runtime CI runner)
+check "platform.c has OpenBSD pledge support" \
+    "grep -q '__OpenBSD__' '$REPO_ROOT/src/platform.c' && grep -q 'pledge' '$REPO_ROOT/src/platform.c'"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
