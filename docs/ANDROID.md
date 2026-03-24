@@ -4,7 +4,7 @@
 
 SimpleCipher is a private chat app. Two people connect directly — no server, no account, no sign-up. Everything is encrypted end-to-end. When the session ends, the keys are gone. Nothing is stored to disk.
 
-The Android app does exactly what the desktop version does, with a touch interface.
+The Android app does exactly what the desktop version does, with a touch interface. It is the easiest way to use SimpleCipher — but it carries slightly higher risk than the command-line version on a clean Windows or Linux machine. Android's garbage collector can leave traces of keys and messages in memory that cannot be wiped on demand, and the OS itself may cache data in ways the app cannot fully control. The desktop CLI wipes every byte deterministically. See [Android vs desktop security comparison](#android-vs-desktop-security-comparison) for details.
 
 ## Two versions
 
