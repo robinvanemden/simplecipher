@@ -3,11 +3,11 @@
 [![CI](https://github.com/robinvanemden/simplecipher/actions/workflows/ci.yml/badge.svg)](https://github.com/robinvanemden/simplecipher/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Encrypted peer-to-peer chat in C. No server. No account. No dependencies.
+Private chat between two people. No server. No account. No trace.
 
-Two people run the program, compare a short safety code over the phone, and start talking. Everything is encrypted, authenticated, and forward-secret. When the session ends, the keys are gone — even if someone recorded the entire conversation, they cannot decrypt it after the fact.
+Run the program, compare a short code over the phone to make sure nobody's listening in, and start talking. Everything is encrypted end-to-end. When the session ends, the keys are gone — even if someone recorded the entire conversation, they cannot decrypt it after the fact. Nothing is stored to disk. No sign-up required.
 
-The protocol is implemented across a handful of focused C modules, designed to be audited in an afternoon. SimpleCipher is built for privacy and for teaching.
+SimpleCipher is a single tiny binary (~80 KB) with zero dependencies. The protocol is implemented in a handful of focused C modules, designed to be audited in an afternoon — built for privacy and for teaching.
 
 **Deep dives:** [Protocol and Security](docs/PROTOCOL.md) &#183; [Platform Hardening](docs/HARDENING.md) &#183; [Building and Development](docs/BUILDING.md) &#183; [Security Policy](SECURITY.md)
 
@@ -15,13 +15,13 @@ The protocol is implemented across a handful of focused C modules, designed to b
 
 Grab a binary from the [latest release](https://github.com/robinvanemden/simplecipher/releases/latest) and run it. Nothing to install.
 
-| Platform | Download | Size |
-|----------|----------|------|
-| Linux x86_64 | [simplecipher-linux-x86_64](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-linux-x86_64) | ~87 KB |
-| Linux aarch64 | [simplecipher-linux-aarch64](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-linux-aarch64) | ~91 KB |
-| Windows x86_64 | [simplecipher-win-x86_64.exe](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-win-x86_64.exe) | ~65 KB |
-| Windows aarch64 | [simplecipher-win-aarch64.exe](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-win-aarch64.exe) | ~58 KB |
-| Android (arm64 + armv7) | [simplecipher-android.apk](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-android.apk) | ~164 KB |
+| Platform | Download | Notes |
+|----------|----------|-------|
+| **Linux** (most PCs/servers) | [simplecipher-linux-x86_64](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-linux-x86_64) | ~87 KB |
+| **Linux** (Raspberry Pi, ARM) | [simplecipher-linux-aarch64](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-linux-aarch64) | ~91 KB |
+| **Windows** (most PCs) | [simplecipher-win-x86_64.exe](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-win-x86_64.exe) | ~65 KB |
+| **Windows** (ARM laptops) | [simplecipher-win-aarch64.exe](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-win-aarch64.exe) | ~58 KB |
+| **Android** | [simplecipher-android.apk](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-android.apk) | ~164 KB |
 
 All desktop binaries are fully static with zero runtime dependencies.
 
@@ -128,35 +128,29 @@ After connecting, both sides see the same safety code:
 Type the full code to confirm:
 ```
 
-Call your peer on a separate channel (phone, in person) and compare the code. If it matches, type the full code to confirm (dashes optional, case-insensitive). If it does not match, someone is intercepting — press Ctrl+C.
+**What to do:** Call your peer (or talk in person) and read the code out loud. If both sides see the same code, type it in to confirm. If the codes don't match, someone is intercepting your connection — press Ctrl+C immediately.
 
-**The safety code comparison IS the authentication.** Skip it and a man-in-the-middle can read everything.
+**Why this matters:** The safety code is how you know you're actually talking to your friend and not to someone pretending to be them. Without this check, an attacker sitting between you could read everything. This is the single most important step — don't skip it.
 
 ## FAQ
 
-**Why not just use Signal / WhatsApp / Telegram?**
-Those require accounts, phone numbers, and a central server that knows who talks to whom. SimpleCipher has no server, no accounts, and no keys stored to disk. There is no central record of who talked to whom. When the session ends, the keys are gone. The application stores no protocol state, message history, or contact list — but note that the underlying OS may retain artifacts (terminal scrollback, shell history if host/port were on the command line, swap/pagefile, OS-level logging). Use `--socks5` and the interactive connect prompt to minimize command-line exposure. Use Signal when you need persistent contacts and key continuity. Use SimpleCipher when minimal trace matters more.
-
-**Why not just use Tailscale / WireGuard and any chat app?**
-Tailscale solves connectivity (NAT traversal), not trust. SimpleCipher adds: ephemeral keys (nothing stored to disk), SAS verification (cryptographic proof of who you're talking to), and forward secrecy (keys wiped after each message). Even if the VPN layer were compromised, SimpleCipher's end-to-end encryption holds. They're complementary — use Tailscale for connectivity, SimpleCipher for trust.
-
-**Is this secure enough for real use?**
-The cryptographic primitives (X25519, XChaCha20-Poly1305, BLAKE2b) are industry-standard and provided by [Monocypher](https://monocypher.org/), which has been [audited by Cure53](https://monocypher.org/quality-assurance/audit). The protocol is split into focused modules that are simple enough to audit in an afternoon. That said, this has not been formally audited as a complete system. Use your judgment.
-
-**Why is the binary so small?**
-No runtime dependencies. No TLS library, no HTTP stack, no JSON parser, no dynamic linking. The entire program is a handful of focused C modules compiled into a single static binary. Size optimization (`-Os -flto --gc-sections`) removes everything unused.
+**Can someone read my messages?**
+Not if you compare the safety code. The encryption uses the same industry-standard algorithms as Signal and WhatsApp (X25519, XChaCha20-Poly1305). The code has been tested with 605 automated tests, formally verified with CBMC, and the crypto library ([Monocypher](https://monocypher.org/)) has been [professionally audited](https://monocypher.org/quality-assurance/audit). That said, SimpleCipher itself has not been formally audited as a complete system — use your judgment.
 
 **Can someone intercept the connection?**
-A man-in-the-middle can try, but the commitment scheme and safety code verification prevent it. Both sides commit to their keys before revealing them, then derive a short authentication string (SAS) that must be compared out-of-band (phone call, in person). If the codes match, no MITM is present. If you skip the verification, all bets are off.
+They can try, but the safety code comparison stops them. Both sides lock in their keys before revealing them, then derive a code that must match. If it matches, no one is in the middle. If you skip the comparison, all bets are off.
 
-**What happens if I lose connection mid-chat?**
-The session is gone. Keys are ephemeral and exist only in memory. Reconnect and start a new session — you'll get new keys and a new safety code.
+**What happens if I lose connection?**
+The session is gone. Keys exist only in memory. Reconnect and start fresh — you'll get a new code.
+
+**Why not just use Signal?**
+Signal requires a phone number, an account, and a central server that knows who talks to whom. SimpleCipher has none of that. Nothing is stored, no sign-up needed. Use Signal when you need persistent contacts. Use SimpleCipher when leaving no trace matters more.
 
 **Can I use this over the internet without a VPN?**
-Yes, if one side has a reachable IP (port forwarding, cloud server, etc.). See [Quick start](#quick-start) for options.
+Yes, if one side has a reachable IP (port forwarding, cloud server, etc.). See [Quick start](#quick-start) for options. For anonymity, use [Tor](#other-ways-to-connect).
 
-**Why C and not Rust / Go / Python?**
-C compiles everywhere, links statically, produces tiny binaries, and has zero runtime overhead. The entire protocol fits in a small set of focused modules that can be audited, cross-compiled to 5 targets, and linked directly into Android via JNI. No package manager, no build system complexity, no garbage collector.
+**Why is it so small?**
+No dependencies. No TLS library, no HTTP stack, no JSON parser. Just a handful of C files compiled into one static binary.
 
 ## Verifying release binaries
 
