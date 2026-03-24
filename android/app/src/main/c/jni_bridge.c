@@ -33,6 +33,7 @@
 #include "network.h"
 
 #include <jni.h>
+#include <sys/select.h>
 #include <android/log.h>
 #include <pthread.h>
 #include <unistd.h>  /* pipe, read, write, close */
@@ -68,6 +69,16 @@ static JavaVM *g_jvm = NULL;
  * Java touches (via nativePostCommand).  Writes are atomic because the
  * command header + payload is always < PIPE_BUF (4096 bytes). */
 static int g_pipe_wr = -1;
+
+/* Listen socket — set while the native thread is blocked in accept().
+ * nativePostCommand(CMD_QUIT) closes this to unblock accept() so the
+ * thread can exit promptly when the user presses Back. */
+static volatile socket_t g_listen_sock = INVALID_SOCK;
+
+/* Session thread handle — used to join the thread before starting a new
+ * session, ensuring the previous socket is fully closed. */
+static pthread_t g_session_thread;
+static volatile int g_session_active = 0;
 
 /* ---- Thread argument struct --------------------------------------------- */
 
@@ -160,9 +171,76 @@ static void *session_thread(void *arg) {
         fd = connect_socket(host, port_str);
         we_init = 1;
     } else {
-        /* Listen mode */
+        /* Listen mode.
+         *
+         * We can't use listen_socket() directly because it blocks in
+         * accept() with no way to interrupt it.  Instead, use select()
+         * with a timeout so we can periodically check the pipe for
+         * CMD_QUIT.  This lets the user press Back and immediately
+         * re-listen on the same port. */
         LOGI("listening on port %s", port_str);
-        fd = listen_socket(port_str);
+
+        /* Bind and listen using the same setup as listen_socket but
+         * keeping the server socket so we can select on it + the pipe. */
+        struct addrinfo hints, *res, *p;
+        socket_t srv = INVALID_SOCK;
+        int one = 1;
+        memset(&hints, 0, sizeof hints);
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_family   = AF_UNSPEC;
+        hints.ai_flags    = AI_PASSIVE;
+        if (getaddrinfo(NULL, port_str, &hints, &res) != 0) {
+            LOGE("getaddrinfo failed for port %s", port_str);
+            jstring reason = (*env)->NewStringUTF(env, "Listen failed (getaddrinfo)");
+            (*env)->CallVoidMethod(env, cb, mid_onConnectionFailed, reason);
+            goto cleanup;
+        }
+        for (p = res; p; p = p->ai_next) {
+            srv = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+            if (srv == INVALID_SOCK) continue;
+            setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof one);
+            if (bind(srv, p->ai_addr, (socklen_t)p->ai_addrlen) == 0
+                && listen(srv, 1) == 0) break;
+            close_sock(srv); srv = INVALID_SOCK;
+        }
+        freeaddrinfo(res);
+
+        if (srv == INVALID_SOCK) {
+            LOGE("bind/listen failed on port %s", port_str);
+            jstring reason = (*env)->NewStringUTF(env, "Listen failed (port in use?)");
+            (*env)->CallVoidMethod(env, cb, mid_onConnectionFailed, reason);
+            goto cleanup;
+        }
+
+        /* Poll: wait for either a peer connection or CMD_QUIT on the pipe. */
+        g_listen_sock = srv;
+        while (fd == INVALID_SOCK) {
+            fd_set rfds;
+            FD_ZERO(&rfds);
+            FD_SET(srv, &rfds);
+            FD_SET(pipe_rd, &rfds);
+            int maxfd = (srv > pipe_rd ? srv : pipe_rd) + 1;
+
+            struct timeval tv = { .tv_sec = 0, .tv_usec = 250000 }; /* 250ms */
+            int ready = select(maxfd, &rfds, NULL, NULL, &tv);
+            if (ready < 0) break;
+
+            if (FD_ISSET(pipe_rd, &rfds)) {
+                /* CMD_QUIT arrived — abort listen */
+                LOGI("quit received during listen");
+                close_sock(srv);
+                g_listen_sock = INVALID_SOCK;
+                jstring reason = (*env)->NewStringUTF(env, "Session ended by user");
+                (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+                goto cleanup;
+            }
+
+            if (FD_ISSET(srv, &rfds)) {
+                fd = accept(srv, NULL, NULL);
+            }
+        }
+        close_sock(srv);
+        g_listen_sock = INVALID_SOCK;
         we_init = 0;
     }
 
@@ -514,6 +592,7 @@ cleanup:
     /* Detach from JVM */
     (*g_jvm)->DetachCurrentThread(g_jvm);
 
+    g_session_active = 0;
     LOGI("session thread exiting");
     return NULL;
 }
@@ -551,6 +630,33 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         jobject callback) {
 
     plat_init();
+
+    /* Wait for any previous session thread to finish.  This ensures the
+     * old socket is fully closed before we try to bind the same port.
+     * Without this, listen→back→listen fails with "address in use". */
+    if (g_session_active) {
+        /* Close the listen socket to unblock accept() if still waiting */
+        socket_t ls = g_listen_sock;
+        if (ls != INVALID_SOCK) {
+            g_listen_sock = INVALID_SOCK;
+            close_sock(ls);
+        }
+        /* Close the pipe write end to signal quit */
+        int wr = g_pipe_wr;
+        g_pipe_wr = -1;
+        if (wr >= 0) close(wr);
+        /* Wait for thread to exit.  Poll g_session_active with short
+         * sleeps rather than pthread_timedjoin_np (not available on Bionic). */
+        for (int i = 0; i < 20 && g_session_active; i++) {
+            usleep(100000);  /* 100ms × 20 = 2s max wait */
+        }
+        if (g_session_active) {
+            LOGE("previous session thread did not exit in time");
+        } else {
+            pthread_join(g_session_thread, NULL);
+        }
+        g_session_active = 0;
+    }
 
     /* Create the command pipe */
     int pipefd[2];
@@ -624,13 +730,9 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     }
 
     /* Spawn the session thread */
-    pthread_t tid;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-
-    int rc = pthread_create(&tid, &attr, session_thread, ta);
-    pthread_attr_destroy(&attr);
+    /* Create joinable (not detached) so nativeStart can wait for the
+     * previous thread to finish before binding the same port again. */
+    int rc = pthread_create(&g_session_thread, NULL, session_thread, ta);
 
     if (rc != 0) {
         LOGE("pthread_create failed: %d", rc);
@@ -643,6 +745,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         return -1;
     }
 
+    g_session_active = 1;
     LOGI("session thread spawned (mode=%d, port=%d)", (int)mode, (int)port);
     return 0;
 }

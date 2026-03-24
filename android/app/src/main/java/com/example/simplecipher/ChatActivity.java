@@ -74,29 +74,6 @@ public class ChatActivity extends Activity implements NativeCallback {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        /* Temporary crash diagnostics — catch and display any exception that
-         * occurs during Activity setup so we can diagnose on-device crashes
-         * without adb/logcat.  Remove once the crash is fixed. */
-        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
-            StringBuilder sb = new StringBuilder();
-            sb.append(e.getClass().getSimpleName()).append(": ").append(e.getMessage()).append("\n");
-            for (StackTraceElement s : e.getStackTrace()) {
-                sb.append("  at ").append(s).append("\n");
-                if (sb.length() > 500) break;
-            }
-            String msg = sb.toString();
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Crash Report")
-                .setMessage(msg)
-                .setPositiveButton("Copy", (d, w) -> {
-                    android.content.ClipboardManager cm =
-                        (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText("crash", msg));
-                })
-                .setNegativeButton("Close", (d, w) -> finish())
-                .setCancelable(false)
-                .show();
-        });
 
         /* FLAG_SECURE prevents screenshots and screen recording. */
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
