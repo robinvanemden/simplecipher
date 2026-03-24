@@ -132,34 +132,173 @@ void harden(void){
 #endif
 
 #ifdef SECCOMP_AUDIT_ARCH
-static void install_seccomp(void){
-    /* BPF filter: allow only the syscalls needed for the chat loop.
-     *
-     * Architecture check first — reject any syscall from a different arch
-     * (prevents 32-bit compat syscall confusion attacks).
-     *
-     * Allowed syscalls (the minimum for poll-based encrypted chat):
-     *   read/write       — socket and terminal I/O
-     *   poll/ppoll       — event loop (wait for socket or stdin)
-     *   close            — socket cleanup on exit
-     *   exit_group       — process termination
-     *   rt_sigreturn     — return from signal handler (required by kernel)
-     *   rt_sigaction     — installing signal handlers (already done, but
-     *                      glibc may re-issue during signal delivery)
-     *   clock_gettime    — timestamps for chat messages (via time())
-     *   ioctl            — terminal mode changes (tcsetattr for TUI/CLI)
-     *   mmap/munmap      — glibc/musl internal allocator (printf, etc.)
-     *   mprotect         — glibc/musl internal use
-     *   brk              — heap management (musl uses this)
-     *   sendto/recvfrom  — some libc implementations use these for TCP
-     *   futex            — glibc internal locking (printf, malloc)
-     *   newfstatat/fstat — glibc internal use (stdout detection)
-     *   getrandom        — fill_random for ratchet keypair generation
-     *   writev           — some libc printf implementations use this
-     *   sigaltstack      — signal stack setup (glibc)
-     *   prlimit64        — getrlimit/setrlimit (musl)
-     *   rseq             — restartable sequences (glibc 2.35+)
-     */
+
+/* Helper: set PR_SET_NO_NEW_PRIVS and install a BPF filter.
+ * Called once per phase.  Best-effort: if the kernel does not support
+ * seccomp-BPF, the process continues with a wider syscall surface. */
+static void apply_seccomp(struct sock_filter *f, unsigned short len){
+    struct sock_fprog prog = { .len = len, .filter = f };
+    /* PR_SET_NO_NEW_PRIVS is required before installing a seccomp filter
+     * without CAP_SYS_ADMIN.  It prevents gaining privileges via execve
+     * (setuid bits are ignored after this point). */
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) return;
+    (void)prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog);
+}
+
+/* Phase 1 filter — handshake phase.
+ *
+ * Allows everything needed for the handshake: TCP socket setup, DNS
+ * resolution, key generation, signal setup, and memory management.
+ * Blocks exec, fork, open, and all other unneeded syscalls.
+ *
+ * Allowed syscalls:
+ *   socket/connect/bind/listen/accept/accept4
+ *                    — TCP connection setup
+ *   read/write/writev — socket and terminal I/O
+ *   sendto/recvfrom  — some libc TCP implementations use these
+ *   poll/ppoll/select — I/O event loop
+ *   close/shutdown   — socket cleanup
+ *   getpeername/getsockname/getsockopt/setsockopt
+ *                    — socket option queries (DNS, TCP_NODELAY)
+ *   getrandom        — key generation (fill_random)
+ *   mmap/munmap/mprotect/brk
+ *                    — memory allocation (glibc/musl)
+ *   rt_sigaction/sigaltstack
+ *                    — signal handler installation
+ *   rt_sigreturn     — return from signal handler (required by kernel)
+ *   prctl            — PR_SET_DUMPABLE, PR_SET_NO_NEW_PRIVS
+ *   mlockall         — memory locking (harden())
+ *   setrlimit/prlimit64
+ *                    — disable core dumps (harden())
+ *   clock_gettime/nanosleep/gettimeofday
+ *                    — timing
+ *   ioctl            — terminal mode changes
+ *   exit/exit_group  — process termination
+ *   futex            — glibc internal locking
+ *   newfstatat/fstat — glibc internal (stdout detection)
+ *   rseq             — restartable sequences (glibc 2.35+)
+ *   fcntl            — socket flags (O_NONBLOCK for connect timeout)
+ */
+static void install_seccomp_phase1(void){
+    struct sock_filter filter[] = {
+        /* Architecture check */
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SECCOMP_AUDIT_ARCH, 1, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
+
+        /* Network setup */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_socket,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_connect,       0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_bind,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_listen,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_accept,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_accept4,       0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getpeername,   0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getsockname,   0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getsockopt,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_setsockopt,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_shutdown,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_fcntl,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+        /* I/O */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_read,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_write,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_writev,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sendto,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_recvfrom,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_close,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        /* SYS_poll does not exist on aarch64 (uses ppoll only) */
+#ifdef SYS_poll
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_poll,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#endif
+#ifdef SYS_select
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_select,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+        /* Entropy and timing */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getrandom,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_nanosleep,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#ifdef SYS_gettimeofday
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_gettimeofday,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#endif
+
+        /* Memory management */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mmap,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_munmap,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mprotect,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_brk,           0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#ifdef SYS_mlock
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mlock,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mlockall,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+        /* Signals */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigaction,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigreturn,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sigaltstack,   0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#ifdef SYS_rt_sigprocmask
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigprocmask,0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#endif
+
+        /* Process control */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prctl,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_exit,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_exit_group,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prlimit64,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#ifdef SYS_setrlimit
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_setrlimit,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#endif
+
+        /* glibc/musl internals */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_futex,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_newfstatat,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        /* SYS_fstat does not exist on aarch64 (uses newfstatat only) */
+#ifdef SYS_fstat
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_fstat,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rseq,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+        /* Default: kill the process on any disallowed syscall */
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+    };
+    apply_seccomp(filter, (unsigned short)(sizeof filter / sizeof filter[0]));
+}
+
+/* Phase 2 filter — chat loop phase.
+ *
+ * Tightened from phase 1: drops socket(), connect(), bind(), listen(),
+ * accept(), and DNS-related syscalls.  After the handshake the process
+ * only needs I/O on already-open fds, poll, getrandom (DH ratchet),
+ * and signal/exit handling.  Even if an attacker achieves code execution
+ * they cannot open new connections, exec a shell, or read files.
+ *
+ * Allowed syscalls (the minimum for poll-based encrypted chat):
+ *   read/write       — socket and terminal I/O
+ *   poll/ppoll       — event loop (wait for socket or stdin)
+ *   close/shutdown   — socket cleanup on exit
+ *   exit_group       — process termination
+ *   rt_sigreturn     — return from signal handler (required by kernel)
+ *   rt_sigaction     — glibc may re-issue during signal delivery
+ *   clock_gettime    — timestamps for chat messages (via time())
+ *   ioctl            — terminal mode changes (tcsetattr for TUI/CLI)
+ *   mmap/munmap      — glibc/musl internal allocator (printf, etc.)
+ *   mprotect         — glibc/musl internal use
+ *   brk              — heap management (musl uses this)
+ *   sendto/recvfrom  — some libc implementations use these for TCP
+ *   futex            — glibc internal locking (printf, malloc)
+ *   newfstatat/fstat — glibc internal use (stdout detection)
+ *   getrandom        — fill_random for ratchet keypair generation
+ *   writev           — some libc printf implementations use this
+ *   sigaltstack      — signal stack setup (glibc)
+ *   prlimit64        — getrlimit/setrlimit (musl)
+ *   rseq             — restartable sequences (glibc 2.35+)
+ */
+static void install_seccomp_phase2(void){
     struct sock_filter filter[] = {
         /* Load the syscall architecture */
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
@@ -206,32 +345,45 @@ static void install_seccomp(void){
         /* Default: kill the process on any disallowed syscall */
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
     };
-
-    struct sock_fprog prog = {
-        .len    = (unsigned short)(sizeof filter / sizeof filter[0]),
-        .filter = filter,
-    };
-
-    /* PR_SET_NO_NEW_PRIVS is required before installing a seccomp filter
-     * without CAP_SYS_ADMIN.  It prevents the process (and children)
-     * from gaining new privileges via execve (setuid bits are ignored). */
-    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) return;
-
-    /* Best-effort: if the kernel doesn't support seccomp-BPF, continue
-     * without it.  The chat still works; it just has a wider syscall surface. */
-    (void)prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog);
+    apply_seccomp(filter, (unsigned short)(sizeof filter / sizeof filter[0]));
 }
 #endif /* SECCOMP_AUDIT_ARCH */
 #endif /* __linux__ */
 
-void sandbox(void){
+void sandbox_phase1(void){
 #if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
-    install_seccomp();
+    install_seccomp_phase1();
+#endif
+#if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
+    /* Lock filesystem access immediately — no file paths needed at any phase. */
+    unveil(NULL, NULL);
+    /* Allow network setup and DNS for the handshake phase. */
+    pledge("stdio inet dns", NULL);
 #endif
 }
 
+void sandbox_phase2(void){
+#if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
+    install_seccomp_phase2();
+#endif
+#if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
+    /* Drop network setup and DNS — the session socket is already open.
+     * "stdio" covers read, write, poll, close, and exit. */
+    pledge("stdio", NULL);
+#endif
+}
+
+void sandbox(void){
+    /* Legacy entry point — equivalent to phase 2 (chat-loop restriction).
+     * Callers that have not been updated to the two-phase API still get the
+     * full post-handshake restriction. */
+    sandbox_phase2();
+}
+
 #else
-void harden(void){}   /* no-op when CIPHER_HARDEN is not set */
+void harden(void){}         /* no-op when CIPHER_HARDEN is not set */
+void sandbox_phase1(void){}
+void sandbox_phase2(void){}
 void sandbox(void){}
 #endif
 

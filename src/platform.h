@@ -132,13 +132,28 @@ void sock_shutdown_both(socket_t s);
  * Enabled by compiling with -DCIPHER_HARDEN. No-op otherwise. */
 void harden(void);
 
-/* Optional syscall sandboxing (seccomp-BPF on Linux).
- * Call AFTER network setup and handshake, BEFORE the chat loop.
- * Restricts the process to only the syscalls needed for encrypted chat:
- * read, write, poll, close, exit, signal handling, timestamps.
- * If the process is exploited, the attacker cannot exec, fork, connect,
- * or open files.  No-op on non-Linux or when CIPHER_HARDEN is not set. */
-void sandbox(void);
+/* Two-phase syscall sandboxing.
+ *
+ * sandbox_phase1() — call after argument parsing, before network I/O.
+ *   On Linux (seccomp-BPF): allows socket, connect, bind, listen, accept,
+ *   read, write, close, poll/ppoll, getrandom, mmap/mprotect/brk, sigaction,
+ *   mlockall, prctl, exit/exit_group, clock_gettime, nanosleep, ioctl, and
+ *   other syscalls needed for the handshake phase.
+ *   On OpenBSD: pledge("stdio inet dns", NULL) + unveil lock.
+ *   No-op on other platforms or when CIPHER_HARDEN is not set.
+ *
+ * sandbox_phase2() — call after handshake completes, before the chat loop.
+ *   Tightens further: drops socket(), connect(), bind(), listen(), accept(),
+ *   and DNS syscalls.  After the handshake the process only needs read/write
+ *   on existing fds, poll, getrandom, and exit.  Even if an attacker achieves
+ *   code execution, they cannot open new connections or exec a shell.
+ *   On OpenBSD: pledge("stdio", NULL).
+ *   No-op on other platforms or when CIPHER_HARDEN is not set.
+ *
+ * sandbox() is kept for backward compatibility — it calls sandbox_phase2(). */
+void sandbox_phase1(void);
+void sandbox_phase2(void);
+void sandbox(void); /* legacy: equivalent to sandbox_phase2() */
 
 /* Signal handler: set the stop flag so the main loop exits on its next
  * iteration.  See platform.c for details on POSIX vs Windows behavior. */

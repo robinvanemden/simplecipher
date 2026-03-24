@@ -234,6 +234,12 @@ int main(int argc, char *argv[]){
     }
     if (!validate_port(port)){ fprintf(stderr, "invalid port: %s\n", port); return 1; }
 
+    /* Phase 1 sandbox: restrict syscalls to those needed for the handshake.
+     * Blocks exec, fork, open, and other unneeded syscalls immediately after
+     * argument parsing, before any network I/O.  On OpenBSD this also locks
+     * filesystem access via unveil(NULL,NULL) and pledge("stdio inet dns"). */
+    sandbox_phase1();
+
     if (tui_mode) tui_init_term();
 
     /* ------------------------------------------------------------------
@@ -473,7 +479,7 @@ int main(int argc, char *argv[]){
             goto out;
         }
 
-        sandbox();  /* restrict syscalls before entering chat loop */
+        sandbox_phase2();  /* tighten syscalls: drop connect/socket/DNS before chat loop */
         tui_chat_loop(g_fd, &g_sess);
     } else {
     printf("\n");
@@ -557,7 +563,7 @@ int main(int argc, char *argv[]){
     printf("  Type a message and press Enter to send.\n");
     printf("\n");
 
-    sandbox();  /* restrict syscalls before entering chat loop */
+    sandbox_phase2();  /* tighten syscalls: drop connect/socket/DNS before chat loop */
     cli_chat_loop(g_fd, &g_sess);
     } /* end else (CLI mode) */
 
