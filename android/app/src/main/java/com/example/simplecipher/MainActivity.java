@@ -51,6 +51,7 @@ public class MainActivity extends Activity {
     private String        selfFingerprint = null;
     private String        peerFingerprint = null;
     private final QrHelper qr = new QrHelperImpl();
+    private SimpleKeyboard inAppKeyboard;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,6 +68,39 @@ public class MainActivity extends Activity {
         portInput        = findViewById(R.id.portInput);
         localIpsContainer = findViewById(R.id.localIpsContainer);
         Button goButton  = findViewById(R.id.goButton);
+
+        /* Custom in-app keyboard — same as ChatActivity.  Prevents the
+         * system keyboard from receiving host, port, or fingerprint data.
+         * Without this, a malicious third-party keyboard could log the
+         * connect target (revealing who you talked to) or the peer's
+         * fingerprint. */
+        inAppKeyboard = findViewById(R.id.mainKeyboard);
+
+        /* Suppress the system soft keyboard at the window level */
+        getWindow().setSoftInputMode(
+            android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+
+        /* Suppress system keyboard on all EditTexts and show our keyboard instead */
+        hostInput.setShowSoftInputOnFocus(false);
+        portInput.setShowSoftInputOnFocus(false);
+
+        hostInput.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                hideSystemKeyboard(hostInput);
+                inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
+                inAppKeyboard.setTarget(hostInput);
+                inAppKeyboard.setVisibility(View.VISIBLE);
+            }
+        });
+
+        portInput.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                hideSystemKeyboard(portInput);
+                inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
+                inAppKeyboard.setTarget(portInput);
+                inAppKeyboard.setVisibility(View.VISIBLE);
+            }
+        });
 
         /* Suppress keyboard learning on all inputs — peer IPs and ports
          * are sensitive metadata that should not enter IME dictionaries. */
@@ -87,6 +121,15 @@ public class MainActivity extends Activity {
 
         int noLearnFp = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
         fpManualInput.setImeOptions(fpManualInput.getImeOptions() | noLearnFp);
+        fpManualInput.setShowSoftInputOnFocus(false);
+        fpManualInput.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                hideSystemKeyboard(fpManualInput);
+                inAppKeyboard.setMode(SimpleKeyboard.MODE_HEX);
+                inAppKeyboard.setTarget(fpManualInput);
+                inAppKeyboard.setVisibility(View.VISIBLE);
+            }
+        });
 
         /* Expand/collapse: on first expand, generate an ephemeral keypair
          * and display the self fingerprint.  The user shares this with their
@@ -183,6 +226,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onStop() {
+        if (inAppKeyboard != null) inAppKeyboard.setVisibility(View.GONE);
         /* Wipe pre-generated key when app is backgrounded.
          * LIFECYCLE INVARIANT: when MainActivity starts ChatActivity,
          * Android guarantees: A.onPause -> B.onCreate -> ... -> A.onStop.
@@ -205,6 +249,14 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         nativeWipePreKey();
         super.onDestroy();
+    }
+
+    private void hideSystemKeyboard(View view) {
+        android.view.inputmethod.InputMethodManager imm =
+            (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+        }
     }
 
     private void showLocalIps() {
@@ -276,6 +328,10 @@ public class MainActivity extends Activity {
                 }
                 cm.setPrimaryClip(clip);
                 Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
+                if (android.os.Build.VERSION.SDK_INT < 30) {
+                    Toast.makeText(this, "Note: older Android versions may expose clipboard to other apps",
+                                   Toast.LENGTH_LONG).show();
+                }
                 /* Auto-clear clipboard after 30 seconds */
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     cm.setPrimaryClip(ClipData.newPlainText("", ""));

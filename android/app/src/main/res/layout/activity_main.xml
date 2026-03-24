@@ -232,6 +232,15 @@
         android:layout_height="0dp"
         android:layout_weight="1" />
 
+    <!-- Custom in-app keyboard — replaces system IME for all inputs.
+         Prevents third-party keyboards from seeing host, port, or
+         fingerprint data.  Same keyboard used by ChatActivity. -->
+    <com.example.simplecipher.SimpleKeyboard
+        android:id="@+id/mainKeyboard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
+
     <!-- Footer -->
     <TextView
         android:layout_width="wrap_content"
