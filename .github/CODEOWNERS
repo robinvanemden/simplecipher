@@ -1,0 +1,8 @@
+# All changes require review from the maintainer
+* @robinvanemden
+
+# Crypto and protocol changes require explicit attention
+src/crypto.* @robinvanemden
+src/protocol.* @robinvanemden
+src/ratchet.* @robinvanemden
+android/app/src/main/c/jni_bridge.c @robinvanemden

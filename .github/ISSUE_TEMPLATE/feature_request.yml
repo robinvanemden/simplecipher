@@ -1,0 +1,30 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case or pain point
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like to happen?
+      description: Describe the feature as clearly as you can
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Does this affect the security model?
+      options:
+        - "No — UI, usability, or documentation only"
+        - "Maybe — touches crypto, protocol, or key handling"
+        - "Yes — changes the threat model or security properties"
+    validations:
+      required: true

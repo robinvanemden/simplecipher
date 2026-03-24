@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Gradle dependencies (ZXing, Android Gradle Plugin)
+  - package-ecosystem: "gradle"
+    directory: "/android"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+
+  # GitHub Actions (keep CI actions pinned to latest)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "ci"]
