@@ -22,7 +22,7 @@ Verify:   H(revealed_key) == commitment             (both sides)
 
 ### 3. Safety code verification
 
-A short authentication string (SAS) is derived from the shared secret and displayed as `XXXX-XXXX`. Both people compare this code out-of-band (phone call, in person). A 32-bit code space is sufficient because the commitment scheme prevents brute-force search.
+A short authentication string (SAS) is derived from the shared secret and displayed as `XXXX-XXXX`. Both people compare this code through a trusted channel — ideally a video call (you see and hear the person), or a voice call (you recognize their voice). A 32-bit code space is sufficient because the commitment scheme prevents brute-force search.
 
 ### 4. Encrypted messaging with forward secrecy and post-compromise security
 
@@ -64,7 +64,7 @@ This hides message length from network observers. The sequence number is authent
 
 ## Threat model
 
-SimpleCipher protects the contents and authenticity of a conversation between two people who can verify each other's identity through a separate channel (phone call, in person).
+SimpleCipher protects the contents and authenticity of a conversation between two people who can verify each other's identity through a trusted channel (video call, voice call, or pre-shared fingerprint).
 
 **The adversary can:**
 - Observe all network traffic between the two peers (passive eavesdropping)

@@ -17,7 +17,7 @@ $ simplecipher listen
   Listening on port 7777
   Tell your peer to run:
     simplecipher connect 192.168.1.208
-  Your fingerprint: D629-4DB6-9B8C-2CE1
+  Your fingerprint: 58A4-0798-FE8A-4026
   Waiting for connection...
 ```
 
@@ -30,15 +30,15 @@ $ simplecipher connect 192.168.1.208
 **Step 3 — Both see the same safety code:**
 
 ```
-  Safety code:  D629-4DB6          (both screens show this)
+  Safety code:  58A4-0798          (both screens show this)
 ```
 
-They call each other on the phone (or compare in person): *"I see D629-4DB6 — same for you?" "Yes."*
+Alice and Bob compare the code over a video call: *"I see 58A4-0798 — same for you?" "Yes."*
 
 Both type the code to confirm:
 
 ```
-  Confirm: D6294DB6
+  Confirm: 58A40798
   Secure session active. Ctrl+C to quit.
 ```
 
@@ -170,7 +170,17 @@ After connecting, both sides see the same safety code:
 Type the full code to confirm:
 ```
 
-**What to do:** Call your peer (or talk in person) and read the code out loud. If both sides see the same code, type it in to confirm. If the codes don't match, someone is intercepting your connection — press Ctrl+C immediately.
+**What to do:** Compare the code with your peer through a channel you already trust. Read it out loud and confirm both sides see the same code. Then type it in. If the codes don't match, someone is intercepting — press Ctrl+C immediately.
+
+**How to compare (best to acceptable):**
+
+| Method | Why |
+|--------|-----|
+| **Video call** (best) | You see and hear the person — hardest to fake |
+| **Voice call** | You recognize their voice — good if you know them |
+| **Pre-shared fingerprint** (`--peer-fingerprint`) | Shared in advance via a trusted channel — no call needed |
+| **In-person** | Only useful if you're in the same room (but then you could just share a screen) |
+| **Text message** | Weakest — an attacker who controls the network might also control SMS. Better than nothing. |
 
 **Why this matters:** The safety code is how you know you're actually talking to your friend and not to someone pretending to be them. Without this check, an attacker sitting between you could read everything. This is the single most important step — don't skip it.
 

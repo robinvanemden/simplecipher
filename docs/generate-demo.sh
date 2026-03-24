@@ -109,7 +109,7 @@ DEMO=$(cat << DEMOEOF
   Safety code:  $SAS          (both screens show this)
 \`\`\`
 
-They call each other on the phone (or compare in person): *"I see $SAS — same for you?" "Yes."*
+Alice and Bob compare the code over a video call: *"I see $SAS — same for you?" "Yes."*
 
 Both type the code to confirm:
 
