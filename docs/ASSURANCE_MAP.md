@@ -54,7 +54,9 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | Full RELRO (Linux) | `CMakeLists.txt` `-Wl,-z,relro,-z,now` | `ci.yml:test-linux` (readelf check) |
 | Stack canary | `-fstack-protector-strong` | `test_android.sh` (readelf `__stack_chk_fail`) |
 | FORTIFY_SOURCE | `-D_FORTIFY_SOURCE=2` | `test_android.sh` (`_chk` functions in .so) |
-| Seccomp sandbox (Linux) | `platform.c:227` | `test_p2p.c:test_harden_codepath` |
+| Seccomp sandbox phase 1 (Linux) | `platform.c:sandbox_phase1()` — after arg parsing, before network | `test_p2p.c:test_harden_codepath` |
+| Seccomp sandbox phase 2 (Linux) | `platform.c:sandbox_phase2()` — after handshake, before chat loop. Drops socket/connect/bind/listen/accept. | `test_p2p.c:test_harden_codepath` |
+| OpenBSD pledge/unveil | `platform.c:sandbox_phase1()` (`"stdio inet dns"`), `sandbox_phase2()` (`"stdio"`) | Compile-time only (no OpenBSD CI runner) |
 | `mlockall` (Linux) | `platform.c:harden_process()` | `test_p2p.c:test_harden_codepath` |
 | Anti-ptrace (Android) | `jni_bridge.c:JNI_OnLoad` `PR_SET_DUMPABLE=0` | `test_android.sh` (grep source) |
 | No core dumps (Android) | `jni_bridge.c:JNI_OnLoad` `RLIMIT_CORE=0` | `test_android.sh` (grep source) |
@@ -85,7 +87,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 |-----|-----|------------------|
 | Android JVM memory hygiene | Java Strings can't be wiped deterministically | `ANDROID.md:What the app cannot guarantee` |
 | Android direct-connect only (no SOCKS5/Tor) | Simplicity trade-off, reduces attack surface | `ANDROID.md:Android is direct-connect only` |
-| Android connect screen uses system keyboard | Custom keyboard covers SAS/chat only | `ANDROID.md:Security measures` table |
+| Clipboard on API 28-29 | Background apps can read clipboard on older Android | `ANDROID.md:Security measures`, app warns user |
 | Terminal scrollback may retain messages | OS-level, outside app control | `PROTOCOL.md:What it does NOT provide` |
-| Seccomp is Linux-only | No equivalent on Windows/macOS | `HARDENING.md` platform table |
+| Seccomp is Linux-only, pledge is OpenBSD-only | No equivalent on Windows/macOS | `HARDENING.md` platform table |
 | No cross-session recovery | Ephemeral by design | `PROTOCOL.md:What it does NOT provide` |
