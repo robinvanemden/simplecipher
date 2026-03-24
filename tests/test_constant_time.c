@@ -51,7 +51,8 @@
  *   5. chain_step      — symmetric ratchet (secret: chain key)
  *   6. crypto_x25519   — DH key exchange (secret: private key)
  *   7. frame_build     — encrypt message (secret: session state)
- *   8. frame_open      — decrypt frame (known-accept, see below)
+ *   8. ct_compare      — fingerprint comparison (secret: expected fingerprint)
+ *   9. frame_open      — decrypt frame (known-accept, see below)
  *
  * For best results, run with CPU pinning to reduce measurement noise:
  *   taskset -c 0 ./test_ct
@@ -211,6 +212,17 @@ uint8_t do_one_computation(uint8_t *data) {
         break;
     }
 
+    case 8: {
+        /* ct_compare: constant-time byte comparison.
+         * data = 8 bytes to compare against ct_key (first 8 bytes).
+         * Fixed class: matching bytes (returns 0).
+         * Random class: random bytes (returns non-zero with overwhelming probability).
+         * Leak: early exit on first differing byte. */
+        volatile int result = ct_compare(data, ct_key, 8);
+        ret = (uint8_t)(result & 0xFF);
+        break;
+    }
+
     case 7: {
         /* frame_open: decrypt an incoming frame.
          * data = 512-byte frame (untrusted, varies between classes).
@@ -345,6 +357,14 @@ int main(void) {
      * Leak: scalar multiplication must be constant-time regardless of
      * which bits are set in the private key. This is the single most
      * important constant-time requirement in the protocol. */
+    /* --- ct_compare ---
+     * Fixed class: bytes matching ct_key[0..7].
+     * Random class: random bytes.
+     * Leak: early exit on first differing byte position. */
+    fill_random(ct_key, 32);
+    memcpy(ct_fixed_input, ct_key, 8);  /* fixed class matches */
+    failures += run_test("ct_compare", 8, 8, 200);
+
     printf("\n--- Core cryptographic operations ---\n");
     fill_random(ct_key, 32);  /* fixed peer public key */
     crypto_x25519_public_key(ct_key, ct_key);  /* make it a valid point */
@@ -416,7 +436,7 @@ int main(void) {
 
     printf("\n================================================\n");
     if (failures == 0) {
-        printf("All 7 secret-handling functions verified constant-time.\n");
+        printf("All 8 secret-handling functions verified constant-time.\n");
         printf("frame_open timing variance is a known Monocypher design choice.\n");
     } else {
         printf("%d function(s) showed unexpected timing leakage!\n", failures);

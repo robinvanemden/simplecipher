@@ -32,6 +32,7 @@
  *   5. chain_step      — must not branch on chain key content
  *   6. crypto_x25519   — must not branch on private key bits
  *   7. frame_build     — must not branch on plaintext content
+ *   8. ct_compare      — must not branch on input byte values
  *
  * NOT TESTED: frame_open — has an intentional early exit on sequence
  * number mismatch (seq is not secret) and Monocypher's AEAD intentionally
@@ -163,6 +164,23 @@ int main(void) {
         crypto_x25519(shared, priv, pub);
         unpoison(priv, 32);
         unpoison(shared, 32);
+    }
+
+    /* --- 8. ct_compare ---
+     * Must not branch on either input buffer's content.
+     * A non-constant-time version would exit early on the first
+     * differing byte, leaking the mismatch position. */
+    printf("Testing ct_compare...\n");
+    {
+        uint8_t a[8], b[8];
+        fill_random(a, 8);
+        memcpy(b, a, 8);
+        poison(a, 8);              /* mark both inputs as secret */
+        poison(b, 8);
+        volatile int r = ct_compare(a, b, 8);
+        (void)r;
+        unpoison(a, 8);
+        unpoison(b, 8);
     }
 
     /* --- 7. frame_build ---
