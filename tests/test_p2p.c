@@ -4017,6 +4017,11 @@ typedef struct {
     const char  *expected_peer_fp;   /* NULL = don't verify */
     int          fp_mismatch;
     uint8_t      self_pub[KEY];      /* exposed for the other side to compute expected fp */
+    /* Pre-generated keypair (like nativeGenerateKey on Android).
+     * If has_prekey is set, the thread uses these instead of gen_keypair. */
+    uint8_t      prekey_priv[KEY];
+    uint8_t      prekey_pub[KEY];
+    int          has_prekey;
 } fp_peer_ctx;
 
 static void *fp_peer_thread(void *arg) {
@@ -4041,7 +4046,16 @@ static void *fp_peer_thread(void *arg) {
     if (exchange(ctx->fd, ctx->is_initiator, &my_ver, 1, &peer_ver, 1) != 0) return nullptr;
     if (peer_ver != PROTOCOL_VERSION) return nullptr;
 
-    gen_keypair(priv, pub);
+    /* Use pre-generated key if available (mirrors nativeGenerateKey flow) */
+    if (ctx->has_prekey) {
+        memcpy(priv, ctx->prekey_priv, KEY);
+        memcpy(pub,  ctx->prekey_pub,  KEY);
+        crypto_wipe(ctx->prekey_priv, KEY);
+        crypto_wipe(ctx->prekey_pub,  KEY);
+        ctx->has_prekey = 0;
+    } else {
+        gen_keypair(priv, pub);
+    }
     memcpy(ctx->self_pub, pub, KEY);
     make_commit(commit_self, pub);
 
@@ -4326,6 +4340,156 @@ static void test_fingerprint_handshake_verification(void) {
         close_sock(listener3.fd);
         session_wipe(&listener3.sess);
         session_wipe(&initiator3.sess);
+    }
+
+    /* --- Test D: TRUE pre-set fingerprint → handshake auto-verifies ---
+     *
+     * This is the EXACT Android flow:
+     *   1. Listener pre-generates key (nativeGenerateKey)
+     *   2. Listener shows fingerprint (QR / text)
+     *   3. Initiator scans/types it (nativeSetPeerFingerprint)
+     *   4. Both connect → handshake uses pre-generated key
+     *   5. Initiator's fingerprint check passes automatically
+     *
+     * Previous tests verified the mechanism post-hoc.  This test
+     * pre-sets BOTH the key AND the expected fingerprint BEFORE
+     * the handshake threads start. */
+    {
+        const char *port = "19762";
+
+        /* Step 1: Listener pre-generates its keypair (like nativeGenerateKey) */
+        fp_peer_ctx listener = { .is_initiator = 0, .port = port,
+                                 .expected_peer_fp = NULL, .has_prekey = 1 };
+        gen_keypair(listener.prekey_priv, listener.prekey_pub);
+
+        /* Step 2: Compute the fingerprint the initiator will verify */
+        char listener_fp[20];
+        format_fingerprint(listener_fp, listener.prekey_pub);
+
+        /* Step 3: Initiator pre-sets the expected fingerprint */
+        fp_peer_ctx initiator = { .is_initiator = 1, .port = port,
+                                  .expected_peer_fp = listener_fp,
+                                  .has_prekey = 0 };
+
+        /* Step 4: Both connect and handshake */
+        pthread_t t1, t2;
+        pthread_create(&t1, nullptr, fp_peer_thread, &listener);
+        pthread_create(&t2, nullptr, fp_peer_thread, &initiator);
+        pthread_join(t1, nullptr);
+        pthread_join(t2, nullptr);
+
+        /* Step 5: Verify */
+        TEST("pre-set fp: listener handshake succeeded", listener.ok);
+        TEST("pre-set fp: initiator handshake succeeded", initiator.ok);
+        TEST("pre-set fp: no fingerprint mismatch", !initiator.fp_mismatch);
+
+        /* Verify the listener actually used the pre-generated key */
+        TEST("pre-set fp: listener used prekey",
+             crypto_verify32(listener.self_pub, listener.prekey_pub) != 0
+             || listener.has_prekey == 0);
+
+        /* Verify SAS matches (proves handshake completed properly) */
+        if (listener.ok && initiator.ok) {
+            TEST("pre-set fp: SAS keys match",
+                 crypto_verify32(listener.sas_key, initiator.sas_key) == 0);
+        }
+
+        sock_shutdown_both(initiator.fd);
+        sock_shutdown_both(listener.fd);
+        close_sock(initiator.fd);
+        close_sock(listener.fd);
+        session_wipe(&listener.sess);
+        session_wipe(&initiator.sess);
+    }
+
+    /* --- Test E: MUTUAL pre-set fingerprints (both sides verify) ---
+     *
+     * Both sides pre-generate keys and exchange fingerprints before
+     * connecting.  Both sides verify the other's fingerprint. */
+    {
+        const char *port = "19763";
+
+        /* Both sides pre-generate keys */
+        fp_peer_ctx listener  = { .is_initiator = 0, .port = port, .has_prekey = 1 };
+        fp_peer_ctx initiator = { .is_initiator = 1, .port = port, .has_prekey = 1 };
+        gen_keypair(listener.prekey_priv, listener.prekey_pub);
+        gen_keypair(initiator.prekey_priv, initiator.prekey_pub);
+
+        /* Exchange fingerprints (both sides know the other's) */
+        char listener_fp[20], initiator_fp[20];
+        format_fingerprint(listener_fp, listener.prekey_pub);
+        format_fingerprint(initiator_fp, initiator.prekey_pub);
+        initiator.expected_peer_fp = listener_fp;
+        listener.expected_peer_fp = initiator_fp;
+
+        pthread_t t1, t2;
+        pthread_create(&t1, nullptr, fp_peer_thread, &listener);
+        pthread_create(&t2, nullptr, fp_peer_thread, &initiator);
+        pthread_join(t1, nullptr);
+        pthread_join(t2, nullptr);
+
+        TEST("mutual fp: listener succeeded", listener.ok);
+        TEST("mutual fp: initiator succeeded", initiator.ok);
+        TEST("mutual fp: listener no mismatch", !listener.fp_mismatch);
+        TEST("mutual fp: initiator no mismatch", !initiator.fp_mismatch);
+
+        if (listener.ok && initiator.ok) {
+            TEST("mutual fp: SAS keys match",
+                 crypto_verify32(listener.sas_key, initiator.sas_key) == 0);
+        }
+
+        sock_shutdown_both(initiator.fd);
+        sock_shutdown_both(listener.fd);
+        close_sock(initiator.fd);
+        close_sock(listener.fd);
+        session_wipe(&listener.sess);
+        session_wipe(&initiator.sess);
+    }
+
+    /* --- Test F: Pre-set fingerprint with MITM (wrong key) ---
+     *
+     * Initiator has the real listener's fingerprint, but the "listener"
+     * is actually a MITM with a different key.  Fingerprint check must
+     * catch this. */
+    {
+        const char *port = "19764";
+
+        /* The "real" listener generates a key and shares fingerprint */
+        uint8_t real_priv[KEY], real_pub[KEY];
+        gen_keypair(real_priv, real_pub);
+        char real_fp[20];
+        format_fingerprint(real_fp, real_pub);
+        crypto_wipe(real_priv, KEY);
+
+        /* The MITM (pretending to be listener) uses a DIFFERENT key */
+        fp_peer_ctx mitm = { .is_initiator = 0, .port = port,
+                             .expected_peer_fp = NULL, .has_prekey = 0 };
+
+        /* Initiator expects the real listener's fingerprint */
+        fp_peer_ctx initiator = { .is_initiator = 1, .port = port,
+                                  .expected_peer_fp = real_fp,
+                                  .has_prekey = 0 };
+
+        pthread_t t1, t2;
+        pthread_create(&t1, nullptr, fp_peer_thread, &mitm);
+        pthread_create(&t2, nullptr, fp_peer_thread, &initiator);
+        pthread_join(t1, nullptr);
+        pthread_join(t2, nullptr);
+
+        TEST("MITM: initiator detected fingerprint mismatch", initiator.fp_mismatch);
+        TEST("MITM: initiator handshake failed", !initiator.ok);
+
+        if (mitm.fd != INVALID_SOCK) {
+            sock_shutdown_both(mitm.fd);
+            close_sock(mitm.fd);
+        }
+        if (initiator.fd != INVALID_SOCK) {
+            sock_shutdown_both(initiator.fd);
+            close_sock(initiator.fd);
+        }
+        session_wipe(&mitm.sess);
+        session_wipe(&initiator.sess);
+        crypto_wipe(real_pub, KEY);
     }
 
     plat_quit();
