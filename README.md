@@ -228,7 +228,7 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Stack clash protection | yes | — | yes |
 | Zero-init all locals (`-ftrivial-auto-var-init=zero`) | yes | yes | yes |
 | Buffer overflow detection (`_FORTIFY_SOURCE`) | 3 | — | 2 |
-| Control-flow integrity | CET (x86), BTI (arm64) | flags set (not PE-verified) | CFI + BTI (arm64) |
+| Control-flow integrity | CET (x86), BTI (arm64) | flags set (not PE-verified) | BTI (arm64) |
 | Strict flex array bounds (`-fstrict-flex-arrays=3`) | yes | yes | yes |
 | Hidden symbol visibility | yes | yes | yes + JNI export whitelist |
 | LTO (whole-program optimization) | yes | yes | yes |
@@ -462,7 +462,7 @@ taskset -c 0 ./test_ct
 │       ├── activity_main.xml     # connection setup screen
 │       └── activity_chat.xml     # chat interface
 ├── tests/
-│   ├── test_p2p.c                # 542-test P2P integration suite
+│   ├── test_p2p.c                # 605-test P2P integration suite
 │   ├── test_constant_time.c      # dudect timing side-channel verification
 │   ├── cbmc_harness.py           # CBMC formal verification (57K properties)
 │   ├── dudect.h                  # vendored dudect library (public domain)
