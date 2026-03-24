@@ -75,31 +75,31 @@ The chat is still encrypted. But without verification, you can't be sure who you
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│  Java (UI)                                   │
-│  ┌────────────┐  ┌────────────┐              │
-│  │ MainActivity│  │ChatActivity│              │
-│  │ (connect)   │  │(SAS + chat)│              │
-│  └─────┬──────┘  └─────┬──────┘              │
-│        │               │                     │
-│        │  NativeCallback (interface)          │
-│        │       ▲                              │
-│        │       │ callbacks on UI thread       │
-├────────┼───────┼─────────────────────────────┤
-│  C (Native, via JNI)                         │
-│        │       │                              │
-│        ▼       │                              │
-│  ┌─────────────┴──────────┐                  │
-│  │  Single native thread   │                 │
-│  │  ┌─────────┐ ┌────────┐│                  │
-│  │  │protocol │ │ crypto ││                  │
-│  │  │network  │ │ratchet ││                  │
-│  │  └─────────┘ └────────┘│                  │
-│  └─────────────────────────┘                 │
-│        ▲                                     │
-│        │ command pipe (atomic writes)         │
-│  nativePostCommand(cmd, payload)             │
-└──────────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  Java (UI)                                  │
+│  ┌─────────────┐  ┌─────────────┐           │
+│  │ MainActivity │  │ ChatActivity │           │
+│  │  (connect)   │  │ (SAS + chat) │           │
+│  └──────┬──────┘  └──────┬──────┘           │
+│         │                │                  │
+│         │  NativeCallback (interface)       │
+│         │       ▲                           │
+│         │       │ callbacks on UI thread    │
+├─────────┼───────┼──────────────────────────┤
+│  C (Native, via JNI)                       │
+│         │       │                           │
+│         ▼       │                           │
+│  ┌──────────────┴─────────────┐             │
+│  │  Single native thread      │             │
+│  │  ┌──────────┐ ┌──────────┐ │             │
+│  │  │ protocol │ │  crypto  │ │             │
+│  │  │ network  │ │  ratchet │ │             │
+│  │  └──────────┘ └──────────┘ │             │
+│  └────────────────────────────┘             │
+│         ▲                                   │
+│         │ command pipe (atomic writes)      │
+│  nativePostCommand(cmd, payload)            │
+└─────────────────────────────────────────────┘
 ```
 
 **Why a single native thread?** All crypto, session, and socket state lives on one POSIX thread. Java communicates through a pipe. No mutexes, no shared mutable state, no possibility of nonce reuse or race conditions. Two threads reading the same key/nonce pair breaks XChaCha20-Poly1305 confidentiality completely — this architecture makes that structurally impossible.
