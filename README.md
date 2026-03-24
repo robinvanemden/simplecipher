@@ -13,13 +13,22 @@ SimpleCipher is a single tiny binary (~80 KB) with zero dependencies. The protoc
  ALICE (listener)                          BOB (connector)
  ─────────────────                         ────────────────
  $ simplecipher listen
-   Your fingerprint: C709-976D-BD49-D466
-                                            $ simplecipher connect 192.168.1.42
-   Safety code:  C709-976D                    Safety code:  C709-976D
 
-   Alice calls Bob: "I see C709-976D"       Bob: "Same here"
+   Listening on port 7777
+   Tell your peer to run:
+     simplecipher connect 192.168.1.208
+   Your fingerprint: DF3F-B87E-4C9C-E240
+   Waiting for connection...
+                                            $ simplecipher connect 192.168.1.208
+   Safety code:  DF3F-B87E                    Safety code:  DF3F-B87E
 
-   Confirm: C709976D                          Confirm: C709976D
+              ┌─────────────────────────────────────┐
+              │  Alice calls Bob on the phone:       │
+              │  "I see DF3F-B87E — do you?"          │
+              │  Bob: "Yes, same code."              │
+              └─────────────────────────────────────┘
+
+   Confirm: DF3FB87E                          Confirm: DF3FB87E
 
    Secure session active.                     Secure session active.
 

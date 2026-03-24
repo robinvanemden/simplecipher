@@ -54,6 +54,9 @@ fi
 # Extract the fingerprint from the listener output
 FINGERPRINT=$(grep -oP '[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}' /tmp/sc_demo_listen.txt 2>/dev/null | head -1 || true)
 
+# Extract the first local IP shown by the listener
+LOCAL_IP=$(grep -oP 'connect \K[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' /tmp/sc_demo_listen.txt 2>/dev/null | head -1 || true)
+
 # Kill both sessions
 kill "$LISTEN_PID" "$CONNECT_PID" 2>/dev/null || true
 wait "$LISTEN_PID" "$CONNECT_PID" 2>/dev/null || true
@@ -67,6 +70,9 @@ SAS_NODASH=$(echo "$SAS" | tr -d '-')
 
 echo "Captured SAS: $SAS"
 echo "Captured fingerprint: ${FINGERPRINT:-none}"
+echo "Captured local IP: ${LOCAL_IP:-192.168.1.42}"
+
+IP="${LOCAL_IP:-192.168.1.42}"
 
 # Generate the demo block
 DEMO=$(cat << DEMOEOF
@@ -74,11 +80,20 @@ DEMO=$(cat << DEMOEOF
  ALICE (listener)                          BOB (connector)
  ─────────────────                         ────────────────
  \$ simplecipher listen
+
+   Listening on port 7777
+   Tell your peer to run:
+     simplecipher connect $IP
    Your fingerprint: ${FINGERPRINT:-B4C7-2E19-A5D3-F801}
-                                            \$ simplecipher connect 192.168.1.42
+   Waiting for connection...
+                                            \$ simplecipher connect $IP
    Safety code:  $SAS                    Safety code:  $SAS
 
-   Alice calls Bob: "I see $SAS"       Bob: "Same here"
+              ┌─────────────────────────────────────┐
+              │  Alice calls Bob on the phone:       │
+              │  "I see $SAS — do you?"          │
+              │  Bob: "Yes, same code."              │
+              └─────────────────────────────────────┘
 
    Confirm: $SAS_NODASH                          Confirm: $SAS_NODASH
 
@@ -99,24 +114,31 @@ DEMOEOF
 # Replace the demo block in README.md
 # The block is between the lines matching "^```$" after "built for privacy"
 # and before "**Deep dives:**"
-python3 << PYEOF
-import re
+# Write the demo to a temp file, then use Python to patch README
+echo "$DEMO" > /tmp/sc_demo_block.txt
 
-with open("$README") as f:
+python3 - "$README" /tmp/sc_demo_block.txt "$SAS" << 'PYEOF'
+import re, sys
+
+readme_path = sys.argv[1]
+demo_path = sys.argv[2]
+sas = sys.argv[3]
+
+with open(readme_path) as f:
     content = f.read()
 
-# Find and replace the demo block (between the first \`\`\` block after the intro
-# and before **Deep dives:**)
-demo = """$DEMO"""
+with open(demo_path) as f:
+    demo = f.read().strip()
 
-# Match: ``` ... ``` block that comes before **Deep dives:**
-pattern = r'(?s)\`\`\`\n ALICE \(listener\).*?\`\`\`'
+# Match: ``` ... ``` block that starts with " ALICE (listener)"
+pattern = r'(?s)```\n ALICE \(listener\).*?```'
 if re.search(pattern, content):
-    content = re.sub(pattern, demo.strip(), content)
-    with open("$README", "w") as f:
+    content = re.sub(pattern, demo, content)
+    with open(readme_path, "w") as f:
         f.write(content)
-    print("README.md updated with real SAS code: $SAS")
+    print(f"README.md updated with real SAS code: {sas}")
 else:
     print("ERROR: Could not find demo block in README.md")
-    exit(1)
+    sys.exit(1)
 PYEOF
+rm -f /tmp/sc_demo_block.txt
