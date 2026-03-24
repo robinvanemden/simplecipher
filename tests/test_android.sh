@@ -289,9 +289,8 @@ check "CMake enables RELRO" \
 check "CMake strips symbols" \
     "grep -q '\-Wl,-s' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
 
-# CMake: CFI
-check "CMake enables CFI" \
-    "grep -q 'fsanitize=cfi' '$REPO_ROOT/android/app/src/main/c/CMakeLists.txt'"
+# Note: -fsanitize=cfi was removed — caused linker to strip all internal code
+# when combined with LTO + version script.  See CMakeLists.txt comment.
 
 # Note: -fstack-clash-protection removed — NDK clang does not support it
 

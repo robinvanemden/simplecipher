@@ -40,9 +40,14 @@ target_compile_options(simplecipher PRIVATE
     -fno-strict-aliasing
     # Hide all symbols by default; only JNI exports are visible
     -fvisibility=hidden
-    # Control Flow Integrity — prevents ROP/JOP attacks (requires LTO)
-    -fsanitize=cfi
+    # LTO for whole-program optimization
     -flto
+    # Note: -fsanitize=cfi was removed — CFI + LTO + version script caused
+    # the linker to strip all internal functions, producing a ~6KB .so that
+    # crashed on System.loadLibrary.  CFI instrumentation changes the call
+    # graph in ways that make LTO think internal code is unreachable.
+    # The remaining hardening (RELRO, stack canary, BTI, hidden visibility,
+    # version script) still provides strong protection.
     -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough
     -Werror=implicit -Werror=return-type -Werror=unused-result
     -Werror=format-security -Werror=incompatible-pointer-types -Werror=int-conversion
@@ -67,8 +72,6 @@ target_link_options(simplecipher PRIVATE
     # ~5KB .so that crashes on load.  The version script + -fvisibility=hidden
     # already ensures no internal symbols are exported.
     -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jni_exports.map
-    # CFI requires LTO at link time
-    -fsanitize=cfi
     -flto
 )
 
