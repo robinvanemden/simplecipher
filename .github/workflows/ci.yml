@@ -291,18 +291,23 @@ jobs:
             -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
             -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
 
-      - name: Build Android APK
+      - name: Build Android APKs
         working-directory: android
         run: ./gradlew assembleDebug
 
-      - name: Validate APK
-        run: bash tests/test_android.sh android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Validate minimal APK
+        run: bash tests/test_android.sh android/app/build/outputs/apk/minimal/debug/app-minimal-debug.apk minimal
 
-      - name: Upload Android APK
+      - name: Validate full APK
+        run: bash tests/test_android.sh android/app/build/outputs/apk/full/debug/app-full-debug.apk full
+
+      - name: Upload Android APKs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-android
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android/app/build/outputs/apk/minimal/debug/app-minimal-debug.apk
+            android/app/build/outputs/apk/full/debug/app-full-debug.apk
 
   test-android-emulator:
     runs-on: ubuntu-24.04
@@ -338,17 +343,17 @@ jobs:
             -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
             -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
 
-      - name: Build APK with x86_64 for emulator
+      - name: Build APKs with x86_64 for emulator
         working-directory: android
         run: ./gradlew assembleDebug -PextraAbi=x86_64
 
-      - name: Emulator smoke test
+      - name: Emulator smoke test (full flavor)
         uses: reactivecircus/android-emulator-runner@70f4dee990796918b78d040e3278474bdbd348a7 # v2
         with:
           api-level: 28
           arch: x86_64
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: bash tests/test_android_emulator.sh android/app/build/outputs/apk/debug/app-debug.apk
+          script: bash tests/test_android_emulator.sh android/app/build/outputs/apk/full/debug/app-full-debug.apk
 
   test-linux:
     needs: build

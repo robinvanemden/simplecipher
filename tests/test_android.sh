@@ -3,7 +3,8 @@
 # Usage: bash tests/test_android.sh <apk-path>
 set -uo pipefail
 
-APK="${1:?Usage: test_android.sh <apk>}"
+APK="${1:?Usage: test_android.sh <apk> [minimal|full]}"
+FLAVOR="${2:-full}"
 
 PASS=0
 FAIL=0
@@ -68,9 +69,16 @@ if command -v aapt2 >/dev/null 2>&1; then
     check "ChatActivity has taskAffinity" \
         "echo '$XMLTREE_MANIFEST' | grep -q 'taskAffinity'"
 
-    # Permission check: only INTERNET + HIDE_OVERLAY_WINDOWS, nothing dangerous
-    check "exactly two permissions declared" \
-        "echo '$XMLTREE_MANIFEST' | grep 'uses-permission' | grep -c 'permission' | grep -q '^2$'"
+    # Permission check
+    if [ "$FLAVOR" = "minimal" ]; then
+        check "minimal: exactly two permissions declared" \
+            "echo '$XMLTREE_MANIFEST' | grep 'uses-permission' | grep -c 'permission' | grep -q '^2$'"
+    else
+        check "full: exactly three permissions declared (INTERNET + HIDE_OVERLAY + CAMERA)" \
+            "echo '$XMLTREE_MANIFEST' | grep 'uses-permission' | grep -c 'permission' | grep -q '^3$'"
+        check "full: CAMERA permission present" \
+            "echo '$XMLTREE_MANIFEST' | grep 'uses-permission' | grep -q 'CAMERA'"
+    fi
 
     # Debuggable check (should not be present or should be false in release)
     check "not debuggable" \

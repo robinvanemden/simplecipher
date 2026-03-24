@@ -161,33 +161,42 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
-      - name: Find APK
+      - name: Find APKs
         id: apk
         run: |
-          APK=$(ls android/app/build/outputs/apk/release/app-release*.apk 2>/dev/null | head -1)
-          if [ -z "$APK" ]; then echo "::error::No release APK found"; exit 1; fi
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          MINIMAL=$(ls android/app/build/outputs/apk/minimal/release/app-minimal-release*.apk 2>/dev/null | head -1)
+          FULL=$(ls android/app/build/outputs/apk/full/release/app-full-release*.apk 2>/dev/null | head -1)
+          if [ -z "$MINIMAL" ] || [ -z "$FULL" ]; then echo "::error::Release APKs not found"; exit 1; fi
+          echo "minimal=$MINIMAL" >> "$GITHUB_OUTPUT"
+          echo "full=$FULL" >> "$GITHUB_OUTPUT"
 
-      - name: Verify APK is signed (fail-closed for releases)
+      - name: Verify APKs are signed (fail-closed for releases)
         run: |
-          # Tagged releases MUST produce a signed APK.  An unsigned APK means
+          # Tagged releases MUST produce signed APKs.  An unsigned APK means
           # signing secrets are missing — fail the release rather than publish
           # an unverifiable artifact.
-          if ! java -jar "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | tail -1)/lib/apksigner.jar" verify \
-               --print-certs "${{ steps.apk.outputs.path }}" 2>/dev/null; then
-            echo "::error::APK is not signed — release signing secrets may be missing"
-            exit 1
-          fi
-          echo "APK signature verified"
+          APKSIGNER="java -jar $ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | tail -1)/lib/apksigner.jar"
+          for APK in "${{ steps.apk.outputs.minimal }}" "${{ steps.apk.outputs.full }}"; do
+            if ! $APKSIGNER verify --print-certs "$APK" 2>/dev/null; then
+              echo "::error::APK is not signed ($APK) — release signing secrets may be missing"
+              exit 1
+            fi
+            echo "APK signature verified: $APK"
+          done
 
-      - name: Validate APK
-        run: bash tests/test_android.sh ${{ steps.apk.outputs.path }}
+      - name: Validate minimal APK
+        run: bash tests/test_android.sh ${{ steps.apk.outputs.minimal }} minimal
 
-      - name: Upload Android APK
+      - name: Validate full APK
+        run: bash tests/test_android.sh ${{ steps.apk.outputs.full }} full
+
+      - name: Upload Android APKs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: simplecipher-android
-          path: ${{ steps.apk.outputs.path }}
+          path: |
+            ${{ steps.apk.outputs.minimal }}
+            ${{ steps.apk.outputs.full }}
 
   test-linux:
     needs: build
@@ -328,7 +337,8 @@ jobs:
           cp linux-aarch64/simplecipher release/simplecipher-linux-aarch64
           cp win-x86_64/simplecipher.exe release/simplecipher-win-x86_64.exe
           cp win-aarch64/simplecipher.exe release/simplecipher-win-aarch64.exe
-          cp android/app-release*.apk release/simplecipher-android.apk
+          cp android/app/build/outputs/apk/minimal/release/app-minimal-release*.apk release/simplecipher-minimal.apk
+          cp android/app/build/outputs/apk/full/release/app-full-release*.apk release/simplecipher-full.apk
           cd release
           sha256sum * > SHA256SUMS.txt
 
@@ -340,7 +350,8 @@ jobs:
             release/simplecipher-linux-aarch64
             release/simplecipher-win-x86_64.exe
             release/simplecipher-win-aarch64.exe
-            release/simplecipher-android.apk
+            release/simplecipher-minimal.apk
+            release/simplecipher-full.apk
 
       - name: Delete existing release (if re-tagging)
         env:
@@ -360,7 +371,8 @@ jobs:
             release/simplecipher-linux-aarch64 \
             release/simplecipher-win-x86_64.exe \
             release/simplecipher-win-aarch64.exe \
-            release/simplecipher-android.apk \
+            release/simplecipher-minimal.apk \
+            release/simplecipher-full.apk \
             release/SHA256SUMS.txt \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
