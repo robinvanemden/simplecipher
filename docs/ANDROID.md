@@ -107,6 +107,19 @@ The native C layer wipes everything it touches. But at the Java-to-native bounda
 | Seccomp sandboxing | Enabled (Linux only) | Not available on Android |
 | Binary size | ~80 KB, zero dependencies | Minimal: ~154 KB; Full: ~854 KB |
 
+### If security is your top priority
+
+Use the desktop CLI on a hardened operating system. The strongest setup for SimpleCipher:
+
+| OS | Why | Notes |
+|-----|-----|-------|
+| [Tails](https://tails.net/) | Amnesic — runs from USB, leaves nothing on disk, routes all traffic through Tor | Best for leaving no trace at all. Combine with `simplecipher connect --socks5 127.0.0.1:9050` for full anonymity. |
+| [Qubes OS](https://www.qubes-os.org/) | Compartmentalized — each app runs in its own VM, so a compromised browser cannot reach your chat | Run SimpleCipher in a disposable qube for one-time sessions. |
+| [OpenBSD](https://www.openbsd.org/) | Minimal attack surface, `pledge`/`unveil` sandboxing, secure defaults | Smallest trusted computing base of any general-purpose OS. |
+| Any Linux + full-disk encryption | `mlockall` + seccomp enabled, swap encrypted, terminal only | A fresh Debian/Fedora/Arch install with no unnecessary services works well. |
+
+For Android, [GrapheneOS](https://grapheneos.org/) is the hardened choice — no Google services, verified boot, per-app sandboxing improvements. SimpleCipher's minimal flavor runs without any Google dependencies.
+
 ## Architecture
 
 ```
