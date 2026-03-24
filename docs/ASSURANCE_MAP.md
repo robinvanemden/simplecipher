@@ -54,9 +54,9 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | Full RELRO (Linux) | `CMakeLists.txt` `-Wl,-z,relro,-z,now` | `ci.yml:test-linux` (readelf check) |
 | Stack canary | `-fstack-protector-strong` | `test_android.sh` (readelf `__stack_chk_fail`) |
 | FORTIFY_SOURCE | `-D_FORTIFY_SOURCE=2` | `test_android.sh` (`_chk` functions in .so) |
-| Seccomp sandbox phase 1 (Linux) | `platform.c:sandbox_phase1()` — after arg parsing, before network | `test_p2p.c:test_harden_codepath` |
-| Seccomp sandbox phase 2 (Linux) | `platform.c:sandbox_phase2()` — after handshake, before chat loop. Drops socket/connect/bind/listen/accept. | `test_p2p.c:test_harden_codepath` |
-| OpenBSD pledge/unveil | `platform.c:sandbox_phase1()` (`"stdio inet dns"`), `sandbox_phase2()` (`"stdio"`) | Compile-time only (no OpenBSD CI runner) |
+| Seccomp sandbox phase 1 (Linux) | `platform.c:sandbox_phase1()` — after TCP connection, before handshake. Blocks socket/connect/bind/listen/accept. | Source-level check (`test_linux.sh`). **No functional seccomp test in CI** — CI builds without `CIPHER_HARDEN`. Needs validation on hardened Linux. |
+| Seccomp sandbox phase 2 (Linux) | `platform.c:sandbox_phase2()` — after handshake, before chat loop. Same restrictions as phase 1 but tighter. | Source-level check (`test_linux.sh`). **No functional test** — same caveat. |
+| OpenBSD pledge/unveil | `platform.c:sandbox_phase1()` (`"stdio"`), `sandbox_phase2()` (`"stdio"`) | Source-level check only. **No OpenBSD CI runner** — needs validation on real OpenBSD. |
 | `mlockall` (Linux) | `platform.c:harden_process()` | `test_p2p.c:test_harden_codepath` |
 | Anti-ptrace (Android) | `jni_bridge.c:JNI_OnLoad` `PR_SET_DUMPABLE=0` | `test_android.sh` (grep source) |
 | No core dumps (Android) | `jni_bridge.c:JNI_OnLoad` `RLIMIT_CORE=0` | `test_android.sh` (grep source) |

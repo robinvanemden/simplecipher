@@ -178,6 +178,10 @@ static void apply_seccomp(struct sock_filter *f, unsigned short len){
  *   newfstatat/fstat — glibc internal (stdout detection)
  *   rseq             — restartable sequences (glibc 2.35+)
  *   fcntl            — socket flags (O_NONBLOCK for connect timeout)
+ *
+ * Phase 1 is installed AFTER the TCP connection is established.  It does
+ * NOT allow socket/connect/bind/listen/accept — those are no longer needed.
+ * A compromised process cannot open new connections from this point on.
  */
 static void install_seccomp_phase1(void){
     struct sock_filter filter[] = {
@@ -188,19 +192,9 @@ static void install_seccomp_phase1(void){
 
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
 
-        /* Network setup */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_socket,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_connect,       0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_bind,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_listen,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_accept,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_accept4,       0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getpeername,   0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getsockname,   0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getsockopt,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_setsockopt,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        /* Existing-socket I/O only — no new connections.
+         * shutdown is needed for graceful disconnect on error. */
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_shutdown,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_fcntl,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
         /* I/O */
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_read,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
@@ -355,10 +349,12 @@ void sandbox_phase1(void){
     install_seccomp_phase1();
 #endif
 #if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
-    /* Lock filesystem access immediately — no file paths needed at any phase. */
+    /* Lock filesystem access — no file paths needed at any phase. */
     unveil(NULL, NULL);
-    /* Allow network setup and DNS for the handshake phase. */
-    pledge("stdio inet dns", NULL);
+    /* TCP connection is already established.  Allow only I/O on existing
+     * file descriptors + getrandom (for the handshake key exchange).
+     * "inet" is NOT needed — we have the connected socket already. */
+    pledge("stdio", NULL);
 #endif
 }
 

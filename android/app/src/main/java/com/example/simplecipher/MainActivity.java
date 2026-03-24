@@ -319,8 +319,10 @@ public class MainActivity extends Activity {
             copyBtn.setOnClickListener(v -> {
                 ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                 ClipData clip = ClipData.newPlainText("connect command", cmd);
-                /* Mark as sensitive so the OS hides the preview in clipboard
-                 * UI and other apps cannot snoop it via ClipboardManager. */
+                /* Best-effort clipboard protection.  EXTRA_IS_SENSITIVE (API 33+)
+                 * asks the OS to hide the preview.  On API 28-29, background apps
+                 * can still read the clipboard — the warning below tells the user.
+                 * Clipboard copy is a convenience, not a secure channel. */
                 if (android.os.Build.VERSION.SDK_INT >= 33) {
                     android.os.PersistableBundle extras = new android.os.PersistableBundle();
                     extras.putBoolean("android.content.extra.IS_SENSITIVE", true);

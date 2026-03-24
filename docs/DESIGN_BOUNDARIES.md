@@ -23,11 +23,11 @@ SimpleCipher is not Signal, WhatsApp, or any persistent messaging system. The di
 
 ## Core design principles
 
-**Ephemeral.** Every key, every secret, every message exists only in memory, only during the session. When the session ends, `crypto_wipe()` zeros everything. Nothing is written to disk. There is nothing to seize, nothing to subpoena, nothing to recover from a stolen device.
+**Ephemeral.** Every key, every secret, every message exists only in memory, only during the session. When the session ends, the desktop CLI calls `crypto_wipe()` to zero all buffers. Nothing is intentionally written to disk. However, the OS may still leave traces: swap files, terminal scrollback, shell history (mitigated by `mlockall`, interactive prompts, and scrollback purge, but not eliminated — see [PROTOCOL.md](PROTOCOL.md) "What it does NOT provide"). On Android, JVM garbage collection means sensitive data may linger in heap memory beyond the app's control.
 
-**Stateless.** No configuration files, no databases, no saved preferences. The binary runs with zero setup. This eliminates an entire class of bugs (corrupted state, migration errors, backup leaks) and makes the tool forensically invisible.
+**Stateless.** No configuration files, no databases, no saved preferences. The binary runs with zero setup. This eliminates an entire class of bugs (corrupted state, migration errors, backup leaks) and reduces the forensic footprint — though the binary itself on disk is evidence the tool was used.
 
-**Serverless.** Both peers connect directly over TCP. No relay, no push notification service, no coordination server. This means both people must be online at the same time and one must have a reachable IP — but it also means no third party ever touches the data or metadata.
+**Serverless.** Both peers connect directly over TCP. No relay, no push notification service, no coordination server. This means both people must be online at the same time and one must have a reachable IP — but it also means no third party handles the message content. Note: IP addresses are visible to the network and to each peer unless Tor is used (desktop only — see [ANDROID.md](ANDROID.md) "Android is direct-connect only"). Network metadata (who connected to whom, when, for how long) is observable by anyone on the network path.
 
 **Auditable.** The entire protocol is implemented in a handful of focused C modules, totaling ~2,000 lines of code. The single cryptographic dependency (Monocypher) is vendored and has been professionally audited. The codebase is designed to be read and understood in an afternoon.
 

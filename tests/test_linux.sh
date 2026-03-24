@@ -146,12 +146,18 @@ check "no 'SAS:' debug string" \
 check "no 'handshake complete' debug string" \
     "test \"\$(strings '$BIN' | grep -ci 'handshake complete.*SAS')\" -eq 0"
 
-# Seccomp: verify the binary contains seccomp filter setup code.
-# We check for the SECCOMP_MODE_FILTER constant or prctl pattern in strings.
-# This is a source-level confidence check, not a runtime verification.
-if command -v objdump >/dev/null 2>&1; then
-    check "seccomp BPF filter code present" \
-        "objdump -d '$BIN' | grep -q 'PR_SET_SECCOMP\|seccomp_data\|SECCOMP' || strings '$BIN' | grep -q 'cipher ratchet'"
+# Seccomp: source-level check only.  The release binary is stripped so
+# symbol names are not available.  We verify the source code contains the
+# seccomp setup — this catches accidental deletion but does NOT prove the
+# filter loads or works at runtime.  Runtime validation requires running
+# on a hardened Linux build with CIPHER_HARDEN defined.
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/src/platform.c" ]; then
+    check "seccomp phase 1 implemented (source)" \
+        "grep -q 'install_seccomp_phase1' '$REPO_ROOT/src/platform.c'"
+    check "seccomp phase 2 implemented (source)" \
+        "grep -q 'install_seccomp_phase2' '$REPO_ROOT/src/platform.c'"
+else
+    echo "  SKIP: source not available for seccomp check"
 fi
 
 # Verify crypto_wipe is not optimized away (should be present as a symbol or inlined)

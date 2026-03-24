@@ -234,11 +234,13 @@ int main(int argc, char *argv[]){
     }
     if (!validate_port(port)){ fprintf(stderr, "invalid port: %s\n", port); return 1; }
 
-    /* Phase 1 sandbox: restrict syscalls to those needed for the handshake.
-     * Blocks exec, fork, open, and other unneeded syscalls immediately after
-     * argument parsing, before any network I/O.  On OpenBSD this also locks
-     * filesystem access via unveil(NULL,NULL) and pledge("stdio inet dns"). */
-    sandbox_phase1();
+    /* NOTE: sandbox_phase1() is called AFTER the TCP connection is
+     * established (see below), not here.  Connection setup requires
+     * getifaddrs(), getaddrinfo(), socket(), connect(), bind(), listen(),
+     * and accept() — syscalls that phase 1 intentionally blocks.
+     * Installing the sandbox here would crash on hardened Linux/OpenBSD
+     * builds.  Phase 1 goes right before the handshake, when untrusted
+     * data first arrives over the wire. */
 
     if (tui_mode) tui_init_term();
 
@@ -323,6 +325,13 @@ int main(int argc, char *argv[]){
 #if defined(_WIN32) || defined(_WIN64)
     g_interrupt_sock = g_fd;
 #endif
+
+    /* Phase 1 sandbox: now that the TCP connection is established, restrict
+     * syscalls to those needed for the handshake.  Blocks socket(), connect(),
+     * bind(), listen(), accept(), getifaddrs(), getaddrinfo(), and DNS resolution.
+     * A compromised process can no longer open new connections.  On OpenBSD,
+     * this drops to pledge("stdio") + unveil(NULL, NULL). */
+    sandbox_phase1();
 
     /* ------------------------------------------------------------------
      * STEP 2: Commit-then-reveal handshake
