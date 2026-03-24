@@ -20,6 +20,11 @@ public interface NativeCallback {
     /** Handshake complete; SAS code ready for user verification. */
     void onSasReady(String code);
 
+    /** Peer fingerprint computed after key exchange (informational).
+     *  If a peer fingerprint was pre-set via nativeSetPeerFingerprint(),
+     *  native has already verified it before firing this callback. */
+    default void onPeerFingerprintReady(String fingerprint, boolean verified) {}
+
     /** Handshake failed (version mismatch, commitment mismatch, bad key). */
     void onHandshakeFailed(String reason);
 
