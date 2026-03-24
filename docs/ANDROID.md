@@ -26,6 +26,37 @@ There are two APKs to choose from. Both provide the same encryption. The only di
 
 When you connect to someone, how do you know it's really them and not someone intercepting the connection? SimpleCipher gives you two ways to check.
 
+```
+  Method 1: Safety code             Method 2: Fingerprint
+  (no preparation needed)           (exchange before connecting)
+
+  ┌──────────────────────┐          ┌──────────────────────┐
+  │ Open app             │          │ Open app             │
+  │ Enter host/port      │          │ Tap "Fingerprint"    │
+  │ Tap Start            │          │ Show QR / share code │
+  └──────────┬───────────┘          │ Scan or type peer's  │
+             │                      │ Tap Start            │
+             ▼                      └──────────┬───────────┘
+  ┌──────────────────────┐                     │
+  │ Handshake            │◄────────────────────┘
+  │ (automatic)          │
+  └──────────┬───────────┘
+             │
+      ┌──────┴──────┐
+      │              │
+      ▼              ▼
+  fingerprint     no fingerprint
+  was scanned     was scanned
+      │              │
+      ▼              ▼
+  ┌────────────┐ ┌─────────────┐
+  │ Auto-check │ │ Show safety │
+  │ Match? ──► │ │ code        │
+  │ Go to chat │ │ Compare it  │
+  └────────────┘ │ Type it in  │
+                 └─────────────┘
+```
+
 ### Method 1: Safety code (both versions)
 
 After connecting, both sides see the same short code (like `A3F2-91BC`). Call your peer — video or voice — and read the code out loud. If it matches, type it in to confirm. If it doesn't match, someone is intercepting. Disconnect immediately.

@@ -20,6 +20,37 @@ Round 2:  Alice -> key_A       Bob -> key_B         (reveals)
 Verify:   H(revealed_key) == commitment             (both sides)
 ```
 
+### Full handshake sequence
+
+This is exactly what goes over the wire. Each arrow is one TCP write.
+
+```
+        Alice                              Bob
+          |                                  |
+          |-------- protocol version ------->|
+          |<------- protocol version --------|
+          |                                  |
+          |-------- H(pub_A) --------------->|  commitment
+          |<------- H(pub_B) ----------------|  (locked in)
+          |                                  |
+          |-------- pub_A ------------------>|  reveal
+          |<------- pub_B -------------------|
+          |                                  |
+          |  verify H(pub_B) == commitment   |  both sides
+          |  verify H(pub_A) == commitment   |
+          |                                  |
+          |  shared = X25519(priv, peer_pub) |  both compute
+          |  SAS = BLAKE2b(shared)[:4]       |  same value
+          |                                  |
+          |  [optional: verify fingerprint]  |
+          |                                  |
+          |====== compare SAS out-of-band ===|  phone / video
+          |                                  |
+          |======= encrypted chat ===========|  XChaCha20-Poly1305
+```
+
+If a man-in-the-middle tries to intercept, they must commit to their fake keys before seeing Alice's or Bob's real keys. They cannot adapt after the fact, so the SAS codes on Alice's and Bob's screens will differ — and the humans catch it.
+
 ### 3. Safety code verification
 
 A short authentication string (SAS) is derived from the shared secret and displayed as `XXXX-XXXX`. Both people compare this code through a trusted channel — ideally a video call (you see and hear the person), or a voice call (you recognize their voice). A 32-bit code space is sufficient because the commitment scheme prevents brute-force search.
@@ -106,6 +137,27 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 | **Terminal safety** | Peer messages are sanitized (non-printable bytes replaced with `.`) |
 | **Post-compromise security** | DH ratchet mixes fresh X25519 entropy on each direction switch |
 | **Ephemeral keys** | New keypair every session; nothing stored to disk |
+
+### Key lifecycle
+
+Every key and secret has a defined lifetime. Nothing persists beyond its purpose.
+
+```
+Key material         Created            Wiped               Lifetime
+─────────────────────────────────────────────────────────────────────
+ephemeral privkey    gen_keypair()       after session_init  handshake only
+ephemeral pubkey     gen_keypair()       cleanup             handshake only
+commitment hash      make_commit()       after verify        handshake only
+shared DH secret     session_init()      after key expansion never stored
+SAS key              expand(shared)      after format_sas    handshake only
+chain key (tx/rx)    expand(shared)      after next message  one message
+message key          chain_step()        after encrypt/decrypt  one frame
+ratchet DH privkey   ratchet_step()      after next ratchet  one direction
+fingerprint hash     domain_hash()       after compare/format  immediate
+peer fingerprint     nativeSetPeerFp()   after compare       handshake only
+─────────────────────────────────────────────────────────────────────
+                                              nothing on disk, ever
+```
 
 ### Fingerprint verification (optional)
 
