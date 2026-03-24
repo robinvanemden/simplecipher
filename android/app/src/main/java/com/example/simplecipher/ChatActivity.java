@@ -327,6 +327,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     public void onDisconnected(String reason) {
         uiHandler.post(() -> {
             appendChat("system", reason);
+            appendChat("system", "Session ended. Keys wiped. Nothing was stored to disk.");
             sendBtn.setEnabled(false);
         });
     }
