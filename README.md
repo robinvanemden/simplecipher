@@ -184,6 +184,44 @@ Type the full code to confirm:
 
 **Why this matters:** The safety code is how you know you're actually talking to your friend and not to someone pretending to be them. Without this check, an attacker sitting between you could read everything. This is the single most important step — don't skip it.
 
+## Choosing your platform
+
+SimpleCipher runs on Linux, Windows, and Android. The encryption is identical everywhere — the same C code, the same protocol. What differs is how well the operating system protects your keys while they're in memory.
+
+### Quick comparison
+
+| Platform | Security | Ease of use | Best for |
+|----------|----------|-------------|----------|
+| **Desktop CLI/TUI** on a hardened OS | Strongest | Requires terminal | When leaving no trace matters most |
+| **Desktop CLI/TUI** on a standard OS | Strong | Requires terminal | Everyday private conversations |
+| **Android app** (minimal) | Good | Easiest | Quick, convenient chats on the go |
+| **Android app** (full) | Good | Easiest + QR scanning | Same, with camera-based verification |
+
+The desktop builds wipe every byte of key material deterministically. The Android app runs on the JVM, where the garbage collector can leave traces of keys and messages in memory that cannot be wiped on demand. See [Android App](docs/ANDROID.md) for a detailed comparison.
+
+### Hardening your setup
+
+SimpleCipher encrypts your conversation. The operating system protects everything around it — memory, swap, disk, network metadata. A hardened OS closes gaps that SimpleCipher alone cannot.
+
+**Desktop (strongest to practical):**
+
+| OS | Why | Good to know |
+|----|-----|--------------|
+| [Tails](https://tails.net/) | Amnesic — runs from USB, writes nothing to disk, routes everything through Tor | Boots fresh every time. Nothing survives a reboot — not even by accident. Use with `--socks5 127.0.0.1:9050` for full anonymity. |
+| [Qubes OS](https://www.qubes-os.org/) | Compartmentalized — each app runs in its own virtual machine | A compromised browser in one VM cannot touch your chat in another. Use a disposable qube for one-time sessions. |
+| [OpenBSD](https://www.openbsd.org/) | Smallest attack surface of any general-purpose OS, `pledge`/`unveil` sandboxing | Secure by default. Fewer things running means fewer things to exploit. |
+| Any Linux with full-disk encryption | `mlockall` + seccomp enabled, encrypted swap | A fresh Debian, Fedora, or Arch install with no unnecessary services. Encrypt the disk so a stolen laptop reveals nothing. |
+| Windows 10/11 with BitLocker | Encrypted disk, standard protections | Better than an unencrypted machine. Less hardening available than Linux. |
+
+**Android:**
+
+| OS | Why |
+|----|-----|
+| [GrapheneOS](https://grapheneos.org/) | Hardened Android — no Google services, verified boot, improved sandboxing. SimpleCipher's minimal flavor runs without any Google dependencies. |
+| Stock Android | Standard security. The app's built-in protections (screenshot blocking, custom keyboard, session kill on background) help, but the OS is not designed for high-security use. |
+
+**If you're just getting started:** a standard Linux or Windows machine with full-disk encryption is a solid baseline. If your threat model demands more, move up the table.
+
 ## FAQ
 
 **Can someone read my messages?**
