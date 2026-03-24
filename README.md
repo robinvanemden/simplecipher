@@ -176,10 +176,10 @@ Type the full code to confirm:
 
 | Method | Why |
 |--------|-----|
-| **Video call** (best) | You see and hear the person — hardest to fake |
-| **Voice call** | You recognize their voice — good if you know them |
-| **Pre-shared fingerprint** (`--peer-fingerprint`) | Shared in advance via a trusted channel — no call needed |
-| **In-person** | Only useful if you're in the same room (but then you could just share a screen) |
+| **Paper with fingerprint** (best) | Exchange `--peer-fingerprint` codes on paper when you meet. Paper can't be hacked — no network, no device, no interception. Verify automatically on every future session. |
+| **Video call** | You see and hear the person — very hard to fake in real time |
+| **Voice call** | You recognize their voice — good if you know them well |
+| **Pre-shared fingerprint via Signal/secure chat** | Shared digitally in advance — only as secure as that channel |
 | **Text message** | Weakest — an attacker who controls the network might also control SMS. Better than nothing. |
 
 **Why this matters:** The safety code is how you know you're actually talking to your friend and not to someone pretending to be them. Without this check, an attacker sitting between you could read everything. This is the single most important step — don't skip it.
