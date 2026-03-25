@@ -397,8 +397,11 @@ static void install_seccomp_phase2(void){
 
 static void capsicum_phase1(int sock_fd){
     /* Enter capability mode — no new fds from this point on.
-     * Idempotent: calling twice is a harmless no-op. */
-    if (cap_enter() != 0) return;  /* best-effort (e.g. kernel w/o Capsicum) */
+     * Idempotent: calling twice is a harmless no-op.
+     * Best-effort: on some FreeBSD VMs/jails, cap_enter() returns 0
+     * but enforcement is disabled at the kernel level.  The runtime
+     * still works (just without the sandbox), and the test SKIPs. */
+    if (cap_enter() != 0) return;
 
     /* Socket fd: read, write, poll, shutdown, get/setsockopt.
      * get/setsockopt is needed during handshake (TCP_NODELAY, SO_KEEPALIVE,
