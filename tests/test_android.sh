@@ -388,6 +388,28 @@ check "SOCKS5 input wiped on background" \
 check "MainActivity warns about clipboard on API < 30" \
     "grep -q 'Build.VERSION.SDK_INT < 30' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 
+# Direct connect uses AI_NUMERICHOST (no blocking DNS)
+check "JNI direct connect uses AI_NUMERICHOST (no DNS)" \
+    "grep -q 'AI_NUMERICHOST' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "Java validates numeric IP on direct connect" \
+    "grep -q 'isNumericAddress' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+
+# pendingSas wiped in onPause
+check "pendingSas cleared in onPause" \
+    "grep -A20 'onPause' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'pendingSas = null'"
+
+# Dynamic COPY button has tapjacking protection
+check "Dynamic COPY button has setFilterTouchesWhenObscured" \
+    "grep -q 'setFilterTouchesWhenObscured' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+
+# JNI callback exception checking
+check "JNI has jni_callback_ok exception checker" \
+    "grep -q 'jni_callback_ok' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI checks NewStringUTF(sas) for NULL" \
+    "grep -q 'NewStringUTF(sas) failed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI checks NewStringUTF(message) for NULL" \
+    "grep -q 'NewStringUTF(message) failed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+
 # NativeCallback interface exists
 check "NativeCallback.java interface exists" \
     "test -f '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/NativeCallback.java'"

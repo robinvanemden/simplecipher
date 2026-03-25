@@ -442,6 +442,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     if (sasCodeText != null) sasCodeText.setText("");
     if (chatLog != null) chatLog.setText("");
     if (chatInput != null) chatInput.setText("");
+    pendingSas = null;
     super.onPause();
   }
 

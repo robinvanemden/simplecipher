@@ -237,6 +237,19 @@ static int parse_fingerprint(uint8_t out[8], const char *s) {
 
 /* ---- Session thread ----------------------------------------------------- */
 
+/* Safe JNI callback: call a void method and check for exceptions.
+ * If NewStringUTF failed (returned NULL) or the callback threw,
+ * clear the exception so the native thread doesn't crash on the
+ * next JNI call.  Returns 0 on success, -1 on exception. */
+static int jni_callback_ok(JNIEnv *env) {
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        LOGE("JNI exception in callback — session state may be stale");
+        return -1;
+    }
+    return 0;
+}
+
 static void *session_thread(void *arg) {
     thread_arg_t *ta = (thread_arg_t *)arg;
 
@@ -349,8 +362,9 @@ static void *session_thread(void *arg) {
         memset(&hints, 0, sizeof hints);
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_family   = AF_UNSPEC;
+        hints.ai_flags    = AI_NUMERICHOST; /* no DNS — numeric IPs only */
         if (getaddrinfo(host, port_str, &hints, &res) != 0) {
-            LOGE("getaddrinfo failed for %s:%s", host ? host : "(null)", port_str);
+            LOGE("getaddrinfo failed for %s:%s (numeric IPs only)", host ? host : "(null)", port_str);
         } else {
             for (p = res; p; p = p->ai_next) {
                 fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
@@ -635,8 +649,10 @@ static void *session_thread(void *arg) {
         /* Callback: SAS ready for user verification */
         jstring sas_jstr = (*env)->NewStringUTF(env, sas);
         crypto_wipe(sas, sizeof sas);
+        if (!sas_jstr) { LOGE("NewStringUTF(sas) failed"); goto cleanup_session; }
         (*env)->CallVoidMethod(env, cb, mid_onSasReady, sas_jstr);
         (*env)->DeleteLocalRef(env, sas_jstr);
+        if (jni_callback_ok(env) != 0) goto cleanup_session;
     }
 
     /* ================================================================
@@ -738,8 +754,19 @@ static void *session_thread(void *arg) {
                 sanitize_peer_text(plain, plen);
 
                 jstring text = (*env)->NewStringUTF(env, (char *)plain);
+                if (!text) {
+                    LOGE("NewStringUTF(message) failed");
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(plain, sizeof plain);
+                    break;
+                }
                 (*env)->CallVoidMethod(env, cb, mid_onMessageReceived, text);
                 (*env)->DeleteLocalRef(env, text);
+                if (jni_callback_ok(env) != 0) {
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(plain, sizeof plain);
+                    break;
+                }
 
                 crypto_wipe(frame, sizeof frame);
                 crypto_wipe(plain, sizeof plain);

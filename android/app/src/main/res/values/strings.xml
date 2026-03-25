@@ -4,7 +4,7 @@
     <string name="tagline">Encrypted peer-to-peer chat</string>
     <string name="mode_listen">Listen</string>
     <string name="mode_connect">Connect</string>
-    <string name="hint_host">Host or IP address</string>
+    <string name="hint_host">IP address (e.g. 192.168.1.42)</string>
     <string name="hint_port">Port (default 7777)</string>
     <string name="btn_go">Start</string>
     <string name="footer">No servers. No accounts. End-to-end encrypted.</string>

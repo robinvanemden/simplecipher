@@ -270,6 +270,20 @@ public class MainActivity extends Activity {
           }
 
           String socks5 = socks5Input.getText().toString().trim();
+
+          /* Direct connect (no proxy): require numeric IP address.
+           * Hostnames would cause blocking DNS in the native thread,
+           * which nativeStop() cannot interrupt. With SOCKS5, the
+           * proxy resolves DNS so hostnames (.onion etc.) are fine. */
+          if (isConnect && socks5.isEmpty() && !isNumericAddress(host)) {
+            Toast.makeText(
+                    this,
+                    "Direct connect requires an IP address (not a hostname).\n"
+                        + "For .onion or hostnames, use a SOCKS5 proxy.",
+                    Toast.LENGTH_LONG)
+                .show();
+            return;
+          }
           if (!socks5.isEmpty()) {
             /* Validate host:port format and enforce loopback-only.
              * The SOCKS5 connect uses blocking I/O (not interruptible
@@ -392,7 +406,7 @@ public class MainActivity extends Activity {
       ipText.setLayoutParams(textParams);
       row.addView(ipText);
 
-      /* Copy button */
+      /* Copy button — filterTouchesWhenObscured prevents overlay tapjacking */
       TextView copyBtn = new TextView(this);
       copyBtn.setText("COPY");
       copyBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
@@ -400,6 +414,7 @@ public class MainActivity extends Activity {
       copyBtn.setTypeface(null, android.graphics.Typeface.BOLD);
       copyBtn.setLetterSpacing(0.05f);
       copyBtn.setPadding(dp(12), dp(6), dp(4), dp(6));
+      copyBtn.setFilterTouchesWhenObscured(true);
       copyBtn.setOnClickListener(
           v -> {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -526,5 +541,13 @@ public class MainActivity extends Activity {
     fpPeerStatus.setText(getString(R.string.fp_peer_set, peerFingerprint));
     fpPeerStatus.setTextColor(0xFF4DD0B0);
     fpManualInput.setText(peerFingerprint);
+  }
+
+  /** Check if a string is a numeric IP address (IPv4 or IPv6, no DNS). */
+  private static boolean isNumericAddress(String host) {
+    /* InetAddress.getByName would do DNS — avoid it.
+     * Simple pattern: IPv4 is digits+dots, IPv6 contains colons. */
+    if (host.contains(":")) return true; /* IPv6 */
+    return host.matches("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}");
   }
 }
