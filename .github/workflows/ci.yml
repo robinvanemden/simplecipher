@@ -159,8 +159,10 @@ jobs:
       - name: Check Java code formatting (google-java-format)
         run: |
           GJF_VERSION=1.25.2
+          GJF_SHA256=25157797a0a972c2290b5bc71530c4f7ad646458025e3484412a6e5a9b8c9aa6
           GJF_JAR="google-java-format-${GJF_VERSION}-all-deps.jar"
           curl -sL "https://github.com/google/google-java-format/releases/download/v${GJF_VERSION}/${GJF_JAR}" -o /tmp/gjf.jar
+          echo "${GJF_SHA256}  /tmp/gjf.jar" | sha256sum -c -
           find android -name '*.java' -not -path '*/build/*' | sort | \
             xargs java -jar /tmp/gjf.jar --dry-run --set-exit-if-changed
 
