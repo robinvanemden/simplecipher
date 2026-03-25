@@ -2371,6 +2371,60 @@ static void test_harden_codepath(void) {
     }
   #endif
 
+    /* ---- Functional sandbox tests ----
+     *
+     * Fork a child, enter the sandbox, attempt a blocked operation.
+     * This proves the sandbox actually enforces restrictions, not just
+     * that the code compiles.
+     *
+     * Linux seccomp: socket() triggers SECCOMP_RET_KILL_PROCESS → SIGSYS.
+     * FreeBSD Capsicum: socket() returns -1 with errno == ECAPMODE.
+     *
+     * We use a pipe as a dummy "socket fd" so sandbox_phase1 has a valid
+     * fd to set rights on (needed for Capsicum; ignored by seccomp). */
+  #if defined(__linux__) || defined(__FreeBSD__)
+    {
+        int dummy_fds[2];
+        if (pipe(dummy_fds) == 0) {
+            pid_t pid = fork();
+            if (pid == 0) {
+                /* Child: enter sandbox, try to create a new socket. */
+                close(dummy_fds[0]);
+                sandbox_phase1(dummy_fds[1]);
+                int s = socket(AF_INET, SOCK_STREAM, 0);
+    #if defined(__FreeBSD__)
+                /* Capsicum: socket() in capability mode returns ECAPMODE
+                 * (not ENOTCAPABLE, which is for per-fd rights violations). */
+                if (s == -1 && errno == ECAPMODE)
+                    _exit(42);  /* success: sandbox blocked it */
+                if (s >= 0) close(s);
+                _exit(99);      /* fail: socket() was not blocked */
+    #else
+                /* Linux seccomp: should not reach here — SIGSYS kills us. */
+                if (s >= 0) close(s);
+                _exit(99);      /* fail: socket() was not blocked */
+    #endif
+            } else if (pid > 0) {
+                close(dummy_fds[0]);
+                close(dummy_fds[1]);
+                int status = 0;
+                waitpid(pid, &status, 0);
+    #if defined(__FreeBSD__)
+                TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)",
+                     WIFEXITED(status) && WEXITSTATUS(status) == 42);
+    #else
+                /* Seccomp kills with SIGSYS (signal 31 on most arches). */
+                TEST("seccomp kills process on blocked socket() (SIGSYS)",
+                     WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS);
+    #endif
+            } else {
+                close(dummy_fds[0]);
+                close(dummy_fds[1]);
+            }
+        }
+    }
+  #endif /* __linux__ || __FreeBSD__ */
+
 #else
     /* CIPHER_HARDEN not defined — harden() is a no-op.
      * Just verify the function exists and can be called without crashing. */

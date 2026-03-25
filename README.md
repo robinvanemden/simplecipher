@@ -231,7 +231,7 @@ SimpleCipher encrypts your conversation. The operating system protects everythin
 ## FAQ
 
 **Can someone read my messages?**
-Not if you compare the safety code. The encryption uses the same industry-standard algorithms as Signal and WhatsApp (X25519, XChaCha20-Poly1305). The code has been tested with 695 automated tests, formally verified with CBMC, and the crypto library ([Monocypher](https://monocypher.org/)) has been [professionally audited](https://monocypher.org/quality-assurance/audit). That said, SimpleCipher itself has not been independently audited as a complete system. If your safety depends on this tool, commission a professional audit first.
+Not if you compare the safety code. The encryption uses the same industry-standard algorithms as Signal and WhatsApp (X25519, XChaCha20-Poly1305). The code has been tested with 696 automated tests, formally verified with CBMC, and the crypto library ([Monocypher](https://monocypher.org/)) has been [professionally audited](https://monocypher.org/quality-assurance/audit). That said, SimpleCipher itself has not been independently audited as a complete system. If your safety depends on this tool, commission a professional audit first.
 
 **Can someone intercept the connection?**
 They can try, but the safety code comparison stops them. Both sides lock in their keys before revealing them, then derive a code that must match. If it matches, no one is in the middle. If you skip the comparison, all bets are off.
