@@ -343,7 +343,13 @@ jobs:
               tests/$target.c src/platform.c src/crypto.c src/protocol.c \
               src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
               src/cli.c src/cli_posix.c lib/monocypher.c
-            timeout 30 build/$target -max_total_time=25 || true
+            timeout 30 build/$target -max_total_time=25; rc=$?
+            # timeout returns 124 on normal time expiry — that's expected.
+            # Any other non-zero exit means the fuzzer found a crash.
+            if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ]; then
+              echo "FUZZ CRASH in $target (exit code $rc)"
+              exit 1
+            fi
           done
 
   release:

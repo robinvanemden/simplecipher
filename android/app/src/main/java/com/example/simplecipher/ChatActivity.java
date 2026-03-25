@@ -438,6 +438,10 @@ public class ChatActivity extends Activity implements NativeCallback {
      * block new plaintext from arriving while paused (the paused
      * flag above), and rely on FLAG_SECURE to prevent screenshots.
      * For stronger guarantees, use the desktop CLI/TUI build. */
+    if (inAppKeyboard != null) {
+      inAppKeyboard.setVisibility(android.view.View.GONE);
+      inAppKeyboard.setTarget(null);
+    }
     if (statusText != null) statusText.setText("");
     if (sasInput != null) sasInput.setText("");
     if (sasCodeText != null) sasCodeText.setText("");
