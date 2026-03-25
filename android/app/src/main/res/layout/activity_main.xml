@@ -119,6 +119,23 @@
         android:textColorHint="@color/text_hint"
         android:background="@drawable/bg_input"
         android:contentDescription="Port number"
+        android:layout_marginBottom="12dp" />
+
+    <!-- SOCKS5 proxy (optional, for Tor via Orbot) -->
+    <EditText
+        android:id="@+id/socks5Input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="SOCKS5 proxy (e.g. 127.0.0.1:9050)"
+        android:inputType="textUri"
+        android:importantForAutofill="no"
+        android:maxLength="64"
+        android:textSize="15sp"
+        android:textColor="@color/text_primary"
+        android:textColorHint="@color/text_hint"
+        android:background="@drawable/bg_input"
+        android:contentDescription="SOCKS5 proxy address"
+        android:visibility="gone"
         android:layout_marginBottom="28dp" />
 
     <!-- Fingerprint verification (collapsible, collapsed by default) -->

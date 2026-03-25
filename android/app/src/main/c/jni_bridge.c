@@ -155,12 +155,14 @@ static int      g_peer_fp_valid = 0;
 /* Everything the session thread needs, passed as pthread arg.
  * The thread copies what it needs and frees the struct immediately. */
 typedef struct {
-    int       mode;       /* 0 = listen, 1 = connect                    */
-    char     *host;       /* strdup'd host string (connect only), or NULL */
+    int       mode;         /* 0 = listen, 1 = connect                    */
+    char     *host;         /* strdup'd host string (connect only), or NULL */
     int       port;
-    int       pipe_rd;    /* read end of command pipe                    */
-    int       gen;        /* session generation (for stale-thread guard)  */
-    jobject   callback;   /* JNI global ref to NativeCallback            */
+    char     *socks5_host;  /* SOCKS5 proxy host (e.g. "127.0.0.1"), or NULL */
+    char     *socks5_port;  /* SOCKS5 proxy port (e.g. "9050"), or NULL      */
+    int       pipe_rd;      /* read end of command pipe                    */
+    int       gen;          /* session generation (for stale-thread guard)  */
+    jobject   callback;     /* JNI global ref to NativeCallback            */
 
     /* Pre-resolved JNI method IDs — looked up on the calling thread
      * so the native thread doesn't need to do class lookups. */
@@ -240,10 +242,12 @@ static void *session_thread(void *arg) {
 
     /* Copy everything we need from the arg struct, then free it.
      * This avoids a dangling pointer if the caller's stack unwinds. */
-    int       mode    = ta->mode;
-    char     *host    = ta->host;       /* we own this (strdup'd) */
-    int       port    = ta->port;
-    int       pipe_rd = ta->pipe_rd;
+    int       mode        = ta->mode;
+    char     *host        = ta->host;        /* we own this (strdup'd) */
+    int       port        = ta->port;
+    char     *socks5_host = ta->socks5_host; /* strdup'd or NULL */
+    char     *socks5_port = ta->socks5_port; /* strdup'd or NULL */
+    int       pipe_rd     = ta->pipe_rd;
     int       my_gen  = ta->gen;        /* session generation at birth */
     jobject   cb      = ta->callback;   /* global ref — we delete on exit */
 
@@ -291,6 +295,8 @@ static void *session_thread(void *arg) {
         crypto_wipe(prekey_pub,  sizeof prekey_pub);
         crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
         free(host);
+        free(socks5_host);
+        free(socks5_port);
         close(pipe_rd);
         return NULL;
     }
@@ -310,8 +316,27 @@ static void *session_thread(void *arg) {
     char port_str[6];
     snprintf(port_str, sizeof port_str, "%d", port);
 
-    if (mode == 1) {
-        /* Connect mode — interruptible via nativeStop().
+    if (mode == 1 && socks5_host) {
+        /* SOCKS5 proxy connect (e.g. Tor via Orbot on 127.0.0.1:9050).
+         *
+         * The TCP connect to the proxy is to localhost, so it completes
+         * instantly — no need for the non-blocking + poll() machinery.
+         * The SOCKS5 negotiation is a few round-trips over localhost.
+         * connect_socket_socks5() handles the full handshake. */
+        LOGI("connecting via SOCKS5 %s:%s to %s:%s",
+             socks5_host, socks5_port, host ? host : "(null)", port_str);
+
+        fd = connect_socket_socks5(socks5_host, socks5_port, host, port_str);
+        if (fd == INVALID_SOCK) {
+            LOGE("SOCKS5 connect failed");
+            jstring reason = (*env)->NewStringUTF(env, "SOCKS5 proxy connect failed");
+            (*env)->CallVoidMethod(env, cb, mid_onConnectionFailed, reason);
+            goto cleanup;
+        }
+        set_sock_opts(fd);
+        we_init = 1;
+    } else if (mode == 1) {
+        /* Direct connect mode — interruptible via nativeStop().
          *
          * We can't use connect_socket() directly because connect() can
          * block for up to 127 seconds (kernel SYN timeout) with no way
@@ -464,6 +489,10 @@ static void *session_thread(void *arg) {
 
     free(host);
     host = NULL;
+    free(socks5_host);
+    socks5_host = NULL;
+    free(socks5_port);
+    socks5_port = NULL;
 
     if (fd == INVALID_SOCK) {
         LOGE("connection failed");
@@ -909,7 +938,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 JNIEXPORT jint JNICALL
 Java_com_example_simplecipher_ChatActivity_nativeStart(
         JNIEnv *env, jobject thiz, jint mode, jstring host, jint port,
-        jobject callback) {
+        jstring socks5_proxy, jobject callback) {
 
     plat_init();
 
@@ -1012,6 +1041,23 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         (*env)->ReleaseStringUTFChars(env, host, h);
     } else {
         ta->host = NULL;
+    }
+
+    /* Parse SOCKS5 proxy string "host:port" (e.g. "127.0.0.1:9050").
+     * If null or empty, direct connect is used. */
+    ta->socks5_host = NULL;
+    ta->socks5_port = NULL;
+    if (socks5_proxy) {
+        const char *p = (*env)->GetStringUTFChars(env, socks5_proxy, NULL);
+        if (p && p[0]) {
+            const char *colon = strrchr(p, ':');
+            if (colon && colon != p && colon[1]) {
+                size_t hlen = (size_t)(colon - p);
+                ta->socks5_host = strndup(p, hlen);
+                ta->socks5_port = strdup(colon + 1);
+            }
+        }
+        if (p) (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
     }
 
     /* Copy pre-generated key into thread arg, then wipe globals */

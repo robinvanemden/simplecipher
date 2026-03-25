@@ -162,15 +162,18 @@ The native C layer wipes everything it touches. But at the Java-to-native bounda
 
 **For the strongest memory guarantees, use the desktop CLI or TUI.** The Android app is convenient but inherently weaker than the desktop builds due to JVM memory management.
 
-### Android is direct-connect only
+### SOCKS5 / Tor support
 
-The desktop CLI supports SOCKS5 proxies (`--socks5`), which enables Tor for anonymous connections where neither side learns the other's IP address. The Android app does not support SOCKS5 — it connects directly to the peer's IP address over TCP. This means:
+The Android app supports SOCKS5 proxies in connect mode. Enter the proxy address (e.g. `127.0.0.1:9050`) in the "SOCKS5 proxy" field on the connect screen. This enables Tor via [Orbot](https://guardianproject.info/apps/org.torproject.android/) — neither side learns the other's IP address.
 
-- Your IP address is visible to the peer and to network observers
-- You cannot use Tor through the app
-- If anonymity (not just encryption) matters, use the desktop CLI
+**Setup:**
+1. Install Orbot from F-Droid or Google Play
+2. Start Orbot and wait for "Connected"
+3. In SimpleCipher, enter the peer's `.onion` address as the host
+4. Enter `127.0.0.1:9050` as the SOCKS5 proxy
+5. Tap Start
 
-This is a deliberate trade-off: the Android app prioritizes simplicity and auditability. Adding proxy support would increase the attack surface and code complexity. If your threat model requires anonymity, the desktop CLI on Tails is the right tool.
+**Limitation:** SOCKS5 is connect-mode only. To accept incoming connections anonymously on Android, you would need to configure a Tor onion service, which requires root or a separate Tor daemon — use the desktop CLI for this.
 
 ### Android vs desktop security comparison
 

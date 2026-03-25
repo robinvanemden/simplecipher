@@ -41,7 +41,8 @@ public class ChatActivity extends Activity implements NativeCallback {
   }
 
   /* Native methods. */
-  private native int nativeStart(int mode, String host, int port, NativeCallback callback);
+  private native int nativeStart(
+      int mode, String host, int port, String socks5Proxy, NativeCallback callback);
 
   private native boolean nativePostCommand(int cmd, byte[] payload);
 
@@ -158,11 +159,16 @@ public class ChatActivity extends Activity implements NativeCallback {
     String mode = getIntent().getStringExtra("mode");
     String host = getIntent().getStringExtra("host");
     int port = getIntent().getIntExtra("port", 7777);
+    String socks5Proxy = getIntent().getStringExtra("socks5_proxy");
 
     boolean isConnect = "connect".equals(mode);
 
     if (isConnect) {
-      statusText.setText("Connecting to " + host + ":" + port + " ...");
+      if (socks5Proxy != null && !socks5Proxy.isEmpty()) {
+        statusText.setText("Connecting via SOCKS5 to " + host + ":" + port + " ...");
+      } else {
+        statusText.setText("Connecting to " + host + ":" + port + " ...");
+      }
     } else {
       String ips = getLocalIps();
       if (ips.isEmpty()) {
@@ -183,7 +189,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     /* Start the native session thread.
      * mode: 0 = listen, 1 = connect.  Returns immediately. */
     int nativeMode = isConnect ? 1 : 0;
-    int rc = nativeStart(nativeMode, host, port, this);
+    int rc = nativeStart(nativeMode, host, port, socks5Proxy, this);
     if (rc != 0) {
       Toast.makeText(this, "Failed to start session", Toast.LENGTH_LONG).show();
       finish();

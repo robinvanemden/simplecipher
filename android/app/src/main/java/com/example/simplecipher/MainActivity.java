@@ -42,6 +42,7 @@ public class MainActivity extends Activity {
   private TextView connectLabel;
   private EditText hostInput;
   private EditText portInput;
+  private EditText socks5Input;
   private LinearLayout localIpsContainer;
   private LinearLayout fpContent;
   private ImageView fpQrImage;
@@ -67,6 +68,7 @@ public class MainActivity extends Activity {
     connectLabel = findViewById(R.id.connectLabel);
     hostInput = findViewById(R.id.hostInput);
     portInput = findViewById(R.id.portInput);
+    socks5Input = findViewById(R.id.socks5Input);
     localIpsContainer = findViewById(R.id.localIpsContainer);
     Button goButton = findViewById(R.id.goButton);
 
@@ -84,6 +86,7 @@ public class MainActivity extends Activity {
     /* Suppress system keyboard on all EditTexts and show our keyboard instead */
     hostInput.setShowSoftInputOnFocus(false);
     portInput.setShowSoftInputOnFocus(false);
+    socks5Input.setShowSoftInputOnFocus(false);
 
     hostInput.setOnFocusChangeListener(
         (v, hasFocus) -> {
@@ -105,11 +108,22 @@ public class MainActivity extends Activity {
           }
         });
 
-    /* Suppress keyboard learning on all inputs — peer IPs and ports
-     * are sensitive metadata that should not enter IME dictionaries. */
+    socks5Input.setOnFocusChangeListener(
+        (v, hasFocus) -> {
+          if (hasFocus) {
+            hideSystemKeyboard(socks5Input);
+            inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
+            inAppKeyboard.setTarget(socks5Input);
+            inAppKeyboard.setVisibility(View.VISIBLE);
+          }
+        });
+
+    /* Suppress keyboard learning on all inputs — peer IPs, ports, and
+     * proxy addresses are sensitive metadata that should not enter IME dictionaries. */
     int noLearn = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
     hostInput.setImeOptions(hostInput.getImeOptions() | noLearn);
     portInput.setImeOptions(portInput.getImeOptions() | noLearn);
+    socks5Input.setImeOptions(socks5Input.getImeOptions() | noLearn);
 
     showLocalIps();
 
@@ -204,6 +218,7 @@ public class MainActivity extends Activity {
           boolean isConnect = checkedId == R.id.radioConnect;
           connectLabel.setVisibility(isConnect ? View.VISIBLE : View.GONE);
           hostInput.setVisibility(isConnect ? View.VISIBLE : View.GONE);
+          socks5Input.setVisibility(isConnect ? View.VISIBLE : View.GONE);
           localIpsContainer.setVisibility(isConnect ? View.GONE : View.VISIBLE);
         });
 
@@ -232,10 +247,13 @@ public class MainActivity extends Activity {
             }
           }
 
+          String socks5 = socks5Input.getText().toString().trim();
+
           Intent intent = new Intent(this, ChatActivity.class);
           intent.putExtra("mode", isConnect ? "connect" : "listen");
           intent.putExtra("host", host);
           intent.putExtra("port", port);
+          if (!socks5.isEmpty()) intent.putExtra("socks5_proxy", socks5);
           startActivity(intent);
         });
   }
@@ -255,6 +273,7 @@ public class MainActivity extends Activity {
     if (fpQrImage != null) fpQrImage.setImageBitmap(null);
     if (fpSelfText != null) fpSelfText.setText("");
     if (fpManualInput != null) fpManualInput.setText("");
+    if (socks5Input != null) socks5Input.setText("");
     if (fpPeerStatus != null) fpPeerStatus.setText(R.string.fp_peer_none);
     fpExpanded = false;
     if (fpContent != null) fpContent.setVisibility(View.GONE);
