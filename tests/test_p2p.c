@@ -2385,19 +2385,24 @@ static void test_harden_codepath(void) {
      *
      * We use a pipe as a dummy "socket fd" so sandbox_phase1 has a valid
      * fd to set rights on (needed for Capsicum; ignored by seccomp). */
-  #if defined(__linux__) || defined(__FreeBSD__)
+  #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__)
     {
         int dummy_fds[2];
         if (pipe(dummy_fds) == 0) {
             pid_t pid = fork();
             if (pid == 0) {
-                /* Child: enter sandbox, try to create a new socket. */
+                /* Child: enter sandbox, try to create a new socket.
+                 *
+                 * Each platform kills or blocks socket() differently:
+                 *   Linux seccomp:      SIGSYS (kernel kills process)
+                 *   FreeBSD Capsicum:   socket() returns -1, errno = ECAPMODE
+                 *   OpenBSD pledge:     SIGABRT (kernel kills process)
+                 */
                 close(dummy_fds[0]);
     #if defined(__FreeBSD__)
                 /* Call cap_enter() directly instead of sandbox_phase1()
                  * to avoid cap_rights_limit() on stdin/stdout which may
-                 * not exist in the forked test child.  cap_enter() alone
-                 * is sufficient to block socket().
+                 * not exist in the forked test child.
                  *
                  * Exit codes for diagnosis:
                  *   42 = success (socket blocked with ECAPMODE)
@@ -2405,16 +2410,20 @@ static void test_harden_codepath(void) {
                  *   80 = socket() failed but NOT with ECAPMODE
                  *   81 = socket() succeeded (sandbox not enforced)  */
                 if (cap_enter() != 0)
-                    _exit(77);  /* cap_enter failed — errno in parent log */
+                    _exit(77);
                 int s = socket(AF_INET, SOCK_STREAM, 0);
                 if (s == -1 && errno == ECAPMODE)
                     _exit(42);  /* success: sandbox blocked it */
-                int saved_errno = errno;
                 if (s >= 0) { close(s); _exit(81); }
-                /* socket failed with unexpected errno — encode it */
-                _exit(80 + (saved_errno > 120 ? 0 : 0));
-                /* ^ can't pass errno via exit code cleanly, but 80
-                 * tells the parent it was a non-ECAPMODE error */
+                _exit(80);      /* socket failed with unexpected errno */
+    #elif defined(__OpenBSD__)
+                /* pledge("stdio") then socket() → kernel sends SIGABRT.
+                 * If we reach _exit, pledge didn't enforce. */
+                if (pledge("stdio", NULL) != 0)
+                    _exit(77);  /* pledge() failed — SKIP */
+                (void)socket(AF_INET, SOCK_STREAM, 0);
+                /* Should not reach here — pledge kills with SIGABRT */
+                _exit(81);      /* pledge not enforced */
     #else
                 sandbox_phase1(dummy_fds[1]);
                 int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -2433,7 +2442,7 @@ static void test_harden_codepath(void) {
                     if (code == 42) {
                         TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 1);
                     } else if (code == 77) {
-                        printf("  SKIP: cap_enter() failed (errno=%d, jail/VM?)\n", code);
+                        printf("  SKIP: cap_enter() failed (jail/VM restriction?)\n");
                     } else if (code == 81) {
                         printf("  SKIP: cap_enter() succeeded but kernel not enforcing "
                                "(Capsicum may be compiled out or VM restriction)\n");
@@ -2451,6 +2460,19 @@ static void test_harden_codepath(void) {
                     printf("  DIAG: child stopped/unknown status 0x%x\n", status);
                     TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
                 }
+    #elif defined(__OpenBSD__)
+                if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) {
+                    TEST("pledge kills process on blocked socket() (SIGABRT)", 1);
+                } else if (WIFEXITED(status) && WEXITSTATUS(status) == 77) {
+                    printf("  SKIP: pledge() call failed\n");
+                } else if (WIFEXITED(status) && WEXITSTATUS(status) == 81) {
+                    printf("  SKIP: pledge() succeeded but socket() was not blocked\n");
+                } else {
+                    printf("  DIAG: child status 0x%x (exited=%d sig=%d)\n",
+                           status, WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+                           WIFSIGNALED(status) ? WTERMSIG(status) : -1);
+                    TEST("pledge kills process on blocked socket() (SIGABRT)", 0);
+                }
     #else
                 /* Seccomp kills with SIGSYS (signal 31 on most arches). */
                 TEST("seccomp kills process on blocked socket() (SIGSYS)",
@@ -2462,7 +2484,7 @@ static void test_harden_codepath(void) {
             }
         }
     }
-  #endif /* __linux__ || __FreeBSD__ */
+  #endif /* __linux__ || __FreeBSD__ || __OpenBSD__ */
 
 #else
     /* CIPHER_HARDEN not defined — harden() is a no-op.
