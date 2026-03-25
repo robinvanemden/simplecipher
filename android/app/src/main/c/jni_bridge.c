@@ -1006,7 +1006,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
             close(pipefd[0]);
             close(pipefd[1]);
             g_pipe_wr = -1;
-            return;
+            return -1;
         }
         ta->host = strdup(h);
         (*env)->ReleaseStringUTFChars(env, host, h);
