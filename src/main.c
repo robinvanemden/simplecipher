@@ -104,15 +104,15 @@ static void usage(const char *prog){
  * one TCP socket, one console.  The only difference is how each OS exposes
  * waitable input events. */
 int main(int argc, char *argv[]){
-    int          we_init;
-    const char  *host = nullptr;
-    const char  *port = "7777";
-    uint8_t      self_priv[KEY], self_pub[KEY], peer_pub[KEY];
-    uint8_t      commit_self[KEY], commit_peer[KEY];
-    uint8_t      sas_key[KEY];
-    char         sas[20];
-    char         typed_sas[16] = {0}; /* user types the full SAS code to confirm */
-    int          rc = 1;
+    int we_init;
+    const char *host = nullptr;
+    const char *port = "7777";
+    uint8_t self_priv[KEY], self_pub[KEY], peer_pub[KEY];
+    uint8_t commit_self[KEY], commit_peer[KEY];
+    uint8_t sas_key[KEY];
+    char sas[20];
+    char typed_sas[16] = {0};  /* user types the full SAS code to confirm */
+    int rc = 1;
     /* Windows console handle (h_in) and Winsock event (net_ev) are now
      * managed internally by cli_chat_loop() and tui_chat_loop(). */
 
