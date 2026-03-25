@@ -826,14 +826,16 @@ static void test_bidirectional_chains(void) {
     const char *msg = "chain divergence";
 
     /* Send 5 messages initiator -> responder */
+    int fwd_ok = 1;
     for (int i = 0; i < 5; i++) {
-        TEST("fwd build",
-             frame_build(&init_s, (const uint8_t *)msg,
-                         (uint16_t)strlen(msg), frame, next) == 0);
+        if (frame_build(&init_s, (const uint8_t *)msg,
+                        (uint16_t)strlen(msg), frame, next) != 0)
+            fwd_ok = 0;
         memcpy(init_s.tx, next, KEY);
         init_s.tx_seq++;
-        TEST("fwd open", frame_open(&resp_s, frame, plain, &plen) == 0);
+        if (frame_open(&resp_s, frame, plain, &plen) != 0) fwd_ok = 0;
     }
+    TEST("5 forward messages build+open correctly", fwd_ok);
 
     /* Initiator's tx chain has advanced but rx hasn't */
     /* Send a message responder -> initiator to verify rx chain still works */
@@ -3640,12 +3642,12 @@ static void test_chain_step_aliasing_safety(void) {
     uint8_t mk[KEY], next[KEY];
     uint8_t mk_0[KEY], mk_50[KEY], mk_99[KEY];
 
+    int aliasing_ok = 1;
     for (int i = 0; i < 100; i++) {
         chain_step(chain, mk, next);
 
         /* mk and next must always differ */
-        TEST("chain_step iteration: mk != next",
-             crypto_verify32(mk, next) != 0);
+        if (crypto_verify32(mk, next) == 0) aliasing_ok = 0;
 
         /* Save samples at specific indices */
         if (i == 0)  memcpy(mk_0,  mk, KEY);
@@ -3655,6 +3657,7 @@ static void test_chain_step_aliasing_safety(void) {
         /* Feed next back as chain input */
         memcpy(chain, next, KEY);
     }
+    TEST("chain_step: mk != next over 100 iterations", aliasing_ok);
 
     /* Chain after 100 steps differs from original */
     TEST("chain after 100 steps differs from original",
@@ -3995,7 +3998,7 @@ static void test_fingerprint_roundtrip(void) {
 
     /* Parse the formatted fingerprint back to raw bytes */
     uint8_t parsed[8];
-    int bi = 0;
+    int bi = 0, hex_ok = 1;
     for (int i = 0; fp[i] && bi < 8; i++) {
         char c = fp[i];
         if (c == '-') continue;
@@ -4005,9 +4008,10 @@ static void test_fingerprint_roundtrip(void) {
         c = fp[i];
         int lo = (c >= '0' && c <= '9') ? c - '0' :
                  (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
-        TEST("fingerprint hex digits valid", hi >= 0 && lo >= 0);
+        if (hi < 0 || lo < 0) hex_ok = 0;
         parsed[bi++] = (uint8_t)((hi << 4) | lo);
     }
+    TEST("fingerprint hex digits all valid", hex_ok);
     TEST("fingerprint parses to 8 bytes", bi == 8);
 
     /* Recompute hash and compare first 8 bytes */
