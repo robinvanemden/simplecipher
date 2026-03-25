@@ -301,8 +301,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Install clang-19
-        run: sudo apt-get install -y --no-install-recommends clang-19
+      - name: Install clang-19 with sanitizer runtimes
+        run: sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev
       - name: Build and run under ASan + UBSan
         run: |
           mkdir -p build
@@ -333,8 +333,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Install clang-19
-        run: sudo apt-get install -y --no-install-recommends clang-19
+      - name: Install clang-19 with sanitizer and fuzzer runtimes
+        run: sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev
       - name: Fuzz smoke test (30s per target)
         run: |
           mkdir -p build
