@@ -43,6 +43,11 @@ void set_sock_opts(socket_t fd);
  * Returns the connected socket, or INVALID_SOCK on failure. */
 [[nodiscard]] socket_t connect_socket(const char *host, const char *port);
 
+/* Connect to a numeric IP:port only (AI_NUMERICHOST) — no DNS.
+ * Use for direct connect on Android and desktop to prevent
+ * metadata leakage to the local resolver. */
+[[nodiscard]] socket_t connect_socket_numeric(const char *host, const char *port);
+
 /* Bind to port, accept exactly one connection, close the listener.
  * One peer only -- this is not a server. */
 [[nodiscard]] socket_t listen_socket(const char *port);

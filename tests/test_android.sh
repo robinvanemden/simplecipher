@@ -488,8 +488,12 @@ check "data_extraction_rules.xml exists" \
     "test -f '$REPO_ROOT/android/app/src/main/res/xml/data_extraction_rules.xml'"
 
 # Desktop numeric IP check (DNS leak prevention)
-check "Desktop direct connect refuses hostnames (numeric IP check)" \
-    "grep -q 'numeric' '$REPO_ROOT/src/main.c' && grep -q 'Direct connect requires' '$REPO_ROOT/src/main.c'"
+check "Desktop direct connect uses connect_socket_numeric (AI_NUMERICHOST)" \
+    "grep -q 'connect_socket_numeric' '$REPO_ROOT/src/main.c'"
+check "connect_socket_numeric uses AI_NUMERICHOST" \
+    "grep -q 'AI_NUMERICHOST' '$REPO_ROOT/src/network.c'"
+check "localIpsContainer cleared in onStop" \
+    "grep -A25 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java' | grep -q 'localIpsContainer.*removeAllViews'"
 
 # Host/port wiped on background
 check "hostInput cleared in onStop" \

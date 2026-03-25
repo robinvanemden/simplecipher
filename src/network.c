@@ -362,14 +362,14 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     return fd;
 }
 
-/* Connect to host:port, trying all addresses getaddrinfo returns.
- * Returns the connected socket, or INVALID_SOCK on failure. */
-[[nodiscard]] socket_t connect_socket(const char *host, const char *port) {
+/* Internal: connect with configurable getaddrinfo flags. */
+static socket_t connect_socket_flags(const char *host, const char *port, int ai_flags) {
     struct addrinfo hints, *res, *p;
     socket_t        fd = INVALID_SOCK;
     memset(&hints, 0, sizeof hints);
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_family   = AF_UNSPEC;
+    hints.ai_flags    = ai_flags;
     if (getaddrinfo(host, port, &hints, &res) != 0) return INVALID_SOCK;
     for (p = res; p; p = p->ai_next) {
         fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
@@ -390,6 +390,17 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
 #endif
     if (fd != INVALID_SOCK) set_sock_opts(fd);
     return fd;
+}
+
+/* Connect to host:port — allows DNS resolution (for SOCKS5 proxy hosts). */
+[[nodiscard]] socket_t connect_socket(const char *host, const char *port) {
+    return connect_socket_flags(host, port, 0);
+}
+
+/* Connect to a numeric IP:port only — no DNS resolution.
+ * Prevents metadata leakage to the local resolver. */
+[[nodiscard]] socket_t connect_socket_numeric(const char *host, const char *port) {
+    return connect_socket_flags(host, port, AI_NUMERICHOST);
 }
 
 /* Bind to port, accept exactly one connection, close the listener.

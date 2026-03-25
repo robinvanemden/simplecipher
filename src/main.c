@@ -122,6 +122,8 @@ int main(int argc, char *argv[]) {
     const char *socks5_host      = nullptr;
     const char *socks5_port      = nullptr;
     const char *peer_fp_expected = nullptr;
+    static char s5host[256];
+    static char s5port[8];
 
     /* Parse leading flags (--tui, --socks5, --peer-fingerprint) and shift
      * argv so the positional args (listen/connect, host, port) remain.
@@ -218,8 +220,6 @@ int main(int argc, char *argv[]) {
      * destinations (e.g. .onion addresses through --socks5). */
     static char prompt_host[256];
     static char prompt_port[8];
-    static char s5host[256];
-    static char s5port[8];
 
     if (we_init && argc < 3) {
         printf("  Host: ");
@@ -330,7 +330,7 @@ int main(int argc, char *argv[]) {
                                 "  Use --socks5 for hostnames (e.g. .onion addresses).\n");
                 goto out;
             }
-            g_fd = connect_socket(host, port);
+            g_fd = connect_socket_numeric(host, port);
         }
         if (g_fd == INVALID_SOCK) {
             fprintf(stderr,

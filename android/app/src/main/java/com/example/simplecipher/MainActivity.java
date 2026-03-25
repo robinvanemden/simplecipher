@@ -333,6 +333,7 @@ public class MainActivity extends Activity {
     peerFingerprint = null;
     if (hostInput != null) hostInput.setText("");
     if (portInput != null) portInput.setText("");
+    if (localIpsContainer != null) localIpsContainer.removeAllViews();
     if (fpQrImage != null) fpQrImage.setImageBitmap(null);
     if (fpSelfText != null) fpSelfText.setText("");
     if (fpManualInput != null) fpManualInput.setText("");
