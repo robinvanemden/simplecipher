@@ -27,6 +27,7 @@ jobs:
             tests/test_p2p.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
             src/cli.c src/cli_posix.c lib/monocypher.c
+          ulimit -l unlimited
           build/native/test_p2p_harden
 
   test-tui:
@@ -495,6 +496,7 @@ jobs:
             echo '=== FreeBSD' \$(uname -sr) '==='
             gmake CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG' LDFLAGS='-s' clean simplecipher
             gmake CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' tests/test_p2p
+            ulimit -l unlimited
             ./tests/test_p2p
             echo '=== Smoke test ==='
             ./simplecipher listen 19799 &
@@ -545,6 +547,7 @@ jobs:
             echo '=== OpenBSD' \$(uname -sr) '==='
             gmake CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG' LDFLAGS='-s' clean simplecipher
             gmake CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' tests/test_p2p
+            ulimit -l unlimited
             ./tests/test_p2p
             echo '=== Smoke test ==='
             ./simplecipher listen 19799 &
