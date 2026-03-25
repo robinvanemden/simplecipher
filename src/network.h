@@ -74,7 +74,7 @@ int get_local_ips(char *buf, size_t buf_sz);
 /* ---- SOCKS5 helpers (pure, testable) ------------------------------------ */
 
 /* Maximum SOCKS5 CONNECT request size: 4 header + 1 len + 255 host + 2 port */
-static constexpr int SOCKS5_REQ_MAX = 262;
+enum { SOCKS5_REQ_MAX = 262 };
 
 /* Build a SOCKS5 CONNECT request.  Returns request length, or 0 on invalid
  * input (null pointers, empty host, host > 255 bytes, port out of range).

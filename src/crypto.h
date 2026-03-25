@@ -30,16 +30,15 @@
 /* =========================================================================
  * CONSTANTS
  *
- * All sizes in one place.  constexpr gives them proper types, scopes
- * them to the compilation unit, and allows use in static_assert.
+ * All sizes in one place.  enum values are constant expressions in all C
+ * standards, so they work in array sizes, static_assert, and case labels
+ * on every compiler (including Clang 16 which lacks C23 constexpr).
  * ========================================================================= */
-static constexpr int KEY            = 32;           /* bytes in any key or hash     */
-static constexpr int NONCE_SZ      = 24;           /* XChaCha20 nonce size         */
-static constexpr int MAC_SZ        = 16;           /* Poly1305 MAC (Message
-                                                    * Authentication Code) size.
-                                                    * A MAC is a short checksum
-                                                    * that proves the ciphertext
-                                                    * has not been tampered with. */
+enum { KEY      = 32 };  /* bytes in any key or hash     */
+enum { NONCE_SZ = 24 };  /* XChaCha20 nonce size         */
+enum { MAC_SZ   = 16 };  /* Poly1305 MAC (Message Authentication Code) size.
+                          * A MAC is a short checksum that proves the ciphertext
+                          * has not been tampered with. */
 
 /* =========================================================================
  * SESSION STATE

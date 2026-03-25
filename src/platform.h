@@ -43,18 +43,13 @@
 #endif
 #endif
 
-/* constexpr is C23.  Clang 16 (OpenBSD 7.7) supports -std=c2x but does not
- * recognize the constexpr keyword.  Fall back to const on older compilers
- * so all headers compile cleanly.  The semantic difference (constexpr =
- * compile-time constant, const = immutable) does not matter here — all
- * uses are simple integer/byte constants. */
-#ifndef __cplusplus
-#if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 202311L
-  #ifndef constexpr
-  #define constexpr const
-  #endif
-#endif
-#endif
+/* constexpr is C23.  GCC 13+ supports it with -std=c2x, but Clang 16
+ * (OpenBSD 7.7) does not.  We cannot #define constexpr to const because
+ * const int is NOT a constant expression in C and cannot size arrays in
+ * structs.  Instead, we use enum for integer constants (always constant
+ * expressions) and static const for uint8_t.  No shim needed — the
+ * headers below use enum/const directly for portability across all
+ * compilers including Clang 16. */
 
 #include <stdio.h>
 #include <stdlib.h>
