@@ -1044,7 +1044,11 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     }
 
     /* Parse SOCKS5 proxy string "host:port" (e.g. "127.0.0.1:9050").
-     * If null or empty, direct connect is used. */
+     * If null or empty, direct connect is used.
+     *
+     * SECURITY: if the user provided a non-empty proxy string but it
+     * fails to parse, we MUST abort — not silently fall through to
+     * direct connect, which would leak the user's IP address. */
     ta->socks5_host = NULL;
     ta->socks5_port = NULL;
     if (socks5_proxy) {
@@ -1055,6 +1059,29 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
                 size_t hlen = (size_t)(colon - p);
                 ta->socks5_host = strndup(p, hlen);
                 ta->socks5_port = strdup(colon + 1);
+                if (!ta->socks5_host || !ta->socks5_port) {
+                    /* OOM on strdup — fail closed, don't fall to direct connect */
+                    LOGE("SOCKS5 strdup failed (OOM)");
+                    free(ta->socks5_host);
+                    free(ta->socks5_port);
+                    (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
+                    free(ta->host);
+                    free(ta);
+                    close(pipefd[0]);
+                    close(pipefd[1]);
+                    g_pipe_wr = -1;
+                    return -1;
+                }
+            } else {
+                /* Non-empty proxy string but bad format — fail closed. */
+                LOGE("SOCKS5 proxy string malformed (expected host:port): %s", p);
+                (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
+                free(ta->host);
+                free(ta);
+                close(pipefd[0]);
+                close(pipefd[1]);
+                g_pipe_wr = -1;
+                return -1;
             }
         }
         if (p) (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);

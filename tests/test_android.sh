@@ -308,6 +308,10 @@ check "JNI nativeStart accepts socks5_proxy parameter" \
     "grep -q 'jstring socks5_proxy' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 check "JNI calls connect_socket_socks5 for proxy connects" \
     "grep -q 'connect_socket_socks5' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "SOCKS5 fails closed on malformed proxy (no silent direct connect)" \
+    "grep -q 'proxy string malformed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "SOCKS5 fails closed on strdup OOM" \
+    "grep -q 'SOCKS5 strdup failed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 check "JNI frees socks5_host on cleanup" \
     "grep -q 'free(socks5_host)' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 check "JNI frees socks5_port on cleanup" \
