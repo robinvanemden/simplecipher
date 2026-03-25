@@ -357,6 +357,22 @@ jobs:
             release/simplecipher-minimal.apk
             release/simplecipher-full.apk
 
+      - name: Sign release artifacts (cosign keyless)
+        run: |
+          # Install cosign
+          COSIGN_VERSION=2.4.3
+          curl -sL "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-amd64" -o /usr/local/bin/cosign
+          chmod +x /usr/local/bin/cosign
+
+          # Sign each artifact — produces .sig detached signatures
+          # Keyless: uses GitHub OIDC identity, logged to Sigstore transparency log
+          cd release
+          for f in simplecipher-linux-x86_64 simplecipher-linux-aarch64 \
+                   simplecipher-win-x86_64.exe simplecipher-win-aarch64.exe \
+                   simplecipher-minimal.apk simplecipher-full.apk SHA256SUMS.txt; do
+            cosign sign-blob --yes "$f" --output-signature "${f}.sig" --output-certificate "${f}.cert"
+          done
+
       - name: Delete existing release (if re-tagging)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -378,6 +394,8 @@ jobs:
             release/simplecipher-minimal.apk \
             release/simplecipher-full.apk \
             release/SHA256SUMS.txt \
+            release/*.sig \
+            release/*.cert \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
             --generate-notes

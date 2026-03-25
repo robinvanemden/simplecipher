@@ -55,7 +55,7 @@ Both type the code to confirm:
 
 **Step 5 — Either side presses Ctrl+C. Keys are wiped. Nothing is stored.**
 
-**Deep dives:** [Protocol and Security](docs/PROTOCOL.md) &#183; [Platform Hardening](docs/HARDENING.md) &#183; [Building and Development](docs/BUILDING.md) &#183; [Android App](docs/ANDROID.md) &#183; [Design Boundaries](docs/DESIGN_BOUNDARIES.md) &#183; [Assurance Map](docs/ASSURANCE_MAP.md) &#183; [Security Policy](SECURITY.md)
+**Deep dives:** [Protocol and Security](docs/PROTOCOL.md) &#183; [Platform Hardening](docs/HARDENING.md) &#183; [Building and Development](docs/BUILDING.md) &#183; [Android App](docs/ANDROID.md) &#183; [High-Risk Deployment](docs/DEPLOYMENT.md) &#183; [Design Boundaries](docs/DESIGN_BOUNDARIES.md) &#183; [Assurance Map](docs/ASSURANCE_MAP.md) &#183; [Security Policy](SECURITY.md)
 
 ## Download
 
@@ -267,7 +267,18 @@ gh attestation verify simplecipher-linux-x86_64 \
   --bundle ./simplecipher-linux-x86_64.sigstore.json
 ```
 
-SHA256 checksums are also provided in `SHA256SUMS.txt` for quick integrity checks, but note that checksums alone do not prove authenticity — they are produced in the same CI job as the binaries.
+Every release artifact also has a **detached cosign signature** (`.sig` + `.cert` files). These are keyless Sigstore signatures tied to the GitHub Actions OIDC identity — no personal key to steal.
+
+```bash
+# Verify a detached signature (requires cosign):
+cosign verify-blob simplecipher-linux-x86_64 \
+  --signature simplecipher-linux-x86_64.sig \
+  --certificate simplecipher-linux-x86_64.cert \
+  --certificate-identity-regexp "https://github.com/robinvanemden/simplecipher" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+```
+
+SHA256 checksums are also provided in `SHA256SUMS.txt` (and signed) for quick integrity checks.
 
 ## License
 
