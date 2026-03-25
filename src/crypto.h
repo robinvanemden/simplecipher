@@ -34,11 +34,11 @@
  * standards, so they work in array sizes, static_assert, and case labels
  * on every compiler (including Clang 16 which lacks C23 constexpr).
  * ========================================================================= */
-enum { KEY      = 32 };  /* bytes in any key or hash     */
-enum { NONCE_SZ = 24 };  /* XChaCha20 nonce size         */
-enum { MAC_SZ   = 16 };  /* Poly1305 MAC (Message Authentication Code) size.
-                          * A MAC is a short checksum that proves the ciphertext
-                          * has not been tampered with. */
+enum {
+    KEY      = 32,  /* bytes in any key or hash                          */
+    NONCE_SZ = 24,  /* XChaCha20 nonce size                              */
+    MAC_SZ   = 16   /* Poly1305 MAC — proves ciphertext is untampered   */
+};
 
 /* =========================================================================
  * SESSION STATE

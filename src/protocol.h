@@ -36,16 +36,18 @@
 
 /* ---- frame constants ---------------------------------------------------- */
 
-enum { FRAME_SZ            = 512 };
-enum { AD_SZ               = 8 };
-enum { CT_SZ               = FRAME_SZ - AD_SZ - MAC_SZ };
-enum { HEADER_SZ           = 1 };     /* flags byte in plaintext slot  */
-enum { MAX_MSG             = CT_SZ - 2 - HEADER_SZ };  /* 485 bytes    */
-enum { MAX_MSG_RATCHET     = MAX_MSG - KEY };           /* 453 bytes    */
-static const uint8_t FLAG_RATCHET    = 0x01;  /* bit 0: ratchet key follows    */
-enum { PROTOCOL_VERSION    = 2 };
-enum { HANDSHAKE_TIMEOUT_S = 30 };
-enum { FRAME_TIMEOUT_S     = 30 };
+enum {
+    FRAME_SZ            = 512,
+    AD_SZ               = 8,
+    CT_SZ               = FRAME_SZ - AD_SZ - MAC_SZ,
+    HEADER_SZ           = 1,           /* flags byte in plaintext slot  */
+    MAX_MSG             = CT_SZ - 2 - HEADER_SZ,    /* 485 bytes       */
+    MAX_MSG_RATCHET     = MAX_MSG - KEY,             /* 453 bytes       */
+    PROTOCOL_VERSION    = 2,
+    HANDSHAKE_TIMEOUT_S = 30,
+    FRAME_TIMEOUT_S     = 30
+};
+static const uint8_t FLAG_RATCHET = 0x01;  /* bit 0: ratchet key follows */
 
 static_assert(FRAME_SZ == AD_SZ + CT_SZ + MAC_SZ);
 static_assert(MAX_MSG == 485);
