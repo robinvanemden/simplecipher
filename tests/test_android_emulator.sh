@@ -169,7 +169,58 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 5. Force-stop and cold re-launch
+# 5. Pending-connect teardown (the hard case)
+#
+# Connect to a non-routable IP so connect() hangs in SYN_SENT.
+# Press Back after 2s — nativeStop() must close the pipe (POLLHUP)
+# and unblock the pending-connect poll() promptly.  If the fix is
+# broken, the session thread hangs for HANDSHAKE_TIMEOUT_S (30s)
+# and the re-launch below would either crash or show stale state.
+# ------------------------------------------------------------------
+echo ""
+echo "=== Pending-connect teardown (POLLHUP test) ==="
+adb shell am force-stop "$PKG"
+sleep 1
+adb logcat -c
+adb shell am start -n "$PKG/$MAIN" -W
+sleep 3
+
+if tap_by_id "${PKG}:id/radioConnect"; then
+    sleep 1
+    # 10.255.255.1 is non-routable — connect() will hang in SYN_SENT
+    adb shell input text "10.255.255.1"
+    sleep 1
+    if tap_by_id "${PKG}:id/goButton"; then
+        # Wait 2s for the connect poll() to be blocking
+        sleep 2
+        # Press Back — triggers onStop → nativeStop() → POLLHUP on pipe
+        adb shell input keyevent KEYCODE_BACK
+        # If teardown is prompt, we return to MainActivity within ~2s.
+        # If broken, the session thread hangs for 30s.
+        BACK_START=$(date +%s)
+        sleep 3
+        check_no_crash "Pending-connect Back: no crash"
+        # Verify we can re-launch cleanly (proves thread exited)
+        adb logcat -c
+        adb shell am start -n "$PKG/$MAIN" -W
+        sleep 2
+        check_no_crash "Re-launch after pending-connect teardown: no crash"
+        BACK_END=$(date +%s)
+        ELAPSED=$((BACK_END - BACK_START))
+        if [ "$ELAPSED" -lt 10 ]; then
+            pass "Pending-connect teardown was prompt (${ELAPSED}s < 10s)"
+        else
+            fail "Pending-connect teardown too slow (${ELAPSED}s >= 10s, expected < 10s)"
+        fi
+    else
+        fail "Could not find Go button for pending-connect test"
+    fi
+else
+    fail "Could not find Connect radio button for pending-connect test"
+fi
+
+# ------------------------------------------------------------------
+# 6. Force-stop and cold re-launch
 # ------------------------------------------------------------------
 echo ""
 echo "=== Cold start test ==="
