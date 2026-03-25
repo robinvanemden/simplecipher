@@ -250,6 +250,22 @@ static int jni_callback_ok(JNIEnv *env) {
     return 0;
 }
 
+/* Convenience: create a Java string, call a void(String) callback,
+ * delete the local ref, and check for exceptions.  If NewStringUTF
+ * returns NULL (OOM) or the callback throws, returns -1.  label is
+ * used only for logging on failure. */
+static int jni_call_str(JNIEnv *env, jobject cb, jmethodID mid,
+                         const char *str, const char *label) {
+    jstring jstr = (*env)->NewStringUTF(env, str);
+    if (!jstr) {
+        LOGE("NewStringUTF(%s) failed", label);
+        return -1;
+    }
+    (*env)->CallVoidMethod(env, cb, mid, jstr);
+    (*env)->DeleteLocalRef(env, jstr);
+    return jni_callback_ok(env);
+}
+
 static void *session_thread(void *arg) {
     thread_arg_t *ta = (thread_arg_t *)arg;
 
@@ -342,8 +358,7 @@ static void *session_thread(void *arg) {
         fd = connect_socket_socks5(socks5_host, socks5_port, host, port_str);
         if (fd == INVALID_SOCK) {
             LOGE("SOCKS5 connect failed");
-            jstring reason = (*env)->NewStringUTF(env, "SOCKS5 proxy connect failed");
-            (*env)->CallVoidMethod(env, cb, mid_onConnectionFailed, reason);
+            jni_call_str(env, cb, mid_onConnectionFailed, "SOCKS5 proxy connect failed", "socks5_fail");
             goto cleanup;
         }
         set_sock_opts(fd);
@@ -401,8 +416,7 @@ static void *session_thread(void *arg) {
                     LOGI("quit received during connect");
                     close_sock(fd); fd = INVALID_SOCK;
                     freeaddrinfo(res);
-                    jstring reason = (*env)->NewStringUTF(env, "Session ended by user");
-                    (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+                    jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_connect");
                     goto cleanup;
                 }
                 if (ret > 0 && (cfds[0].revents & POLLOUT)) {
@@ -445,8 +459,7 @@ static void *session_thread(void *arg) {
         hints.ai_flags    = AI_PASSIVE;
         if (getaddrinfo(NULL, port_str, &hints, &res) != 0) {
             LOGE("getaddrinfo failed for port %s", port_str);
-            jstring reason = (*env)->NewStringUTF(env, "Listen failed (getaddrinfo)");
-            (*env)->CallVoidMethod(env, cb, mid_onConnectionFailed, reason);
+            jni_call_str(env, cb, mid_onConnectionFailed, "Listen failed (getaddrinfo)", "listen_gai");
             goto cleanup;
         }
         for (p = res; p; p = p->ai_next) {
@@ -461,8 +474,7 @@ static void *session_thread(void *arg) {
 
         if (srv == INVALID_SOCK) {
             LOGE("bind/listen failed on port %s", port_str);
-            jstring reason = (*env)->NewStringUTF(env, "Listen failed (port in use?)");
-            (*env)->CallVoidMethod(env, cb, mid_onConnectionFailed, reason);
+            jni_call_str(env, cb, mid_onConnectionFailed, "Listen failed (port in use?)", "listen_bind");
             goto cleanup;
         }
 
@@ -487,8 +499,7 @@ static void *session_thread(void *arg) {
                 LOGI("quit received during listen");
                 close_sock(srv);
                 g_listen_sock = INVALID_SOCK;
-                jstring reason = (*env)->NewStringUTF(env, "Session ended by user");
-                (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+                jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_listen");
                 goto cleanup;
             }
 
@@ -510,14 +521,14 @@ static void *session_thread(void *arg) {
 
     if (fd == INVALID_SOCK) {
         LOGE("connection failed");
-        jstring reason = (*env)->NewStringUTF(env, "Connection failed");
-        (*env)->CallVoidMethod(env, cb, mid_onConnectionFailed, reason);
+        jni_call_str(env, cb, mid_onConnectionFailed, "Connection failed", "conn_fail");
         goto cleanup;
     }
 
     LOGI("connected (we_init=%d)", we_init);
     g_session_sock = fd;  /* publish so nativeStop() can shutdown() */
     (*env)->CallVoidMethod(env, cb, mid_onConnected);
+    jni_callback_ok(env);
 
     /* ================================================================
      * Phase 2: Handshake
@@ -548,15 +559,13 @@ static void *session_thread(void *arg) {
             if (exchange(fd, we_init, &my_ver, 1, &peer_ver, 1) != 0) {
                 LOGE("handshake error (version exchange)");
                 crypto_wipe(commit_self, sizeof commit_self);
-                jstring reason = (*env)->NewStringUTF(env, "Version exchange failed");
-                (*env)->CallVoidMethod(env, cb, mid_onHandshakeFailed, reason);
+                jni_call_str(env, cb, mid_onHandshakeFailed, "Version exchange failed", "ver_xchg");
                 goto cleanup_keys;
             }
             if (peer_ver != PROTOCOL_VERSION) {
                 LOGE("version mismatch: we=%d peer=%d", PROTOCOL_VERSION, (int)peer_ver);
                 crypto_wipe(commit_self, sizeof commit_self);
-                jstring reason = (*env)->NewStringUTF(env, "Protocol version mismatch");
-                (*env)->CallVoidMethod(env, cb, mid_onHandshakeFailed, reason);
+                jni_call_str(env, cb, mid_onHandshakeFailed, "Protocol version mismatch", "ver_mismatch");
                 goto cleanup_keys;
             }
         }
@@ -566,8 +575,7 @@ static void *session_thread(void *arg) {
             LOGE("handshake error (commitments)");
             crypto_wipe(commit_self, sizeof commit_self);
             crypto_wipe(commit_peer, sizeof commit_peer);
-            jstring reason = (*env)->NewStringUTF(env, "Commitment exchange failed");
-            (*env)->CallVoidMethod(env, cb, mid_onHandshakeFailed, reason);
+            jni_call_str(env, cb, mid_onHandshakeFailed, "Commitment exchange failed", "commit_xchg");
             goto cleanup_keys;
         }
 
@@ -576,8 +584,7 @@ static void *session_thread(void *arg) {
             LOGE("handshake error (keys)");
             crypto_wipe(commit_self, sizeof commit_self);
             crypto_wipe(commit_peer, sizeof commit_peer);
-            jstring reason = (*env)->NewStringUTF(env, "Key exchange failed");
-            (*env)->CallVoidMethod(env, cb, mid_onHandshakeFailed, reason);
+            jni_call_str(env, cb, mid_onHandshakeFailed, "Key exchange failed", "key_xchg");
             goto cleanup_keys;
         }
 
@@ -588,8 +595,7 @@ static void *session_thread(void *arg) {
             LOGE("commitment mismatch -- possible MITM");
             crypto_wipe(commit_self, sizeof commit_self);
             crypto_wipe(commit_peer, sizeof commit_peer);
-            jstring reason = (*env)->NewStringUTF(env, "Commitment mismatch (possible MITM)");
-            (*env)->CallVoidMethod(env, cb, mid_onHandshakeFailed, reason);
+            jni_call_str(env, cb, mid_onHandshakeFailed, "Commitment mismatch (possible MITM)", "commit_verify");
             goto cleanup_keys;
         }
 
@@ -612,8 +618,7 @@ static void *session_thread(void *arg) {
                     LOGE("peer fingerprint mismatch");
                     crypto_wipe(peer_hash, sizeof peer_hash);
                     crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
-                    jstring reason = (*env)->NewStringUTF(env, "Peer fingerprint mismatch");
-                    (*env)->CallVoidMethod(env, cb, mid_onHandshakeFailed, reason);
+                    jni_call_str(env, cb, mid_onHandshakeFailed, "Peer fingerprint mismatch", "fp_mismatch");
                     goto cleanup_keys;
                 }
                 fp_matched = 1;
@@ -621,9 +626,11 @@ static void *session_thread(void *arg) {
             }
 
             jstring fp_jstr = (*env)->NewStringUTF(env, peer_fp_str);
+            if (!fp_jstr) { LOGE("NewStringUTF(fp) failed"); crypto_wipe(peer_hash, sizeof peer_hash); crypto_wipe(peer_fp_str, sizeof peer_fp_str); goto cleanup_keys; }
             jboolean verified = fp_matched ? JNI_TRUE : JNI_FALSE;
             (*env)->CallVoidMethod(env, cb, mid_onPeerFingerprintReady, fp_jstr, verified);
             (*env)->DeleteLocalRef(env, fp_jstr);
+            jni_callback_ok(env);
             crypto_wipe(peer_hash, sizeof peer_hash);
             crypto_wipe(peer_fp_str, sizeof peer_fp_str);
         }
@@ -633,8 +640,7 @@ static void *session_thread(void *arg) {
                          sas_key) != 0) {
             LOGE("key agreement failed (bad peer key)");
             crypto_wipe(sas_key, sizeof sas_key);
-            jstring reason = (*env)->NewStringUTF(env, "Key agreement failed");
-            (*env)->CallVoidMethod(env, cb, mid_onHandshakeFailed, reason);
+            jni_call_str(env, cb, mid_onHandshakeFailed, "Key agreement failed", "key_agree");
             goto cleanup_keys;
         }
 
@@ -667,22 +673,19 @@ static void *session_thread(void *arg) {
         uint8_t hdr[3];
         if (pipe_read_exact(pipe_rd, hdr, 3) != 0) {
             LOGE("pipe read failed waiting for SAS confirm");
-            jstring reason = (*env)->NewStringUTF(env, "Internal error");
-            (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+            jni_call_str(env, cb, mid_onDisconnected, "Internal error", "sas_pipe");
             goto cleanup_session;
         }
 
         uint8_t cmd = hdr[0];
         if (cmd == CMD_QUIT) {
             LOGI("quit received during SAS wait");
-            jstring reason = (*env)->NewStringUTF(env, "Session ended by user");
-            (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+            jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_sas");
             goto cleanup_session;
         }
         if (cmd != CMD_CONFIRM_SAS) {
             LOGE("unexpected command 0x%02x during SAS wait", cmd);
-            jstring reason = (*env)->NewStringUTF(env, "Unexpected command");
-            (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
+            jni_call_str(env, cb, mid_onDisconnected, "Unexpected command", "sas_bad_cmd");
             goto cleanup_session;
         }
 
@@ -734,9 +737,7 @@ static void *session_thread(void *arg) {
                 if (read_exact(fd, frame, FRAME_SZ) != 0) {
                     LOGI("peer disconnected (read_exact failed)");
                     crypto_wipe(frame, sizeof frame);
-                    jstring reason = (*env)->NewStringUTF(env, "Peer disconnected");
-                    (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
-                    (*env)->DeleteLocalRef(env, reason);
+                    jni_call_str(env, cb, mid_onDisconnected, "Peer disconnected", "peer_dc");
                     break;
                 }
 
@@ -744,9 +745,7 @@ static void *session_thread(void *arg) {
                     LOGE("frame_open failed (auth or sequence error)");
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(plain, sizeof plain);
-                    jstring reason = (*env)->NewStringUTF(env, "Decryption failed");
-                    (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
-                    (*env)->DeleteLocalRef(env, reason);
+                    jni_call_str(env, cb, mid_onDisconnected, "Decryption failed", "decrypt_fail");
                     break;
                 }
 
@@ -798,9 +797,7 @@ static void *session_thread(void *arg) {
                             plen -= (uint16_t)chunk;
                         }
                     }
-                    jstring reason = (*env)->NewStringUTF(env, "Session ended");
-                    (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
-                    (*env)->DeleteLocalRef(env, reason);
+                    jni_call_str(env, cb, mid_onDisconnected, "Session ended", "quit_cmd");
                     running = 0;
 
                 } else if (cmd == CMD_SEND) {
@@ -817,6 +814,7 @@ static void *session_thread(void *arg) {
                             remaining -= (uint16_t)chunk;
                         }
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
+                        jni_callback_ok(env);
                         continue;
                     }
 
@@ -835,6 +833,7 @@ static void *session_thread(void *arg) {
                         crypto_wipe(next_tx, sizeof next_tx);
                         crypto_wipe(msg_buf, plen);
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
+                        jni_callback_ok(env);
                         continue;
                     }
 
@@ -844,9 +843,8 @@ static void *session_thread(void *arg) {
                         crypto_wipe(next_tx, sizeof next_tx);
                         crypto_wipe(msg_buf, plen);
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        jstring reason = (*env)->NewStringUTF(env, "Send failed (connection lost)");
-                        (*env)->CallVoidMethod(env, cb, mid_onDisconnected, reason);
-                        (*env)->DeleteLocalRef(env, reason);
+                        jni_callback_ok(env);
+                        jni_call_str(env, cb, mid_onDisconnected, "Send failed (connection lost)", "send_fail");
                         running = 0;
                         continue;
                     }
@@ -860,6 +858,7 @@ static void *session_thread(void *arg) {
                     crypto_wipe(msg_buf, plen);
 
                     (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)1);
+                    jni_callback_ok(env);
 
                 } else {
                     LOGE("unknown command 0x%02x, draining %d bytes", cmd, (int)plen);

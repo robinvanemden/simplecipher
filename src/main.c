@@ -133,9 +133,7 @@ int main(int argc, char *argv[]) {
             argc--;
         } else if (strcmp(argv[1], "--socks5") == 0 && argc >= 3) {
             /* --socks5 host:port — split into host and port components. */
-            const char *arg = argv[2];
-            static char s5host[256];
-            static char s5port[8];
+            const char *arg   = argv[2];
             const char *colon = strrchr(arg, ':');
             if (!colon || colon == arg || !colon[1]) {
                 fprintf(stderr, "  --socks5 requires host:port format\n");
@@ -220,6 +218,8 @@ int main(int argc, char *argv[]) {
      * destinations (e.g. .onion addresses through --socks5). */
     static char prompt_host[256];
     static char prompt_port[8];
+    static char s5host[256];
+    static char s5port[8];
 
     if (we_init && argc < 3) {
         printf("  Host: ");
@@ -304,8 +304,34 @@ int main(int argc, char *argv[]) {
             printf("  Connecting to %s:%s ...", host, port);
             fflush(stdout);
         }
-        if (socks5_host) g_fd = connect_socket_socks5(socks5_host, socks5_port, host, port);
-        else g_fd = connect_socket(host, port);
+        if (socks5_host) {
+            g_fd = connect_socket_socks5(socks5_host, socks5_port, host, port);
+        } else {
+            /* Refuse hostnames on direct connect — DNS resolution would
+             * leak the destination to the local resolver (and network).
+             * Only numeric IPs (digits+dots for IPv4, contains ':' for
+             * IPv6) are safe.  Hostnames are fine through SOCKS5 because
+             * the proxy resolves them, not us. */
+            int numeric = 0;
+            if (strchr(host, ':')) {
+                numeric = 1; /* IPv6 */
+            } else {
+                numeric = 1;
+                for (const char *p = host; *p; p++) {
+                    if ((*p < '0' || *p > '9') && *p != '.') {
+                        numeric = 0;
+                        break;
+                    }
+                }
+            }
+            if (!numeric) {
+                fprintf(stderr, "\n  Direct connect requires a numeric IP address, not a hostname.\n"
+                                "  Hostnames cause DNS lookups that leak your destination.\n"
+                                "  Use --socks5 for hostnames (e.g. .onion addresses).\n");
+                goto out;
+            }
+            g_fd = connect_socket(host, port);
+        }
         if (g_fd == INVALID_SOCK) {
             fprintf(stderr,
                     "\n  Connection failed. Check the address and make sure\n"
@@ -629,6 +655,10 @@ out:
     crypto_wipe(sas_key, sizeof sas_key);
     crypto_wipe(sas, sizeof sas);
     crypto_wipe(typed_sas, sizeof typed_sas);
+    crypto_wipe(prompt_host, sizeof prompt_host);
+    crypto_wipe(prompt_port, sizeof prompt_port);
+    crypto_wipe(s5host, sizeof s5host);
+    crypto_wipe(s5port, sizeof s5port);
     /* Clear the terminal screen and scrollback buffer so messages don't
      * linger in terminal history.  TUI mode uses an alternate screen buffer
      * (\033[?1049h/l) which is restored automatically on exit — purging there

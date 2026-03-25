@@ -487,6 +487,26 @@ check "ProGuard rules file exists" \
 check "data_extraction_rules.xml exists" \
     "test -f '$REPO_ROOT/android/app/src/main/res/xml/data_extraction_rules.xml'"
 
+# Desktop numeric IP check (DNS leak prevention)
+check "Desktop direct connect refuses hostnames (numeric IP check)" \
+    "grep -q 'numeric' '$REPO_ROOT/src/main.c' && grep -q 'Direct connect requires' '$REPO_ROOT/src/main.c'"
+
+# Host/port wiped on background
+check "hostInput cleared in onStop" \
+    "grep -A20 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java' | grep -q 'hostInput.*setText'"
+
+# statusText cleared in onPause
+check "statusText cleared in onPause" \
+    "grep -A20 'onPause' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'statusText.*setText'"
+
+# jni_call_str helper exists
+check "jni_call_str helper exists in jni_bridge.c" \
+    "grep -q 'jni_call_str' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+
+# prompt_host wiped at cleanup
+check "prompt_host wiped at cleanup in main.c" \
+    "grep -q 'crypto_wipe(prompt_host' '$REPO_ROOT/src/main.c'"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

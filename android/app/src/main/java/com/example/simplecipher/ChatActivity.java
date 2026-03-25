@@ -438,6 +438,7 @@ public class ChatActivity extends Activity implements NativeCallback {
      * block new plaintext from arriving while paused (the paused
      * flag above), and rely on FLAG_SECURE to prevent screenshots.
      * For stronger guarantees, use the desktop CLI/TUI build. */
+    if (statusText != null) statusText.setText("");
     if (sasInput != null) sasInput.setText("");
     if (sasCodeText != null) sasCodeText.setText("");
     if (chatLog != null) chatLog.setText("");
@@ -463,6 +464,7 @@ public class ChatActivity extends Activity implements NativeCallback {
      * stop reduces the exposure window to only the time the user is
      * actively looking at the screen. */
     nativeStop();
+    if (statusText != null) statusText.setText("");
     if (sasInput != null) sasInput.setText("");
     if (sasCodeText != null) sasCodeText.setText("");
     if (chatLog != null) chatLog.setText("");
