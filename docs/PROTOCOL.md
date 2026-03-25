@@ -12,12 +12,12 @@ Each side generates a random X25519 keypair for this session only. The private k
 
 ### 2. Commitment scheme (anti-MITM)
 
-Before revealing public keys, each side sends a hash (commitment) of their key. This prevents a man-in-the-middle from seeing one key and then crafting a fake key that produces a matching safety code. The commitment locks both sides into their keys before the reveal.
+Before revealing public keys, each side sends a hash (commitment) of their key. This prevents a man-in-the-middle from seeing one key and then crafting a fake key that produces a matching safety code. The commitment locks both sides into their keys before the reveal. The version byte and commitment are sent together in a single exchange so that version-mismatch and commitment-mismatch failures are timing-indistinguishable from the wire.
 
 ```
-Round 1:  Alice -> H(key_A)    Bob -> H(key_B)     (commitments)
-Round 2:  Alice -> key_A       Bob -> key_B         (reveals)
-Verify:   H(revealed_key) == commitment             (both sides)
+Round 1:  Alice -> version || H(key_A)    Bob -> version || H(key_B)    (commit)
+Round 2:  Alice -> key_A                  Bob -> key_B                  (reveal)
+Verify:   H(revealed_key) == commitment                                (both sides)
 ```
 
 ### Full handshake sequence
@@ -27,16 +27,14 @@ This is exactly what goes over the wire. Each arrow is one TCP write.
 ```
         Alice                              Bob
           |                                  |
-          |-------- protocol version ------->|
-          |<------- protocol version --------|
+          |--- version + H(pub_A) [33B] --->|  commit
+          |<-- version + H(pub_B) [33B] ----|  (locked in)
           |                                  |
-          |-------- H(pub_A) --------------->|  commitment
-          |<------- H(pub_B) ----------------|  (locked in)
+          |--- pub_A [32B] ---------------->|  reveal
+          |<-- pub_B [32B] -----------------|
           |                                  |
-          |-------- pub_A ------------------>|  reveal
-          |<------- pub_B -------------------|
-          |                                  |
-          |  verify H(pub_B) == commitment   |  both sides
+          |  verify version matches          |  both sides
+          |  verify H(pub_B) == commitment   |
           |  verify H(pub_A) == commitment   |
           |                                  |
           |  dh  = X25519(priv, peer_pub)    |  both compute
@@ -49,6 +47,8 @@ This is exactly what goes over the wire. Each arrow is one TCP write.
           |                                  |
           |======= encrypted chat ===========|  XChaCha20-Poly1305
 ```
+
+Both rounds always complete before any verification. This makes version-mismatch and commitment-mismatch failures timing-indistinguishable from the wire — an observer cannot tell *why* a handshake failed, only that it did.
 
 If a man-in-the-middle tries to intercept, they must commit to their fake keys before seeing Alice's or Bob's real keys. They cannot adapt after the fact, so the SAS codes on Alice's and Bob's screens will differ — and the humans catch it.
 

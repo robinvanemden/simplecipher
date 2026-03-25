@@ -149,7 +149,8 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
         char     out_text[MAX_MSG + 1];
         char     line[MAX_MSG + 1];
         size_t   line_len   = 0;
-        int      loop_error = 0;
+        int      loop_error  = 0;
+        int      auth_fails  = 0;
 
         memset(in_frame, 0, sizeof in_frame);
         memset(out_frame, 0, sizeof out_frame);
@@ -306,12 +307,19 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
                                 uint16_t plen = 0;
 
                                 if (frame_open(sess, in_frame, plain, &plen) != 0) {
-                                    win_print_status("[session error: authentication or sequence failure]", line,
-                                                     line_len);
-                                    loop_error = 1;
                                     crypto_wipe(plain, sizeof plain);
-                                    break;
+                                    crypto_wipe(in_frame, sizeof in_frame);
+                                    in_have           = 0;
+                                    in_frame_start_ms = 0;
+                                    if (++auth_fails >= MAX_AUTH_FAILURES) {
+                                        win_print_status("[session error: authentication or sequence failure]", line,
+                                                         line_len);
+                                        loop_error = 1;
+                                        break;
+                                    }
+                                    continue;
                                 }
+                                auth_fails = 0;
                                 plain[plen] = '\0';
                                 sanitize_peer_text(plain, plen);
                                 win_print_chat("peer", (char *)plain, line, line_len);

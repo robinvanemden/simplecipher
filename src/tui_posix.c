@@ -99,6 +99,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
     uint8_t     plain[MAX_MSG + 1];
     uint16_t    plen;
     const char *status = "Secure session active  |  Ctrl+C to quit";
+    int         auth_fails = 0;
 
     memset(line, 0, sizeof line);
     tui_draw_screen(status, line, line_len);
@@ -134,11 +135,17 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
             }
             plen = 0;
             if (frame_open(sess, frame, plain, &plen) != 0) {
-                tui_msg_add(TUI_SYSTEM, "[session error]");
-                status = "Session error  |  Ctrl+C to exit";
-                tui_draw_screen(status, line, line_len);
-                break;
+                crypto_wipe(frame, sizeof frame);
+                crypto_wipe(plain, sizeof plain);
+                if (++auth_fails >= MAX_AUTH_FAILURES) {
+                    tui_msg_add(TUI_SYSTEM, "[session error]");
+                    status = "Session error  |  Ctrl+C to exit";
+                    tui_draw_screen(status, line, line_len);
+                    break;
+                }
+                continue;
             }
+            auth_fails = 0;
             plain[plen] = '\0';
             sanitize_peer_text(plain, plen);
             tui_msg_add(TUI_PEER, (char *)plain);

@@ -94,6 +94,22 @@ void sock_shutdown_both(socket_t s) { shutdown(s, SHUT_RDWR); }
 #ifdef CIPHER_HARDEN
 
 #    if defined(_WIN32) || defined(_WIN64)
+
+/* Process mitigation policy types (Windows 8+).  Defined here because
+ * MinGW headers may not include the full processthreadsapi.h enums.
+ * Values from MSDN: PROCESS_MITIGATION_POLICY enumeration. */
+#        ifndef ProcessDEPPolicy
+#            define PM_DEPPolicy              0
+#            define PM_DynamicCodePolicy       2
+#            define PM_StrictHandleCheckPolicy 3
+#            define PM_ExtensionPointDisablePolicy 7
+/* Struct layout for PROCESS_MITIGATION_DYNAMIC_CODE_POLICY (single DWORD flags) */
+typedef struct { DWORD Flags; } pm_dynamic_code_t;
+typedef struct { DWORD Flags; } pm_ext_point_t;
+typedef struct { DWORD Flags; } pm_strict_handle_t;
+#            define PM_STRUCTS_DEFINED 1
+#        endif
+
 void harden(void) {
     /* Disable crash dumps (WER: Windows Error Reporting).
      * SEM_FAILCRITICALERRORS: suppress hard-error dialog boxes
@@ -101,6 +117,33 @@ void harden(void) {
      * Together these prevent key material from being written to disk
      * via crash dump files when the process terminates abnormally. */
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+
+    /* Process mitigation policies (Windows 8+, best-effort).
+     *
+     * These restrict what a compromised process can do, similar in
+     * spirit to seccomp on Linux.  Windows has no syscall-level
+     * sandbox, but these policies block common exploitation techniques.
+     *
+     * ProhibitDynamicCode: blocks VirtualAlloc(PAGE_EXECUTE) and
+     *   similar — prevents JIT shellcode and ROP-to-VirtualProtect.
+     * DisableExtensionPoints: blocks legacy DLL extension points
+     *   (AppInit_DLLs, Winsock LSPs) that malware uses to inject code.
+     * RaiseExceptionOnInvalidHandleReference: terminates the process
+     *   on invalid handle use — catches handle-reuse exploitation. */
+#        ifdef PM_STRUCTS_DEFINED
+    {
+        pm_dynamic_code_t dc = { .Flags = 0x1 }; /* ProhibitDynamicCode */
+        (void)SetProcessMitigationPolicy(PM_DynamicCodePolicy, &dc, sizeof dc);
+    }
+    {
+        pm_ext_point_t ep = { .Flags = 0x1 }; /* DisableExtensionPoints */
+        (void)SetProcessMitigationPolicy(PM_ExtensionPointDisablePolicy, &ep, sizeof ep);
+    }
+    {
+        pm_strict_handle_t sh = { .Flags = 0x1 }; /* RaiseExceptionOnInvalidHandleReference */
+        (void)SetProcessMitigationPolicy(PM_StrictHandleCheckPolicy, &sh, sizeof sh);
+    }
+#        endif
 }
 #    else /* POSIX */
 void harden(void) {
@@ -161,15 +204,20 @@ void harden(void) {
 #        ifdef SECCOMP_AUDIT_ARCH
 
 /* Helper: set PR_SET_NO_NEW_PRIVS and install a BPF filter.
- * Called once per phase.  Best-effort: if the kernel does not support
- * seccomp-BPF, the process continues with a wider syscall surface. */
+ * Called once per phase.  Warns on stderr if seccomp fails so the user
+ * knows the process is running without syscall sandboxing. */
 static void apply_seccomp(struct sock_filter *f, unsigned short len) {
     struct sock_fprog prog = {.len = len, .filter = f};
     /* PR_SET_NO_NEW_PRIVS is required before installing a seccomp filter
      * without CAP_SYS_ADMIN.  It prevents gaining privileges via execve
      * (setuid bits are ignored after this point). */
-    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) return;
-    (void)prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog);
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        fprintf(stderr, "warning: seccomp unavailable (PR_SET_NO_NEW_PRIVS failed)\n");
+        return;
+    }
+    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) != 0) {
+        fprintf(stderr, "warning: seccomp filter installation failed\n");
+    }
 }
 
 /* Phase 1 filter — handshake phase.
@@ -248,7 +296,16 @@ static void install_seccomp_phase1(void) {
 #            endif
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 1),
+
+        /* ioctl: allow all EXCEPT TIOCSTI (0x5412), which injects bytes
+         * into the terminal input queue — an attacker with code execution
+         * could plant shell commands that run after this process exits.
+         * TIOCSTI is disabled by default since Linux 6.2 (requires
+         * CAP_SYS_ADMIN), but older kernels are still vulnerable. */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 4),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[1])),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5412 /* TIOCSTI */, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
         /* Entropy and timing */
@@ -400,7 +457,11 @@ static void install_seccomp_phase2(void) {
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 1),
+        /* ioctl: allow all except TIOCSTI (see phase 1 comment) */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 4),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[1])),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5412 /* TIOCSTI */, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mmap, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
@@ -469,7 +530,10 @@ static void capsicum_phase1(int sock_fd) {
      * Best-effort: on some FreeBSD VMs/jails, cap_enter() returns 0
      * but enforcement is disabled at the kernel level.  The runtime
      * still works (just without the sandbox), and the test SKIPs. */
-    if (cap_enter() != 0) return;
+    if (cap_enter() != 0) {
+        fprintf(stderr, "warning: Capsicum cap_enter() failed — running unsandboxed\n");
+        return;
+    }
 
     /* Socket fd: read, write, poll, shutdown, get/setsockopt.
      * get/setsockopt is needed during handshake (TCP_NODELAY, SO_KEEPALIVE,

@@ -23,7 +23,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 
 | Claim | Code | Test |
 |-------|------|------|
-| Private key wiped after session_init | `main.c:511`, `jni_bridge.c:647` | `test_p2p.c:test_session_init_wipes_intermediates` |
+| Private key wiped after session_init | `main.c`, `jni_bridge.c` | `test_p2p.c:test_session_init_wipes_intermediates` |
 | Chain key wiped after each message | `crypto.c:chain_step()` overwrites | `test_p2p.c:test_chain_step_wipes_safe` |
 | Session state wiped on exit | `protocol.c:session_wipe()` | `test_p2p.c:test_session_wipe`, `test_p2p.c:test_global_session_wipe` |
 | Frame build wipes intermediates | `protocol.c:frame_build()` | `test_p2p.c:test_frame_build_wipes_intermediates` |
@@ -65,6 +65,10 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | PAC+BTI (ARM64) | `CMakeLists.txt` `-mbranch-protection=standard` | `test_android.sh` (grep CMakeLists) |
 | Screenshot blocking (Android) | `MainActivity.java`, `ChatActivity.java` `FLAG_SECURE` | `test_android.sh` (grep source) |
 | No log output in release | `jni_bridge.c` `NDEBUG` suppresses `LOGI`/`LOGE` | `test_android.sh` (no log strings in .so) |
+| TIOCSTI blocked in seccomp | `platform.c:sandbox_phase1()`, `platform.c:sandbox_phase2()` — BPF blocks ioctl 0x5412 | Source-level check |
+| Windows process mitigations | `platform.c:harden()` — SetProcessMitigationPolicy | Windows runtime check |
+| Sandbox failure warnings | `platform.c:apply_seccomp()`, `platform.c:capsicum_phase1()` | stderr output on failure |
+| MAC failure tolerance | `MAX_AUTH_FAILURES` in protocol.h, all 6 chat loops | — (needs test coverage) |
 
 ## Fuzzing coverage
 
@@ -92,3 +96,4 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | Terminal scrollback may retain messages | OS-level, outside app control | `PROTOCOL.md:What it does NOT provide` |
 | Syscall sandbox is Linux/FreeBSD/OpenBSD only | Seccomp (Linux), Capsicum (FreeBSD), pledge (OpenBSD). No equivalent on Windows/macOS | `HARDENING.md` platform table |
 | No cross-session recovery | Ephemeral by design | `PROTOCOL.md:What it does NOT provide` |
+| MAC failure tolerance not yet tested | New feature, test coverage pending | This file |

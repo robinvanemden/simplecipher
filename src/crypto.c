@@ -21,8 +21,8 @@
  * An early-exit loop would leak the position of the first non-zero byte
  * through timing differences. */
 [[nodiscard]] bool is_zero32(const uint8_t x[32]) {
-    uint8_t acc = 0;
-    int     i;
+    volatile uint8_t acc = 0;
+    int              i;
     for (i = 0; i < 32; i++) acc |= x[i];
     return acc == 0;
 }

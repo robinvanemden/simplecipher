@@ -24,7 +24,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
      * paths beyond the initial seq check.  We cycle through a few rx_seq
      * values so the fuzzer can discover the seq-match path. */
     /* Zero-init gives deterministic DH ratchet fields (dh_priv, dh_pub,
-     * root all zero).  This is safe: frame_open will parse the v2 flags
+     * root all zero).  This is safe: frame_open will parse the flags
      * and may call ratchet_receive with zero dh_priv, which is
      * deterministic but harmless for fuzzing purposes. */
     session_t s;

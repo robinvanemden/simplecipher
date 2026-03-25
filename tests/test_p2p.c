@@ -198,21 +198,21 @@ static void *peer_thread(void *arg) {
 
     set_sock_timeout(ctx->fd, 10);
 
-    /* Version exchange */
-    uint8_t my_ver = (uint8_t)PROTOCOL_VERSION;
-    uint8_t peer_ver = 0;
-    if (exchange(ctx->fd, ctx->is_initiator, &my_ver, 1, &peer_ver, 1) != 0) return nullptr;
-    if (peer_ver != PROTOCOL_VERSION) return nullptr;
-
     /* Keypair + commitment */
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    /* Exchange commitments, then keys */
-    if (exchange(ctx->fd, ctx->is_initiator, commit_self, KEY, commit_peer, KEY) != 0) return nullptr;
+    /* v3 two-round handshake: version+commitment, then keys */
+    uint8_t out1[1 + KEY], in1[1 + KEY];
+    out1[0] = (uint8_t)PROTOCOL_VERSION;
+    memcpy(out1 + 1, commit_self, KEY);
+    if (exchange(ctx->fd, ctx->is_initiator, out1, sizeof out1, in1, sizeof in1) != 0) return nullptr;
+    uint8_t peer_ver = in1[0];
+    memcpy(commit_peer, in1 + 1, KEY);
+
     if (exchange(ctx->fd, ctx->is_initiator, pub, KEY, peer_pub, KEY) != 0) return nullptr;
 
-    /* Verify commitment */
+    if (peer_ver != PROTOCOL_VERSION) return nullptr;
     if (!verify_commit(commit_peer, peer_pub)) return nullptr;
 
     /* Derive session */
@@ -713,7 +713,7 @@ static void test_corrupted_length_field(void) {
     make_nonce(nonce, 0);
 
     /* Craft plaintext with length field = MAX_MSG + 1 (exceeds limit)
-     * v2 format: [flags(1) | len(2) | ...] */
+     * format: [flags(1) | len(2) | ...] */
     memset(pt, 0, sizeof pt);
     uint16_t bad_len = MAX_MSG + 1;
     pt[0] = 0;  /* flags: no ratchet */
@@ -1248,7 +1248,7 @@ static void test_frame_build_wipes_intermediates(void) {
 
     /* Padding bytes (after flags + 2-byte length + message) must be zero.
      * This proves frame_build memset pt to 0 before copying the message.
-     * v2 format: [flags(1) | len(2) | message | zero padding] */
+     * format: [flags(1) | len(2) | message | zero padding] */
     int pad_clean = 1;
     for (int i = 3 + msglen; i < CT_SZ; i++) {
         if (pt[i] != 0) { pad_clean = 0; break; }
@@ -1963,12 +1963,18 @@ static void *bad_version_peer(void *arg) {
 
     set_sock_timeout(ctx->fd, 5);
 
-    /* Send wrong version byte */
-    uint8_t bad_ver = 255;
-    uint8_t peer_ver = 0;
-    if (exchange(ctx->fd, 1, &bad_ver, 1, &peer_ver, 1) != 0) return nullptr;
+    /* Send wrong version byte bundled with a dummy commitment (v3 format) */
+    uint8_t out1[1 + KEY], in1[1 + KEY];
+    out1[0] = 255; /* bad version */
+    fill_random(out1 + 1, KEY); /* dummy commitment */
+    if (exchange(ctx->fd, 1, out1, sizeof out1, in1, sizeof in1) != 0) return nullptr;
 
-    /* The other side should reject us, so we're "done" */
+    /* Send a dummy key for round 2 so both rounds complete */
+    uint8_t dummy_key[KEY], peer_key[KEY];
+    fill_random(dummy_key, KEY);
+    (void)exchange(ctx->fd, 1, dummy_key, KEY, peer_key, KEY);
+
+    /* The other side should reject us after both rounds, so we're "done" */
     ctx->ok = 1;
     return nullptr;
 }
@@ -1985,22 +1991,21 @@ static void *bad_commit_peer(void *arg) {
 
     set_sock_timeout(ctx->fd, 5);
 
-    /* Correct version */
-    uint8_t my_ver = (uint8_t)PROTOCOL_VERSION;
-    uint8_t peer_ver = 0;
-    if (exchange(ctx->fd, 1, &my_ver, 1, &peer_ver, 1) != 0) return nullptr;
-
     /* Generate keypair but send WRONG commitment (random bytes) */
     uint8_t priv[KEY], pub[KEY], peer_pub[KEY];
-    uint8_t fake_commit[KEY], real_peer_commit[KEY];
+    uint8_t fake_commit[KEY];
     gen_keypair(priv, pub);
     fill_random(fake_commit, KEY);  /* not derived from pub */
 
-    if (exchange(ctx->fd, 1, fake_commit, KEY, real_peer_commit, KEY) != 0) {
+    /* v3: bundle version + fake commitment in round 1 */
+    uint8_t out1[1 + KEY], in1[1 + KEY];
+    out1[0] = (uint8_t)PROTOCOL_VERSION;
+    memcpy(out1 + 1, fake_commit, KEY);
+    if (exchange(ctx->fd, 1, out1, sizeof out1, in1, sizeof in1) != 0) {
         crypto_wipe(priv, sizeof priv);
         return nullptr;
     }
-    /* Send real pub — but it won't match the fake commitment */
+    /* Round 2: send real pub — but it won't match the fake commitment */
     if (exchange(ctx->fd, 1, pub, KEY, peer_pub, KEY) != 0) {
         crypto_wipe(priv, sizeof priv);
         return nullptr;
@@ -2023,31 +2028,35 @@ static void *honest_listener(void *arg) {
 
     set_sock_timeout(ctx->fd, 5);
 
-    /* Version exchange */
-    uint8_t my_ver = (uint8_t)PROTOCOL_VERSION;
-    uint8_t peer_ver = 0;
-    if (exchange(ctx->fd, 0, &my_ver, 1, &peer_ver, 1) != 0) return nullptr;
-    if (peer_ver != PROTOCOL_VERSION) {
-        /* Version mismatch — expected failure for bad_version test */
-        ctx->ok = -1;  /* special: version mismatch detected */
-        return nullptr;
-    }
-
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    if (exchange(ctx->fd, 0, commit_self, KEY, commit_peer, KEY) != 0) {
+    /* v3 two-round handshake */
+    uint8_t out1[1 + KEY], in1[1 + KEY];
+    out1[0] = (uint8_t)PROTOCOL_VERSION;
+    memcpy(out1 + 1, commit_self, KEY);
+    if (exchange(ctx->fd, 0, out1, sizeof out1, in1, sizeof in1) != 0) {
         crypto_wipe(priv, sizeof priv);
         return nullptr;
     }
+    uint8_t peer_ver = in1[0];
+    memcpy(commit_peer, in1 + 1, KEY);
+
     if (exchange(ctx->fd, 0, pub, KEY, peer_pub, KEY) != 0) {
+        crypto_wipe(priv, sizeof priv);
+        return nullptr;
+    }
+
+    if (peer_ver != PROTOCOL_VERSION) {
+        /* Version mismatch — expected failure for bad_version test */
+        ctx->ok = -1;
         crypto_wipe(priv, sizeof priv);
         return nullptr;
     }
 
     if (!verify_commit(commit_peer, peer_pub)) {
         /* Commitment mismatch — expected failure for bad_commit test */
-        ctx->ok = -2;  /* special: commitment mismatch detected */
+        ctx->ok = -2;
         crypto_wipe(priv, sizeof priv);
         crypto_wipe(commit_self, sizeof commit_self);
         crypto_wipe(commit_peer, sizeof commit_peer);
@@ -2117,16 +2126,17 @@ static void test_handshake_failure_paths(void) {
         pthread_t lt;
         pthread_create(&lt, nullptr, honest_listener, &listener);
 
-        /* Connect, send version, then close immediately */
+        /* Connect, complete round 1, then close without round 2 */
         struct timespec ts_delay = {0, 100000000}; /* 100ms */
         nanosleep(&ts_delay, nullptr);
         socket_t fd = connect_socket("127.0.0.1", "17784");
         if (fd != INVALID_SOCK) {
             set_sock_timeout(fd, 5);
-            uint8_t my_ver = (uint8_t)PROTOCOL_VERSION;
-            uint8_t peer_ver = 0;
-            (void)exchange(fd, 1, &my_ver, 1, &peer_ver, 1);
-            /* Close without sending commitments */
+            uint8_t out1[1 + KEY], in1[1 + KEY];
+            out1[0] = (uint8_t)PROTOCOL_VERSION;
+            fill_random(out1 + 1, KEY);
+            (void)exchange(fd, 1, out1, sizeof out1, in1, sizeof in1);
+            /* Close without sending keys (round 2) */
             sock_shutdown_both(fd);
             close_sock(fd);
         }
@@ -4241,11 +4251,6 @@ static void *fp_peer_thread(void *arg) {
     if (ctx->fd == INVALID_SOCK) return nullptr;
     set_sock_timeout(ctx->fd, 10);
 
-    uint8_t my_ver = (uint8_t)PROTOCOL_VERSION;
-    uint8_t peer_ver = 0;
-    if (exchange(ctx->fd, ctx->is_initiator, &my_ver, 1, &peer_ver, 1) != 0) return nullptr;
-    if (peer_ver != PROTOCOL_VERSION) return nullptr;
-
     /* Use pre-generated key if available (mirrors nativeGenerateKey flow) */
     if (ctx->has_prekey) {
         memcpy(priv, ctx->prekey_priv, KEY);
@@ -4259,8 +4264,16 @@ static void *fp_peer_thread(void *arg) {
     memcpy(ctx->self_pub, pub, KEY);
     make_commit(commit_self, pub);
 
-    if (exchange(ctx->fd, ctx->is_initiator, commit_self, KEY, commit_peer, KEY) != 0) return nullptr;
+    /* v3 two-round handshake */
+    uint8_t out1[1 + KEY], in1[1 + KEY];
+    out1[0] = (uint8_t)PROTOCOL_VERSION;
+    memcpy(out1 + 1, commit_self, KEY);
+    if (exchange(ctx->fd, ctx->is_initiator, out1, sizeof out1, in1, sizeof in1) != 0) return nullptr;
+    uint8_t peer_ver = in1[0];
+    memcpy(commit_peer, in1 + 1, KEY);
+
     if (exchange(ctx->fd, ctx->is_initiator, pub, KEY, peer_pub, KEY) != 0) return nullptr;
+    if (peer_ver != PROTOCOL_VERSION) return nullptr;
     if (!verify_commit(commit_peer, peer_pub)) return nullptr;
 
     /* Fingerprint verification (same logic as jni_bridge.c) */

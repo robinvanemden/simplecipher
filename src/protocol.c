@@ -88,9 +88,8 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]) {
     memcpy(ikm + KEY * 2, resp_pub, KEY);
     domain_hash(prk, "cipher x25519 sas root v1", ikm, sizeof ikm);
 
-    /* Before (v1): derived tx/rx directly from prk, discarded prk.
-     * Now (v2): derive a root key that persists across DH ratchet steps,
-     * then let ratchet_init derive the initial tx/rx chains from root. */
+    /* Derive a root key that persists across DH ratchet steps, then
+     * let ratchet_init derive the initial tx/rx chains from root. */
     expand(sas_key_out, prk, "sas");
     expand(s->root, prk, "root");
 
@@ -157,6 +156,7 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     uint8_t encrypt_chain[KEY];
     memcpy(encrypt_chain, s->tx, KEY);
     int ratcheting = ratchet_send(s, ratchet_pub);
+    if (ratcheting < 0) return -1; /* all-zero DH — malicious peer */
 
     uint8_t mk[KEY], ad[AD_SZ], nonce[NONCE_SZ], pt[CT_SZ];
     if (ratcheting) {
@@ -222,7 +222,7 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
         return -1;
     }
 
-    /* Parse the v2 plaintext slot: flags, optional ratchet key, len, message.
+    /* Parse the plaintext slot: flags, optional ratchet key, len, message.
      *
      * IMPORTANT: do not mutate session state until ALL validation passes.
      * ratchet_receive modifies s->root, s->rx, s->peer_dh — so we read
@@ -262,8 +262,15 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
      * chain for future messages.  We must NOT overwrite it with next_rx
      * (which is the old chain stepped forward).  For non-ratchet frames,
      * advance the existing chain as before. */
-    if (flags & FLAG_RATCHET) ratchet_receive(s, pt + ratchet_off);
-    else memcpy(s->rx, next_rx, KEY);
+    if (flags & FLAG_RATCHET) {
+        if (ratchet_receive(s, pt + ratchet_off) != 0) {
+            crypto_wipe(mk, sizeof mk);
+            crypto_wipe(next_rx, sizeof next_rx);
+            crypto_wipe(pt, sizeof pt);
+            crypto_wipe(nonce, sizeof nonce);
+            return -1; /* all-zero DH — malicious peer */
+        }
+    } else memcpy(s->rx, next_rx, KEY);
     s->rx_seq++;
     s->need_send_ratchet = 1;
     if (out) memcpy(out, pt + off, len);

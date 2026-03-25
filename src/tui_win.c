@@ -81,6 +81,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
     char        out_text[MAX_MSG + 1];
     WSAEVENT    net_ev;
     const char *status = "Secure session active  |  Ctrl+C to quit";
+    int         auth_fails = 0;
 
     if (!win_console_open(&h_in, &h_in_mode)) return;
     win_console_prepare(h_in, h_in_mode);
@@ -194,12 +195,18 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                             uint8_t  plain[MAX_MSG + 1];
                             uint16_t plen = 0;
                             if (frame_open(sess, in_frame, plain, &plen) != 0) {
-                                tui_msg_add(TUI_SYSTEM, "[session error]");
-                                status = "Session error  |  Ctrl+C to exit";
-                                tui_draw_screen(status, line, line_len);
                                 crypto_wipe(plain, sizeof plain);
-                                goto win_tui_done;
+                                crypto_wipe(in_frame, sizeof in_frame);
+                                in_have = 0;
+                                if (++auth_fails >= MAX_AUTH_FAILURES) {
+                                    tui_msg_add(TUI_SYSTEM, "[session error]");
+                                    status = "Session error  |  Ctrl+C to exit";
+                                    tui_draw_screen(status, line, line_len);
+                                    goto win_tui_done;
+                                }
+                                break; /* back to WaitForMultipleObjects */
                             }
+                            auth_fails = 0;
                             plain[plen] = '\0';
                             sanitize_peer_text(plain, plen);
                             tui_msg_add(TUI_PEER, (char *)plain);

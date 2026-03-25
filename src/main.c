@@ -45,6 +45,9 @@
 #include "network.h"
 #include "tui.h"
 #include "cli.h"
+#if defined(_WIN32) || defined(_WIN64)
+#    include <io.h> /* _read — bypass libc FILE* buffer for SAS input */
+#endif
 
 /* g_fd and g_sess are file-scope statics, passed as parameters to the
  * event loops.  They are static here so the cleanup code at the bottom
@@ -252,7 +255,7 @@ int main(int argc, char *argv[]) {
     }
     if (!validate_port(port)) {
         fprintf(stderr, "invalid port: %s\n", port);
-        return 1;
+        goto out;
     }
 
     /* NOTE: sandbox_phase1() is called AFTER the TCP connection is
@@ -401,31 +404,41 @@ int main(int argc, char *argv[]) {
      * Removed after the handshake so idle chat sessions are not affected. */
     set_sock_timeout(g_fd, HANDSHAKE_TIMEOUT_S);
 
-    /* Version exchange: send and receive a single version byte before any
-     * cryptographic material.  If the versions differ, both sides get a
-     * clear "version mismatch" error rather than a cryptic commitment
-     * failure.  Increment PROTOCOL_VERSION whenever the frame layout or
-     * KDF labels change. */
+    /* Two-round handshake (v3):
+     *   Round 1: version || commitment  (33 bytes each way)
+     *   Round 2: public key             (32 bytes each way)
+     *
+     * Both rounds always complete before any verification.  This makes
+     * version-mismatch and commitment-mismatch failures indistinguishable
+     * from the wire (same number of bytes exchanged, same timing pattern),
+     * preventing a network observer from fingerprinting the failure mode.
+     *
+     * The commitment scheme is preserved: both sides commit (round 1)
+     * before either reveals (round 2). */
     {
-        uint8_t my_ver   = (uint8_t)PROTOCOL_VERSION;
-        uint8_t peer_ver = 0;
-        if (exchange(g_fd, we_init, &my_ver, 1, &peer_ver, 1) != 0) {
-            fprintf(stderr, "handshake error (version exchange)\n");
+        uint8_t out1[1 + KEY], in1[1 + KEY];
+        out1[0] = (uint8_t)PROTOCOL_VERSION;
+        memcpy(out1 + 1, commit_self, KEY);
+        if (exchange(g_fd, we_init, out1, sizeof out1, in1, sizeof in1) != 0) {
+            fprintf(stderr, "handshake error (round 1: version + commitment)\n");
+            crypto_wipe(out1, sizeof out1);
+            crypto_wipe(in1, sizeof in1);
             goto out;
         }
+        uint8_t peer_ver = in1[0];
+        memcpy(commit_peer, in1 + 1, KEY);
+        crypto_wipe(out1, sizeof out1);
+        crypto_wipe(in1, sizeof in1);
+
+        if (exchange(g_fd, we_init, self_pub, KEY, peer_pub, KEY) != 0) {
+            fprintf(stderr, "handshake error (round 2: keys)\n");
+            goto out;
+        }
+
         if (peer_ver != PROTOCOL_VERSION) {
             fprintf(stderr, "version mismatch: we are v%d, peer is v%d\n", PROTOCOL_VERSION, (int)peer_ver);
             goto out;
         }
-    }
-
-    if (exchange(g_fd, we_init, commit_self, KEY, commit_peer, KEY) != 0) {
-        fprintf(stderr, "handshake error (round 1: commitments)\n");
-        goto out;
-    }
-    if (exchange(g_fd, we_init, self_pub, KEY, peer_pub, KEY) != 0) {
-        fprintf(stderr, "handshake error (round 2: keys)\n");
-        goto out;
     }
 
     set_sock_timeout(g_fd, 0); /* I/O phase of handshake done; verify_commit
@@ -567,17 +580,34 @@ int main(int argc, char *argv[]) {
         printf("  Confirm (type full code): ");
         fflush(stdout);
 
-        if (!fgets(typed_sas, sizeof typed_sas, stdin)) {
-            printf("Aborted.\n");
-            goto out;
+        /* read() instead of fgets() so the typed code never passes through
+         * libc's internal ~4KB FILE* buffer (which is never wiped).  In
+         * canonical mode, read() returns a complete line from the kernel.
+         * On Windows, _read() serves the same purpose. */
+        {
+#if defined(_WIN32) || defined(_WIN64)
+            int rn = _read(0, typed_sas, (unsigned)(sizeof typed_sas - 1));
+#else
+            ssize_t rn = read(STDIN_FILENO, typed_sas, sizeof typed_sas - 1);
+#endif
+            if (rn <= 0) {
+                printf("Aborted.\n");
+                goto out;
+            }
+            typed_sas[rn] = '\0';
         }
-        /* Drain any leftover characters in stdin (e.g. user typed more than 4 chars
-     * or pasted a full string).  Without this, the extra bytes end up as the
-     * first "message" in the chat, which is confusing and leaks the SAS.
-     * Only drain if fgets didn't consume the newline (buffer was too small). */
+        /* Drain any leftover characters in the kernel's line buffer (e.g.
+         * user pasted a long string).  Without this, the extra bytes end
+         * up as the first "message" in the chat. */
         if (!strchr(typed_sas, '\n')) {
-            int ch;
-            while ((ch = getchar()) != '\n' && ch != EOF);
+            char drain;
+#if defined(_WIN32) || defined(_WIN64)
+            int dr;
+            do { dr = _read(0, &drain, 1); } while (dr == 1 && drain != '\n');
+#else
+            ssize_t dr;
+            do { dr = read(STDIN_FILENO, &drain, 1); } while (dr == 1 && drain != '\n');
+#endif
         }
         /* Strip trailing newline, normalize (strip dashes, uppercase), then
      * compare.  Accepts "A3F2-91BC", "A3F291BC", "a3f291bc" etc.  Full

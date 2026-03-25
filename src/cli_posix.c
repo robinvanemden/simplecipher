@@ -126,6 +126,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
     uint8_t  next_tx[KEY];
     uint8_t  plain[MAX_MSG + 1];
     uint16_t plen;
+    int      auth_fails = 0;
 
     memset(line, 0, sizeof line);
 
@@ -167,16 +168,20 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
             }
             plen = 0;
             if (frame_open(sess, frame, plain, &plen) != 0) {
-                cli_clear_input_line(line_len);
-                {
-                    const char *msg = "[session error: authentication or sequence failure]\n";
-                    ssize_t     r;
-                    do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
-                }
                 crypto_wipe(plain, sizeof plain);
                 crypto_wipe(frame, sizeof frame);
-                break;
+                if (++auth_fails >= MAX_AUTH_FAILURES) {
+                    cli_clear_input_line(line_len);
+                    {
+                        const char *msg = "[session error: authentication or sequence failure]\n";
+                        ssize_t     r;
+                        do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
+                    }
+                    break;
+                }
+                continue;
             }
+            auth_fails = 0;
             plain[plen] = '\0';
             sanitize_peer_text(plain, plen);
 
@@ -314,13 +319,18 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
  * raw termios.  Fall back to the original cooked-mode loop: the OS
  * handles line editing internally and delivers complete lines. */
 static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
+    uint8_t  frame[FRAME_SZ];
+    uint8_t  next_tx[KEY];
+    uint8_t  plain[MAX_MSG + 1];
+    char     line[MAX_MSG + 2];
+    uint16_t plen;
+    int      auth_fails = 0;
+
+    memset(frame, 0, sizeof frame);
+    memset(line, 0, sizeof line);
+
     while (g_running) {
         struct pollfd fds[2];
-        uint8_t       frame[FRAME_SZ];
-        uint8_t       next_tx[KEY];
-        uint8_t       plain[MAX_MSG + 1];
-        char          line[MAX_MSG + 2];
-        uint16_t      plen;
         int           ready;
 
         fds[0].fd     = fd;
@@ -344,9 +354,15 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
             }
             plen = 0;
             if (frame_open(sess, frame, plain, &plen) != 0) {
-                fprintf(stderr, "[session error: authentication or sequence failure]\n");
-                break;
+                crypto_wipe(frame, sizeof frame);
+                crypto_wipe(plain, sizeof plain);
+                if (++auth_fails >= MAX_AUTH_FAILURES) {
+                    fprintf(stderr, "[session error: authentication or sequence failure]\n");
+                    break;
+                }
+                continue;
             }
+            auth_fails = 0;
             plain[plen] = '\0';
             sanitize_peer_text(plain, plen); /* strip terminal escape bytes */
             secure_chat_print("peer", (char *)plain);
@@ -405,6 +421,12 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
             crypto_wipe(next_tx, sizeof next_tx);
         }
     }
+
+    /* Wipe all sensitive data from the stack before returning. */
+    crypto_wipe(line, sizeof line);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next_tx, sizeof next_tx);
+    crypto_wipe(plain, sizeof plain);
 }
 
 /* ---- Public entry point -------------------------------------------------

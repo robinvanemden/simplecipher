@@ -86,13 +86,14 @@ void ratchet_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const
  *   - Clears need_send_ratchet.
  *
  * Returns 1 if a ratchet step was performed (caller must set FLAG_RATCHET
- * and include ratchet_pub in the frame), 0 if no ratchet was needed.
+ * and include ratchet_pub in the frame), 0 if no ratchet was needed, or
+ * -1 if the DH output was all-zero (malicious peer — session must be torn down).
  *
  * NOTE: this mutates session state (root, dh_priv, dh_pub, tx) before the
  * frame is written to the network.  If the write fails, the session is in
  * an inconsistent state.  This is acceptable because SimpleCipher treats
  * any I/O failure as session-fatal — there is no retry or recovery. */
-int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]);
+[[nodiscard]] int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]);
 
 /* Process an incoming ratchet key from a received frame.
  *
@@ -104,7 +105,10 @@ int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]);
  *   - Wipes all intermediates (dh_secret, ikm).
  *
  * After this, the receiving chain is keyed with fresh DH entropy that an
- * attacker who stole the old chain key cannot derive. */
-void ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]);
+ * attacker who stole the old chain key cannot derive.
+ *
+ * Returns 0 on success, -1 if the DH output was all-zero (session must
+ * be torn down). */
+[[nodiscard]] int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]);
 
 #endif /* SIMPLECIPHER_RATCHET_H */

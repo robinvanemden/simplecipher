@@ -132,7 +132,7 @@ int main(void) {
     s.need_send_ratchet = nondet_int();
     uint8_t peer_pub[32];
     for (int i = 0; i < 32; i++) peer_pub[i] = nondet_uint8();
-    ratchet_receive(&s, peer_pub);
+    (void)ratchet_receive(&s, peer_pub);
     return 0;
 }
 """,

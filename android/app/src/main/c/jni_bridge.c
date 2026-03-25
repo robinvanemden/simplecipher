@@ -187,6 +187,31 @@ typedef struct {
     jmethodID mid_onPeerFingerprintReady;
 } thread_arg_t;
 
+/* ---- Helper: wipe and free a thread_arg_t ------------------------------- */
+
+/* Wipe all sensitive fields (keypair, peer fingerprint, metadata strings)
+ * before freeing.  Used on every pre-thread failure path to prevent leaking
+ * copied secrets when pthread_create or JNI setup fails. */
+static void thread_arg_wipe_and_free(thread_arg_t *ta) {
+    if (!ta) return;
+    crypto_wipe(ta->prekey_priv, KEY);
+    crypto_wipe(ta->prekey_pub,  KEY);
+    crypto_wipe(ta->peer_fp, 8);
+    if (ta->host) {
+        crypto_wipe(ta->host, strlen(ta->host));
+        free(ta->host);
+    }
+    if (ta->socks5_host) {
+        crypto_wipe(ta->socks5_host, strlen(ta->socks5_host));
+        free(ta->socks5_host);
+    }
+    if (ta->socks5_port) {
+        crypto_wipe(ta->socks5_port, strlen(ta->socks5_port));
+        free(ta->socks5_port);
+    }
+    free(ta);
+}
+
 /* ---- Helper: read exactly n bytes from a file descriptor ---------------- */
 
 /* Like read_exact() for sockets, but for the pipe fd.
@@ -323,9 +348,9 @@ static void *session_thread(void *arg) {
         crypto_wipe(prekey_priv, sizeof prekey_priv);
         crypto_wipe(prekey_pub,  sizeof prekey_pub);
         crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
-        free(host);
-        free(socks5_host);
-        free(socks5_port);
+        if (host)       { crypto_wipe(host, strlen(host)); free(host); }
+        if (socks5_host){ crypto_wipe(socks5_host, strlen(socks5_host)); free(socks5_host); }
+        if (socks5_port){ crypto_wipe(socks5_port, strlen(socks5_port)); free(socks5_port); }
         close(pipe_rd);
         return NULL;
     }
@@ -512,12 +537,9 @@ static void *session_thread(void *arg) {
         we_init = 0;
     }
 
-    free(host);
-    host = NULL;
-    free(socks5_host);
-    socks5_host = NULL;
-    free(socks5_port);
-    socks5_port = NULL;
+    if (host)       { crypto_wipe(host, strlen(host)); free(host); host = NULL; }
+    if (socks5_host){ crypto_wipe(socks5_host, strlen(socks5_host)); free(socks5_host); socks5_host = NULL; }
+    if (socks5_port){ crypto_wipe(socks5_port, strlen(socks5_port)); free(socks5_port); socks5_port = NULL; }
 
     if (fd == INVALID_SOCK) {
         LOGE("connection failed");
@@ -552,43 +574,45 @@ static void *session_thread(void *arg) {
 
         set_sock_timeout(fd, HANDSHAKE_TIMEOUT_S);
 
-        /* Version exchange */
+        /* Two-round handshake (v3): version+commitment, then keys.
+         * Both rounds complete before any verification — timing-
+         * indistinguishable failure modes from the wire. */
+        uint8_t peer_ver;
         {
-            uint8_t my_ver   = (uint8_t)PROTOCOL_VERSION;
-            uint8_t peer_ver = 0;
-            if (exchange(fd, we_init, &my_ver, 1, &peer_ver, 1) != 0) {
-                LOGE("handshake error (version exchange)");
+            uint8_t out1[1 + KEY], in1[1 + KEY];
+            out1[0] = (uint8_t)PROTOCOL_VERSION;
+            memcpy(out1 + 1, commit_self, KEY);
+            if (exchange(fd, we_init, out1, sizeof out1, in1, sizeof in1) != 0) {
+                LOGE("handshake error (round 1)");
+                crypto_wipe(out1, sizeof out1);
+                crypto_wipe(in1, sizeof in1);
                 crypto_wipe(commit_self, sizeof commit_self);
-                jni_call_str(env, cb, mid_onHandshakeFailed, "Version exchange failed", "ver_xchg");
+                jni_call_str(env, cb, mid_onHandshakeFailed, "Handshake failed", "hs_r1");
                 goto cleanup_keys;
             }
-            if (peer_ver != PROTOCOL_VERSION) {
-                LOGE("version mismatch: we=%d peer=%d", PROTOCOL_VERSION, (int)peer_ver);
-                crypto_wipe(commit_self, sizeof commit_self);
-                jni_call_str(env, cb, mid_onHandshakeFailed, "Protocol version mismatch", "ver_mismatch");
-                goto cleanup_keys;
-            }
+            peer_ver = in1[0];
+            memcpy(commit_peer, in1 + 1, KEY);
+            crypto_wipe(out1, sizeof out1);
+            crypto_wipe(in1, sizeof in1);
         }
 
-        /* Commitment exchange */
-        if (exchange(fd, we_init, commit_self, KEY, commit_peer, KEY) != 0) {
-            LOGE("handshake error (commitments)");
-            crypto_wipe(commit_self, sizeof commit_self);
-            crypto_wipe(commit_peer, sizeof commit_peer);
-            jni_call_str(env, cb, mid_onHandshakeFailed, "Commitment exchange failed", "commit_xchg");
-            goto cleanup_keys;
-        }
-
-        /* Key reveal */
         if (exchange(fd, we_init, self_pub, KEY, peer_pub, KEY) != 0) {
-            LOGE("handshake error (keys)");
+            LOGE("handshake error (round 2)");
             crypto_wipe(commit_self, sizeof commit_self);
             crypto_wipe(commit_peer, sizeof commit_peer);
-            jni_call_str(env, cb, mid_onHandshakeFailed, "Key exchange failed", "key_xchg");
+            jni_call_str(env, cb, mid_onHandshakeFailed, "Handshake failed", "hs_r2");
             goto cleanup_keys;
         }
 
         set_sock_timeout(fd, 0);
+
+        if (peer_ver != PROTOCOL_VERSION) {
+            LOGE("version mismatch: we=%d peer=%d", PROTOCOL_VERSION, (int)peer_ver);
+            crypto_wipe(commit_self, sizeof commit_self);
+            crypto_wipe(commit_peer, sizeof commit_peer);
+            jni_call_str(env, cb, mid_onHandshakeFailed, "Protocol version mismatch", "ver_mismatch");
+            goto cleanup_keys;
+        }
 
         /* Verify commitment */
         if (!verify_commit(commit_peer, peer_pub)) {
@@ -719,7 +743,8 @@ static void *session_thread(void *arg) {
         fds[1].fd     = pipe_rd;
         fds[1].events = POLLIN;
 
-        int running = 1;
+        int running    = 1;
+        int auth_fails = 0;
         while (running) {
             int ret = poll(fds, 2, -1);  /* block until activity */
             if (ret < 0) {
@@ -742,12 +767,17 @@ static void *session_thread(void *arg) {
                 }
 
                 if (frame_open(&sess, frame, plain, &plen) != 0) {
-                    LOGE("frame_open failed (auth or sequence error)");
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(plain, sizeof plain);
-                    jni_call_str(env, cb, mid_onDisconnected, "Decryption failed", "decrypt_fail");
-                    break;
+                    if (++auth_fails >= MAX_AUTH_FAILURES) {
+                        LOGE("frame_open failed %d times — session torn down", auth_fails);
+                        jni_call_str(env, cb, mid_onDisconnected, "Decryption failed", "decrypt_fail");
+                        break;
+                    }
+                    LOGI("frame_open failed (%d/%d), tolerating", auth_fails, MAX_AUTH_FAILURES);
+                    continue;
                 }
+                auth_fails = 0;
 
                 plain[plen] = '\0';
                 sanitize_peer_text(plain, plen);
@@ -1057,7 +1087,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         const char *h = (*env)->GetStringUTFChars(env, host, NULL);
         if (!h) {
             LOGE("GetStringUTFChars failed (OOM)");
-            free(ta);
+            thread_arg_wipe_and_free(ta);
             close(pipefd[0]);
             close(pipefd[1]);
             g_pipe_wr = -1;
@@ -1067,7 +1097,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         (*env)->ReleaseStringUTFChars(env, host, h);
         if (!ta->host) {
             LOGE("strdup(host) failed (OOM)");
-            free(ta);
+            thread_arg_wipe_and_free(ta);
             close(pipefd[0]);
             close(pipefd[1]);
             g_pipe_wr = -1;
@@ -1090,8 +1120,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         if (!p) {
             /* OOM on a non-null proxy string — fail closed. */
             LOGE("GetStringUTFChars(socks5_proxy) failed (OOM)");
-            free(ta->host);
-            free(ta);
+            thread_arg_wipe_and_free(ta);
             close(pipefd[0]);
             close(pipefd[1]);
             g_pipe_wr = -1;
@@ -1111,11 +1140,8 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
                     strcmp(ta->socks5_host, "localhost") != 0 &&
                     strcmp(ta->socks5_host, "::1") != 0) {
                     LOGE("SOCKS5 proxy must be localhost, got: %s", ta->socks5_host);
-                    free(ta->socks5_host);
-                    free(ta->socks5_port);
                     (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
-                    free(ta->host);
-                    free(ta);
+                    thread_arg_wipe_and_free(ta);
                     close(pipefd[0]);
                     close(pipefd[1]);
                     g_pipe_wr = -1;
@@ -1124,11 +1150,8 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
                 if (!ta->socks5_host || !ta->socks5_port) {
                     /* OOM on strdup — fail closed, don't fall to direct connect */
                     LOGE("SOCKS5 strdup failed (OOM)");
-                    free(ta->socks5_host);
-                    free(ta->socks5_port);
                     (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
-                    free(ta->host);
-                    free(ta);
+                    thread_arg_wipe_and_free(ta);
                     close(pipefd[0]);
                     close(pipefd[1]);
                     g_pipe_wr = -1;
@@ -1138,8 +1161,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
                 /* Non-empty proxy string but bad format — fail closed. */
                 LOGE("SOCKS5 proxy string malformed (expected host:port): %s", p);
                 (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
-                free(ta->host);
-                free(ta);
+                thread_arg_wipe_and_free(ta);
                 close(pipefd[0]);
                 close(pipefd[1]);
                 g_pipe_wr = -1;
@@ -1174,10 +1196,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     ta->callback = (*env)->NewGlobalRef(env, callback);
     if (!ta->callback) {
         LOGE("NewGlobalRef failed (OOM)");
-        free(ta->socks5_host);
-        free(ta->socks5_port);
-        free(ta->host);
-        free(ta);
+        thread_arg_wipe_and_free(ta);
         close(pipefd[0]);
         close(pipefd[1]);
         g_pipe_wr = -1;
@@ -1202,8 +1221,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         !ta->mid_onDisconnected || !ta->mid_onPeerFingerprintReady) {
         LOGE("failed to resolve one or more callback method IDs");
         (*env)->DeleteGlobalRef(env, ta->callback);
-        free(ta->host);
-        free(ta);
+        thread_arg_wipe_and_free(ta);
         close(pipefd[0]);
         close(pipefd[1]);
         g_pipe_wr = -1;
@@ -1225,8 +1243,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         LOGE("pthread_create failed: %d", rc);
         g_session_active = 0;
         (*env)->DeleteGlobalRef(env, ta->callback);
-        free(ta->host);
-        free(ta);
+        thread_arg_wipe_and_free(ta);
         close(pipefd[0]);
         close(pipefd[1]);
         g_pipe_wr = -1;

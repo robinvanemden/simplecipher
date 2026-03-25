@@ -8,7 +8,7 @@
  *   [ seq : 8 ][ ciphertext : 488 ][ mac : 16 ]
  *   seq is authenticated additional data (not encrypted, but tamper-proof).
  *
- * Plaintext slot (v2):
+ * Plaintext slot:
  *   Normal:  [ flags(1) | len(2) | message(≤485) | zero padding ]
  *   Ratchet: [ flags(1) | ratchet_pub(32) | len(2) | message(≤453) | zero padding ]
  *
@@ -43,9 +43,20 @@ enum {
     HEADER_SZ           = 1,                     /* flags byte in plaintext slot  */
     MAX_MSG             = CT_SZ - 2 - HEADER_SZ, /* 485 bytes       */
     MAX_MSG_RATCHET     = MAX_MSG - KEY,         /* 453 bytes       */
-    PROTOCOL_VERSION    = 2,
+    PROTOCOL_VERSION    = 3,
     HANDSHAKE_TIMEOUT_S = 30,
-    FRAME_TIMEOUT_S     = 30
+    FRAME_TIMEOUT_S     = 30,
+    /* Maximum consecutive frame_open failures before session teardown.
+     *
+     * frame_open does NOT mutate session state on failure (chain, seq, root
+     * are all untouched), so the next legitimate frame still works.  This
+     * tolerance prevents an active network attacker from killing a session
+     * by injecting a single forged frame during an idle period.
+     *
+     * After MAX_AUTH_FAILURES consecutive failures with no valid frame in
+     * between, the session is torn down — either the peer is misbehaving
+     * or the TCP stream is permanently corrupted by injection. */
+    MAX_AUTH_FAILURES   = 3
 };
 static const uint8_t FLAG_RATCHET = 0x01; /* bit 0: ratchet key follows */
 

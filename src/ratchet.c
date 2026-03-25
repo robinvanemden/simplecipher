@@ -26,14 +26,20 @@
  * Both inputs to the concatenation are exactly 32 bytes, so the boundary
  * is unambiguous and no length prefix is needed.
  *
- * The label "cipher ratchet v2" matches PROTOCOL_VERSION=2 and is
+ * The label "cipher ratchet v2" is a KDF domain label (independent of
+ * the wire-format PROTOCOL_VERSION) and is
  * domain-separated from the handshake labels ("cipher x25519 sas root v1",
  * "cipher commit v1") which use "v1". */
-static void ratchet_step(uint8_t root[KEY], uint8_t chain_out[KEY], const uint8_t our_priv[KEY],
-                         const uint8_t their_pub[KEY]) {
+/* Returns 0 on success, -1 if DH produced all-zero output (malicious peer). */
+static int ratchet_step(uint8_t root[KEY], uint8_t chain_out[KEY], const uint8_t our_priv[KEY],
+                        const uint8_t their_pub[KEY]) {
     uint8_t dh[KEY], ikm[KEY * 2];
 
     crypto_x25519(dh, our_priv, their_pub);
+    if (is_zero32(dh)) {
+        crypto_wipe(dh, sizeof dh);
+        return -1;
+    }
 
     memcpy(ikm, root, KEY);
     memcpy(ikm + KEY, dh, KEY);
@@ -42,6 +48,7 @@ static void ratchet_step(uint8_t root[KEY], uint8_t chain_out[KEY], const uint8_
 
     crypto_wipe(dh, sizeof dh);
     crypto_wipe(ikm, sizeof ikm);
+    return 0;
 }
 
 void ratchet_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
@@ -76,7 +83,7 @@ int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
     crypto_x25519_public_key(s->dh_pub, s->dh_priv);
 
     /* Mix the new DH secret into the root key and derive a fresh tx chain. */
-    ratchet_step(s->root, s->tx, s->dh_priv, s->peer_dh);
+    if (ratchet_step(s->root, s->tx, s->dh_priv, s->peer_dh) != 0) return -1;
 
     /* Tell the caller to include our new public key in the frame. */
     memcpy(ratchet_pub, s->dh_pub, KEY);
@@ -85,10 +92,10 @@ int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
     return 1;
 }
 
-void ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
+int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
     /* Store the peer's new ratchet public key. */
     memcpy(s->peer_dh, peer_new_pub, KEY);
 
     /* Mix the DH secret into the root key and derive a fresh rx chain. */
-    ratchet_step(s->root, s->rx, s->dh_priv, s->peer_dh);
+    return ratchet_step(s->root, s->rx, s->dh_priv, s->peer_dh);
 }

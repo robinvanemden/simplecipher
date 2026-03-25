@@ -6,7 +6,7 @@
 
 - **Keys are ephemeral.** If your device is seized after a session, past messages cannot be decrypted because the private key is already gone.
 - **The handshake has a 30-second timeout.** A peer who stalls during key exchange is disconnected automatically.
-- **Runtime hardening** is enabled in all release builds (`-DCIPHER_HARDEN`).
+- **Runtime hardening** is enabled in all release builds (`-DCIPHER_HARDEN`). If seccomp or Capsicum sandbox installation fails at runtime, a warning is printed to stderr (the session continues without that layer).
 
 ## Platform hardening
 
@@ -35,9 +35,11 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Lock memory (prevent swap) | `mlockall` | — | — |
 | Disable core dumps | `RLIMIT_CORE=0` | `SetErrorMode` (WER off) | `RLIMIT_CORE=0` (unconditional in JNI_OnLoad) |
 | Block ptrace / memory inspection | `PR_SET_DUMPABLE=0` | — | `PR_SET_DUMPABLE=0` (unconditional in JNI_OnLoad) |
-| Seccomp-BPF syscall filter (two-phase) | yes: phase 1 after TCP connect (blocks new sockets), phase 2 after handshake (tightest) | — | — |
+| Seccomp-BPF syscall filter (two-phase) | yes: phase 1 after TCP connect (blocks new sockets, ioctl restricted — TIOCSTI blocked), phase 2 after handshake (tightest, ioctl restricted — TIOCSTI blocked) | — | — |
+| Process mitigation policies (Windows) | — | ProhibitDynamicCode, DisableExtensionPoints, StrictHandleCheck | — |
 | Capsicum capability sandbox (FreeBSD only) | — (FreeBSD: two-phase `cap_enter()` + per-fd rights, CI-verified) | — | — |
 | pledge/unveil (OpenBSD only) | — (OpenBSD: `pledge("stdio")` + `unveil(NULL,NULL)`, CI-verified) | — | — |
+| MAC failure tolerance (MAX_AUTH_FAILURES=3 — single forged frame does not kill session) | yes | yes | yes |
 | **Key management** | | | |
 | Wipe all keys after use (`crypto_wipe`) | yes | yes | yes (native layer) |
 | Ephemeral keys only (nothing on disk) | yes | yes | yes |
