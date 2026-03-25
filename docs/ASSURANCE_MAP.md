@@ -23,7 +23,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 
 | Claim | Code | Test |
 |-------|------|------|
-| Private key wiped after session_init | `main.c:415`, `jni_bridge.c:598` | `test_p2p.c:test_session_init_wipes_intermediates` |
+| Private key wiped after session_init | `main.c:416`, `jni_bridge.c:598` | `test_p2p.c:test_session_init_wipes_intermediates` |
 | Chain key wiped after each message | `crypto.c:chain_step()` overwrites | `test_p2p.c:test_chain_step_wipes_safe` |
 | Session state wiped on exit | `protocol.c:session_wipe()` | `test_p2p.c:test_session_wipe`, `test_p2p.c:test_global_session_wipe` |
 | Frame build wipes intermediates | `protocol.c:frame_build()` | `test_p2p.c:test_frame_build_wipes_intermediates` |

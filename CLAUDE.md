@@ -49,7 +49,7 @@ Consumers (main.c, test_p2p.c, jni_bridge.c) include headers and link object fil
 - `src/` contains all protocol logic — each module has a header and implementation
 - `lib/monocypher.c/h` is vendored upstream — never modify
 - All binaries must be fully static, zero runtime dependencies
-- C23 standard, size-optimized (`-Os -flto`)
+- C23 standard, size-optimized (`-Os -flto`). OpenBSD 7.7 uses `-std=c2x` (Clang 16); `constexpr` compat shim in `platform.h`.
 - Crypto: X25519, XChaCha20-Poly1305, BLAKE2b (all via Monocypher)
 - Every key/secret must be wiped with `crypto_wipe()` after use
 - CI builds and tests natively on 8 runners (Linux/Windows x86_64/aarch64)

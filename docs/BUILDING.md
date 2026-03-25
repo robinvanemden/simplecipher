@@ -14,6 +14,8 @@ Or explicitly:
 gcc -O2 -std=c23 -Isrc -Ilib src/*.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
 ```
 
+On OpenBSD 7.7 (Clang 16), use `-std=c2x` instead of `-std=c23`. A compatibility shim in `platform.h` maps the C23 `constexpr` keyword to `const` on older compilers.
+
 ## Cross-compile with CMake presets
 
 Prerequisites: [musl cross-compilers](https://github.com/robinvanemden/toolchains/releases), [llvm-mingw](https://github.com/mstorsjo/llvm-mingw/releases), [Android NDK r28](https://developer.android.com/ndk).
