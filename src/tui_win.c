@@ -9,7 +9,7 @@
  */
 
 #include "tui.h"
-#include "cli.h"     /* for win_try_send() */
+#include "cli.h" /* for win_try_send() */
 
 /* ---- TUI: terminal setup (Windows) --------------------------------------
  *
@@ -25,22 +25,20 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 
-static HANDLE tui_h_out = INVALID_HANDLE_VALUE;
+static HANDLE tui_h_out         = INVALID_HANDLE_VALUE;
 static DWORD  tui_orig_out_mode = 0;
-static UINT   tui_orig_out_cp = 0;
+static UINT   tui_orig_out_cp   = 0;
 
-void tui_restore_term(void){
+void tui_restore_term(void) {
     printf("\033[?25h");
-    printf("\033[0 q");     /* restore default cursor shape */
+    printf("\033[0 q"); /* restore default cursor shape */
     printf("\033[0m");
     fflush(stdout);
-    if (tui_h_out != INVALID_HANDLE_VALUE)
-        SetConsoleMode(tui_h_out, tui_orig_out_mode);
-    if (tui_orig_out_cp != 0)
-        SetConsoleOutputCP(tui_orig_out_cp);
+    if (tui_h_out != INVALID_HANDLE_VALUE) SetConsoleMode(tui_h_out, tui_orig_out_mode);
+    if (tui_orig_out_cp != 0) SetConsoleOutputCP(tui_orig_out_cp);
 }
 
-void tui_init_term(void){
+void tui_init_term(void) {
     tui_h_out = GetStdHandle(STD_OUTPUT_HANDLE);
     GetConsoleMode(tui_h_out, &tui_orig_out_mode);
     SetConsoleMode(tui_h_out, tui_orig_out_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
@@ -68,24 +66,23 @@ void tui_init_term(void){
  *
  * The TUI drawing code is shared between platforms -- only the event
  * dispatch differs. */
-void tui_chat_loop(socket_t fd, session_t *sess){
-    HANDLE    h_in;
-    DWORD     h_in_mode;
-    char      line[MAX_MSG + 1];
-    size_t    line_len = 0;
-    uint8_t   in_frame[FRAME_SZ];
-    size_t    in_have = 0;
-    uint64_t  in_frame_start_ms = 0;
-    uint8_t   out_frame[FRAME_SZ];
-    uint8_t   out_next_tx[KEY];
-    size_t    out_off = 0;
-    int       out_active = 0;
-    char      out_text[MAX_MSG + 1];
-    WSAEVENT  net_ev;
+void tui_chat_loop(socket_t fd, session_t *sess) {
+    HANDLE      h_in;
+    DWORD       h_in_mode;
+    char        line[MAX_MSG + 1];
+    size_t      line_len = 0;
+    uint8_t     in_frame[FRAME_SZ];
+    size_t      in_have           = 0;
+    uint64_t    in_frame_start_ms = 0;
+    uint8_t     out_frame[FRAME_SZ];
+    uint8_t     out_next_tx[KEY];
+    size_t      out_off    = 0;
+    int         out_active = 0;
+    char        out_text[MAX_MSG + 1];
+    WSAEVENT    net_ev;
     const char *status = "Secure session active  |  Ctrl+C to quit";
 
-    if (!win_console_open(&h_in, &h_in_mode))
-        return;
+    if (!win_console_open(&h_in, &h_in_mode)) return;
     win_console_prepare(h_in, h_in_mode);
 
     memset(line, 0, sizeof line);
@@ -95,8 +92,11 @@ void tui_chat_loop(socket_t fd, session_t *sess){
     memset(out_text, 0, sizeof out_text);
 
     /* Re-enable WINDOW_INPUT for resize events */
-    { DWORD m; GetConsoleMode(h_in, &m);
-      SetConsoleMode(h_in, m | ENABLE_WINDOW_INPUT); }
+    {
+        DWORD m;
+        GetConsoleMode(h_in, &m);
+        SetConsoleMode(h_in, m | ENABLE_WINDOW_INPUT);
+    }
 
     net_ev = WSACreateEvent();
     if (net_ev == WSA_INVALID_EVENT) return;
@@ -104,21 +104,21 @@ void tui_chat_loop(socket_t fd, session_t *sess){
 
     tui_draw_screen(status, line, line_len);
 
-    while (g_running){
-        HANDLE waits[2] = { h_in, net_ev };
-        DWORD wr = WaitForMultipleObjects(2, waits, FALSE, 250);
+    while (g_running) {
+        HANDLE waits[2] = {h_in, net_ev};
+        DWORD  wr       = WaitForMultipleObjects(2, waits, FALSE, 250);
         if (!g_running) break;
         if (wr == WAIT_TIMEOUT) continue;
         if (wr == WAIT_FAILED) break;
 
         /* ----- Console input ----- */
-        if (wr == WAIT_OBJECT_0){
+        if (wr == WAIT_OBJECT_0) {
             INPUT_RECORD recs[32];
-            DWORD nrec = 0, i;
+            DWORD        nrec = 0, i;
             if (!ReadConsoleInputA(h_in, recs, 32, &nrec)) break;
 
-            for (i = 0; i < nrec && g_running; i++){
-                if (recs[i].EventType == WINDOW_BUFFER_SIZE_EVENT){
+            for (i = 0; i < nrec && g_running; i++) {
+                if (recs[i].EventType == WINDOW_BUFFER_SIZE_EVENT) {
                     tui_draw_screen(status, line, line_len);
                     continue;
                 }
@@ -128,20 +128,18 @@ void tui_chat_loop(socket_t fd, session_t *sess){
 
                 char ch = k->uChar.AsciiChar;
 
-                if (k->wVirtualKeyCode == VK_BACK || ch == '\b'){
-                    if (line_len > 0){
+                if (k->wVirtualKeyCode == VK_BACK || ch == '\b') {
+                    if (line_len > 0) {
                         line[--line_len] = '\0';
                         tui_draw_input(line, line_len);
                     }
                     continue;
                 }
-                if (k->wVirtualKeyCode == VK_RETURN || ch == '\r'){
+                if (k->wVirtualKeyCode == VK_RETURN || ch == '\r') {
                     if (line_len == 0) continue;
                     if (out_active) continue;
 
-                    if (frame_build(sess,
-                                    (const uint8_t*)line, (uint16_t)line_len,
-                                    out_frame, out_next_tx) != 0){
+                    if (frame_build(sess, (const uint8_t *)line, (uint16_t)line_len, out_frame, out_next_tx) != 0) {
                         crypto_wipe(line, sizeof line);
                         break;
                     }
@@ -149,27 +147,28 @@ void tui_chat_loop(socket_t fd, session_t *sess){
                     memcpy(out_text, line, line_len);
                     out_text[line_len] = '\0';
                     crypto_wipe(line, sizeof line);
-                    line_len = 0;
-                    out_off = 0;
+                    line_len   = 0;
+                    out_off    = 0;
                     out_active = 1;
 
-                    { int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
-                      if (send_rc < 0) break;
-                      if (send_rc == 0){
-                          memcpy(sess->tx, out_next_tx, KEY);
-                          sess->tx_seq++;
-                          out_active = 0;
-                          tui_msg_add(TUI_ME, out_text);
-                          crypto_wipe(out_frame, sizeof out_frame);
-                          crypto_wipe(out_next_tx, sizeof out_next_tx);
-                          crypto_wipe(out_text, sizeof out_text);
-                      }
+                    {
+                        int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
+                        if (send_rc < 0) break;
+                        if (send_rc == 0) {
+                            memcpy(sess->tx, out_next_tx, KEY);
+                            sess->tx_seq++;
+                            out_active = 0;
+                            tui_msg_add(TUI_ME, out_text);
+                            crypto_wipe(out_frame, sizeof out_frame);
+                            crypto_wipe(out_next_tx, sizeof out_next_tx);
+                            crypto_wipe(out_text, sizeof out_text);
+                        }
                     }
                     tui_draw_messages();
                     tui_draw_input(line, line_len);
                     continue;
                 }
-                if (ch >= 0x20 && ch <= 0x7E && line_len < (size_t)MAX_MSG){
+                if (ch >= 0x20 && ch <= 0x7E && line_len < (size_t)MAX_MSG) {
                     line[line_len++] = (char)ch;
                     line[line_len]   = '\0';
                     tui_draw_input(line, line_len);
@@ -179,24 +178,22 @@ void tui_chat_loop(socket_t fd, session_t *sess){
         }
 
         /* ----- Socket activity ----- */
-        if (wr == WAIT_OBJECT_0 + 1){
+        if (wr == WAIT_OBJECT_0 + 1) {
             WSANETWORKEVENTS ne;
             if (WSAEnumNetworkEvents(fd, net_ev, &ne) != 0) break;
 
-            if (ne.lNetworkEvents & FD_READ){
-                if (in_have > 0 &&
-                    (GetTickCount64() - in_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) break;
+            if (ne.lNetworkEvents & FD_READ) {
+                if (in_have > 0 && (GetTickCount64() - in_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) break;
 
-                for (;;){
-                    int r = recv(fd, (char*)in_frame + in_have,
-                                 (int)(FRAME_SZ - in_have), 0);
-                    if (r > 0){
+                for (;;) {
+                    int r = recv(fd, (char *)in_frame + in_have, (int)(FRAME_SZ - in_have), 0);
+                    if (r > 0) {
                         if (in_have == 0) in_frame_start_ms = GetTickCount64();
                         in_have += (size_t)r;
-                        if (in_have == FRAME_SZ){
-                            uint8_t plain[MAX_MSG + 1];
+                        if (in_have == FRAME_SZ) {
+                            uint8_t  plain[MAX_MSG + 1];
                             uint16_t plen = 0;
-                            if (frame_open(sess, in_frame, plain, &plen) != 0){
+                            if (frame_open(sess, in_frame, plain, &plen) != 0) {
                                 tui_msg_add(TUI_SYSTEM, "[session error]");
                                 status = "Session error  |  Ctrl+C to exit";
                                 tui_draw_screen(status, line, line_len);
@@ -205,18 +202,18 @@ void tui_chat_loop(socket_t fd, session_t *sess){
                             }
                             plain[plen] = '\0';
                             sanitize_peer_text(plain, plen);
-                            tui_msg_add(TUI_PEER, (char*)plain);
+                            tui_msg_add(TUI_PEER, (char *)plain);
                             tui_draw_messages();
                             tui_draw_input(line, line_len);
                             crypto_wipe(plain, sizeof plain);
                             crypto_wipe(in_frame, sizeof in_frame);
-                            in_have = 0;
+                            in_have           = 0;
                             in_frame_start_ms = 0;
                             continue;
                         }
                         continue;
                     }
-                    if (r == 0){
+                    if (r == 0) {
                         tui_msg_add(TUI_SYSTEM, "[peer disconnected]");
                         status = "Peer disconnected  |  Ctrl+C to exit";
                         tui_draw_screen(status, line, line_len);
@@ -228,10 +225,10 @@ void tui_chat_loop(socket_t fd, session_t *sess){
                 }
             }
 
-            if (out_active && (ne.lNetworkEvents & FD_WRITE)){
+            if (out_active && (ne.lNetworkEvents & FD_WRITE)) {
                 int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
                 if (send_rc < 0) break;
-                if (send_rc == 0){
+                if (send_rc == 0) {
                     memcpy(sess->tx, out_next_tx, KEY);
                     sess->tx_seq++;
                     out_active = 0;
@@ -243,7 +240,7 @@ void tui_chat_loop(socket_t fd, session_t *sess){
                     crypto_wipe(out_text, sizeof out_text);
                 }
             }
-            if (ne.lNetworkEvents & FD_CLOSE){
+            if (ne.lNetworkEvents & FD_CLOSE) {
                 tui_msg_add(TUI_SYSTEM, "[peer disconnected]");
                 status = "Peer disconnected  |  Ctrl+C to exit";
                 tui_draw_screen(status, line, line_len);

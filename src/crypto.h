@@ -35,9 +35,9 @@
  * on every compiler (including Clang 16 which lacks C23 constexpr).
  * ========================================================================= */
 enum {
-    KEY      = 32,  /* bytes in any key or hash                          */
-    NONCE_SZ = 24,  /* XChaCha20 nonce size                              */
-    MAC_SZ   = 16   /* Poly1305 MAC — proves ciphertext is untampered   */
+    KEY      = 32, /* bytes in any key or hash                          */
+    NONCE_SZ = 24, /* XChaCha20 nonce size                              */
+    MAC_SZ   = 16  /* Poly1305 MAC — proves ciphertext is untampered   */
 };
 
 /* =========================================================================
@@ -63,10 +63,10 @@ enum {
  * different sequence number is rejected as a replay or reorder.
  * ========================================================================= */
 typedef struct {
-    uint8_t  tx[KEY];           /* sending chain key              */
-    uint8_t  rx[KEY];           /* receiving chain key            */
-    uint64_t tx_seq;            /* next outgoing sequence number  */
-    uint64_t rx_seq;            /* next expected incoming seq num */
+    uint8_t  tx[KEY]; /* sending chain key              */
+    uint8_t  rx[KEY]; /* receiving chain key            */
+    uint64_t tx_seq;  /* next outgoing sequence number  */
+    uint64_t rx_seq;  /* next expected incoming seq num */
 
     /* DH ratchet state — provides post-compromise security.
      *
@@ -90,11 +90,11 @@ typedef struct {
      *                we receive a frame with FLAG_RATCHET set).
      * need_send_ratchet — set to 1 after receiving a message; when we
      *                next send, this triggers a DH ratchet step. */
-    uint8_t  root[KEY];
-    uint8_t  dh_priv[KEY];
-    uint8_t  dh_pub[KEY];
-    uint8_t  peer_dh[KEY];
-    int      need_send_ratchet;
+    uint8_t root[KEY];
+    uint8_t dh_priv[KEY];
+    uint8_t dh_pub[KEY];
+    uint8_t peer_dh[KEY];
+    int     need_send_ratchet;
 } session_t;
 
 /* ---- crypto function declarations --------------------------------------- */
@@ -126,8 +126,7 @@ typedef struct {
  * protocol purposes produces unrelated outputs.  Each label ("cipher
  * commit v1", "cipher x25519 sas root v1", etc.) gives a distinct
  * output space so values cannot be confused or substituted across uses. */
-void domain_hash(uint8_t out[32], const char *label,
-                 const uint8_t *msg, size_t msg_sz);
+void domain_hash(uint8_t out[32], const char *label, const uint8_t *msg, size_t msg_sz);
 
 /* expand: BLAKE2b keyed with a secret PRK, labelled output.
  *

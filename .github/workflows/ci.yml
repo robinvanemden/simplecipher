@@ -138,8 +138,8 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install clang-tidy-19
-        run: sudo apt-get install -y --no-install-recommends clang-19 clang-tidy-19
+      - name: Install clang-tidy-19 and clang-format-19
+        run: sudo apt-get install -y --no-install-recommends clang-19 clang-tidy-19 clang-format-19
 
       - name: Generate compilation database
         run: |
@@ -152,6 +152,9 @@ jobs:
           clang-tidy-19 -p build/analysis \
             src/main.c src/platform.c src/crypto.c src/protocol.c \
             src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c
+
+      - name: Check code formatting (clang-format)
+        run: clang-format-19 --dry-run -Werror src/*.c src/*.h
 
   build:
     runs-on: ubuntu-24.04

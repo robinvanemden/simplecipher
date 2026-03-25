@@ -24,23 +24,26 @@ volatile SOCKET g_interrupt_sock = INVALID_SOCKET;
 
 #if defined(_WIN32) || defined(_WIN64)
 
-int  plat_init(void){ WSADATA w; return WSAStartup(MAKEWORD(2,2), &w); }
-void plat_quit(void){ WSACleanup(); }
+int plat_init(void) {
+    WSADATA w;
+    return WSAStartup(MAKEWORD(2, 2), &w);
+}
+void plat_quit(void) { WSACleanup(); }
 
 /* BCryptGenRandom: Windows CSPRNG, hardware-seeded.  Never use rand(). */
-void fill_random(uint8_t *b, size_t n){
-    if (BCryptGenRandom(nullptr, b, (ULONG)n, BCRYPT_USE_SYSTEM_PREFERRED_RNG)){
+void fill_random(uint8_t *b, size_t n) {
+    if (BCryptGenRandom(nullptr, b, (ULONG)n, BCRYPT_USE_SYSTEM_PREFERRED_RNG)) {
         fprintf(stderr, "rng failed\n");
         ExitProcess(1);
     }
 }
 
-void sock_shutdown_both(socket_t s){ shutdown(s, SD_BOTH); }
+void sock_shutdown_both(socket_t s) { shutdown(s, SD_BOTH); }
 
 #else /* POSIX */
 
-int  plat_init(void){ return 0; }
-void plat_quit(void){}
+int  plat_init(void) { return 0; }
+void plat_quit(void) {}
 
 /* Cryptographically secure random bytes from the OS entropy pool.
  *
@@ -53,22 +56,28 @@ void plat_quit(void){}
  *
  * /dev/urandom is used as a last resort because fopen() can succeed before
  * the pool is seeded on some minimal environments. */
-void fill_random(uint8_t *b, size_t n){
-#if defined(__linux__)
-    if (getrandom(b, n, 0) != (ssize_t)n){ perror("getrandom"); _exit(1); }
-#else
+void fill_random(uint8_t *b, size_t n) {
+#    if defined(__linux__)
+    if (getrandom(b, n, 0) != (ssize_t)n) {
+        perror("getrandom");
+        _exit(1);
+    }
+#    else
     /* getentropy(3) is limited to 256 bytes per call on all BSDs.
      * Loop in chunks to support larger requests (e.g. test harnesses). */
     while (n > 0) {
         size_t chunk = n > 256 ? 256 : n;
-        if (getentropy(b, chunk) != 0){ perror("getentropy"); _exit(1); }
+        if (getentropy(b, chunk) != 0) {
+            perror("getentropy");
+            _exit(1);
+        }
         b += chunk;
         n -= chunk;
     }
-#endif
+#    endif
 }
 
-void sock_shutdown_both(socket_t s){ shutdown(s, SHUT_RDWR); }
+void sock_shutdown_both(socket_t s) { shutdown(s, SHUT_RDWR); }
 
 #endif /* platform */
 
@@ -84,8 +93,8 @@ void sock_shutdown_both(socket_t s){ shutdown(s, SHUT_RDWR); }
  * ========================================================================= */
 #ifdef CIPHER_HARDEN
 
-#if defined(_WIN32) || defined(_WIN64)
-void harden(void){
+#    if defined(_WIN32) || defined(_WIN64)
+void harden(void) {
     /* Disable crash dumps (WER: Windows Error Reporting).
      * SEM_FAILCRITICALERRORS: suppress hard-error dialog boxes
      * SEM_NOGPFAULTERRORBOX: suppress WER crash dialogs + dump files
@@ -93,8 +102,8 @@ void harden(void){
      * via crash dump files when the process terminates abnormally. */
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 }
-#else /* POSIX */
-void harden(void){
+#    else /* POSIX */
+void harden(void) {
     /* Best-effort: succeeds as root or with ulimit -l unlimited,
      * silently fails for unprivileged users (expected, not fatal). */
     (void)mlockall(MCL_CURRENT | MCL_FUTURE);
@@ -105,16 +114,16 @@ void harden(void){
         struct rlimit rl;
         if (getrlimit(RLIMIT_CORE, &rl) == 0) {
             rl.rlim_cur = 0;
-            setrlimit(RLIMIT_CORE, &rl);      /* soft = 0, keep hard */
+            setrlimit(RLIMIT_CORE, &rl); /* soft = 0, keep hard */
             rl.rlim_max = 0;
             (void)setrlimit(RLIMIT_CORE, &rl); /* try hard = 0 too   */
         }
     }
-  #ifdef __linux__
+#        ifdef __linux__
     prctl(PR_SET_DUMPABLE, 0);
-  #endif
+#        endif
 }
-#endif /* platform */
+#    endif /* platform */
 
 /* ---- seccomp-BPF syscall sandboxing (Linux only) ----------------------
  *
@@ -132,30 +141,30 @@ void harden(void){
  *
  * The filter is a BPF (Berkeley Packet Filter) program that examines each
  * syscall number and returns ALLOW or KILL_PROCESS. */
-#if defined(__linux__)
-#include <linux/filter.h>
-#include <linux/seccomp.h>
-#include <linux/audit.h>
-#include <sys/syscall.h>
+#    if defined(__linux__)
+#        include <linux/filter.h>
+#        include <linux/seccomp.h>
+#        include <linux/audit.h>
+#        include <sys/syscall.h>
 
 /* Detect the correct audit architecture for the BPF filter.
  * The seccomp filter checks the arch field to prevent syscall confusion
  * on multi-arch kernels (e.g. 32-bit compat on 64-bit). */
-#if defined(__x86_64__)
-  #define SECCOMP_AUDIT_ARCH AUDIT_ARCH_X86_64
-#elif defined(__aarch64__)
-  #define SECCOMP_AUDIT_ARCH AUDIT_ARCH_AARCH64
-#else
-  #undef SECCOMP_AUDIT_ARCH  /* skip seccomp on unknown arch */
-#endif
+#        if defined(__x86_64__)
+#            define SECCOMP_AUDIT_ARCH AUDIT_ARCH_X86_64
+#        elif defined(__aarch64__)
+#            define SECCOMP_AUDIT_ARCH AUDIT_ARCH_AARCH64
+#        else
+#            undef SECCOMP_AUDIT_ARCH /* skip seccomp on unknown arch */
+#        endif
 
-#ifdef SECCOMP_AUDIT_ARCH
+#        ifdef SECCOMP_AUDIT_ARCH
 
 /* Helper: set PR_SET_NO_NEW_PRIVS and install a BPF filter.
  * Called once per phase.  Best-effort: if the kernel does not support
  * seccomp-BPF, the process continues with a wider syscall surface. */
-static void apply_seccomp(struct sock_filter *f, unsigned short len){
-    struct sock_fprog prog = { .len = len, .filter = f };
+static void apply_seccomp(struct sock_filter *f, unsigned short len) {
+    struct sock_fprog prog = {.len = len, .filter = f};
     /* PR_SET_NO_NEW_PRIVS is required before installing a seccomp filter
      * without CAP_SYS_ADMIN.  It prevents gaining privileges via execve
      * (setuid bits are ignored after this point). */
@@ -201,7 +210,7 @@ static void apply_seccomp(struct sock_filter *f, unsigned short len){
  * NOT allow socket/connect/bind/listen/accept — those are no longer needed.
  * A compromised process cannot open new connections from this point on.
  */
-static void install_seccomp_phase1(void){
+static void install_seccomp_phase1(void) {
     struct sock_filter filter[] = {
         /* Architecture check */
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
@@ -212,68 +221,102 @@ static void install_seccomp_phase1(void){
 
         /* Existing-socket I/O only — no new connections.
          * shutdown is needed for graceful disconnect on error. */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_shutdown,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_shutdown, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
         /* I/O */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_read,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_write,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_writev,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sendto,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_recvfrom,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_close,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* SYS_poll does not exist on aarch64 (uses ppoll only) */
-#ifdef SYS_poll
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_poll,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#endif
-#ifdef SYS_select
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_select,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#endif
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_read, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_write, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_writev, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sendto, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_recvfrom, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_close, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    /* SYS_poll does not exist on aarch64 (uses ppoll only) */
+#            ifdef SYS_poll
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_poll, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            endif
+#            ifdef SYS_select
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_select, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
         /* Entropy and timing */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getrandom,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_nanosleep,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#ifdef SYS_gettimeofday
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_gettimeofday,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getrandom, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_nanosleep, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            ifdef SYS_gettimeofday
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_gettimeofday, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            endif
 
         /* Memory management */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mmap,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_munmap,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mprotect,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_brk,           0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#ifdef SYS_mlock
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mlock,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#endif
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mlockall,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mmap, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_munmap, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mprotect, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_brk, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            ifdef SYS_mlock
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mlock, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mlockall, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
         /* Signals */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigaction,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigreturn,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sigaltstack,   0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#ifdef SYS_rt_sigprocmask
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigprocmask,0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigaction, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigreturn, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sigaltstack, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            ifdef SYS_rt_sigprocmask
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigprocmask, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            endif
 
         /* Process control */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prctl,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_exit,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_exit_group,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prlimit64,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#ifdef SYS_setrlimit
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_setrlimit,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prctl, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_exit, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_exit_group, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prlimit64, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            ifdef SYS_setrlimit
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_setrlimit, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            endif
 
         /* glibc/musl internals */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_futex,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_newfstatat,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* SYS_fstat does not exist on aarch64 (uses newfstatat only) */
-#ifdef SYS_fstat
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_fstat,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#endif
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rseq,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_futex, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_newfstatat, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    /* SYS_fstat does not exist on aarch64 (uses newfstatat only) */
+#            ifdef SYS_fstat
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_fstat, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rseq, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
         /* Default: kill the process on any disallowed syscall */
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
@@ -322,7 +365,7 @@ static void install_seccomp_phase1(void){
  *   prlimit64        — getrlimit/setrlimit (musl)
  *   rseq             — restartable sequences (glibc 2.35+)
  */
-static void install_seccomp_phase2(void){
+static void install_seccomp_phase2(void) {
     struct sock_filter filter[] = {
         /* Load the syscall architecture */
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
@@ -334,45 +377,70 @@ static void install_seccomp_phase2(void){
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
 
         /* Allow each permitted syscall */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_read,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_write,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_writev,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* SYS_poll does not exist on aarch64 (uses ppoll only) */
-#ifdef SYS_poll
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_poll,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#endif
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_close,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_exit_group,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigreturn,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigaction,  0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mmap,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_munmap,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mprotect,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_brk,           0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sendto,        0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_recvfrom,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_futex,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_newfstatat,    0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* SYS_fstat does not exist on aarch64 (uses newfstatat only) */
-#ifdef SYS_fstat
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_fstat,         0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#endif
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getrandom,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sigaltstack,   0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prlimit64,     0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rseq,          0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_shutdown,      0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_read, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_write, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_writev, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    /* SYS_poll does not exist on aarch64 (uses ppoll only) */
+#            ifdef SYS_poll
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_poll, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_close, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_exit_group, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigreturn, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigaction, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mmap, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_munmap, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mprotect, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_brk, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sendto, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_recvfrom, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_futex, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_newfstatat, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    /* SYS_fstat does not exist on aarch64 (uses newfstatat only) */
+#            ifdef SYS_fstat
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_fstat, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+#            endif
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getrandom, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_sigaltstack, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prlimit64, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rseq, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_shutdown, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
         /* Default: kill the process on any disallowed syscall */
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
     };
     apply_seccomp(filter, (unsigned short)(sizeof filter / sizeof filter[0]));
 }
-#endif /* SECCOMP_AUDIT_ARCH */
-#endif /* __linux__ */
+#        endif /* SECCOMP_AUDIT_ARCH */
+#    endif     /* __linux__ */
 
 /* ---- FreeBSD Capsicum --------------------------------------------------- */
 
@@ -390,12 +458,12 @@ static void install_seccomp_phase2(void){
  * Phase 1: cap_enter() + generous per-fd rights (need setsockopt for
  *          handshake, ioctl for terminal setup).
  * Phase 2: narrow rights — drop setsockopt/getsockopt on the socket. */
-#if defined(__FreeBSD__)
-#include <sys/capsicum.h>
-#include <termios.h>       /* struct termios (needed by TIOCGETA/TIOCSETA macros) */
-#include <sys/ttycom.h>    /* TIOCGETA, TIOCSETA, TIOCGWINSZ */
+#    if defined(__FreeBSD__)
+#        include <sys/capsicum.h>
+#        include <termios.h>    /* struct termios (needed by TIOCGETA/TIOCSETA macros) */
+#        include <sys/ttycom.h> /* TIOCGETA, TIOCSETA, TIOCGWINSZ */
 
-static void capsicum_phase1(int sock_fd){
+static void capsicum_phase1(int sock_fd) {
     /* Enter capability mode — no new fds from this point on.
      * Idempotent: calling twice is a harmless no-op.
      * Best-effort: on some FreeBSD VMs/jails, cap_enter() returns 0
@@ -408,10 +476,7 @@ static void capsicum_phase1(int sock_fd){
      * timeouts).  Phase 2 will drop these. */
     {
         cap_rights_t rights;
-        cap_rights_init(&rights,
-            CAP_READ, CAP_WRITE, CAP_EVENT,
-            CAP_SHUTDOWN,
-            CAP_SETSOCKOPT, CAP_GETSOCKOPT);
+        cap_rights_init(&rights, CAP_READ, CAP_WRITE, CAP_EVENT, CAP_SHUTDOWN, CAP_SETSOCKOPT, CAP_GETSOCKOPT);
         cap_rights_limit(sock_fd, &rights);
     }
 
@@ -420,7 +485,7 @@ static void capsicum_phase1(int sock_fd){
         cap_rights_t rights;
         cap_rights_init(&rights, CAP_READ, CAP_EVENT, CAP_IOCTL);
         cap_rights_limit(STDIN_FILENO, &rights);
-        unsigned long ioctls[] = { TIOCGETA, TIOCSETA, TIOCGWINSZ };
+        unsigned long ioctls[] = {TIOCGETA, TIOCSETA, TIOCGWINSZ};
         cap_ioctls_limit(STDIN_FILENO, ioctls, 3);
     }
 
@@ -429,7 +494,7 @@ static void capsicum_phase1(int sock_fd){
         cap_rights_t rights;
         cap_rights_init(&rights, CAP_WRITE, CAP_EVENT, CAP_IOCTL);
         cap_rights_limit(STDOUT_FILENO, &rights);
-        unsigned long ioctls[] = { TIOCGETA, TIOCSETA, TIOCGWINSZ };
+        unsigned long ioctls[] = {TIOCGETA, TIOCSETA, TIOCGWINSZ};
         cap_ioctls_limit(STDOUT_FILENO, ioctls, 3);
     }
 
@@ -441,27 +506,26 @@ static void capsicum_phase1(int sock_fd){
     }
 }
 
-static void capsicum_phase2(int sock_fd){
+static void capsicum_phase2(int sock_fd) {
     /* Tighten socket rights: drop setsockopt/getsockopt — no longer needed
      * after handshake.  cap_rights_limit() only narrows, never widens. */
     cap_rights_t rights;
-    cap_rights_init(&rights,
-        CAP_READ, CAP_WRITE, CAP_EVENT, CAP_SHUTDOWN);
+    cap_rights_init(&rights, CAP_READ, CAP_WRITE, CAP_EVENT, CAP_SHUTDOWN);
     cap_rights_limit(sock_fd, &rights);
 }
-#endif /* __FreeBSD__ */
+#    endif /* __FreeBSD__ */
 
 /* ---- sandbox entry points ----------------------------------------------- */
 
-void sandbox_phase1(int sock_fd){
-#if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
+void sandbox_phase1(int sock_fd) {
+#    if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
     (void)sock_fd;
     install_seccomp_phase1();
-#endif
-#if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
+#    endif
+#    if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
     capsicum_phase1(sock_fd);
-#endif
-#if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
+#    endif
+#    if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
     (void)sock_fd;
     /* Lock filesystem access — no file paths needed at any phase. */
     unveil(NULL, NULL);
@@ -469,32 +533,32 @@ void sandbox_phase1(int sock_fd){
      * file descriptors + getrandom (for the handshake key exchange).
      * "inet" is NOT needed — we have the connected socket already. */
     pledge("stdio", NULL);
-#endif
-#if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
+#    endif
+#    if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
     (void)sock_fd;
-#endif
+#    endif
 }
 
-void sandbox_phase2(int sock_fd){
-#if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
+void sandbox_phase2(int sock_fd) {
+#    if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
     (void)sock_fd;
     install_seccomp_phase2();
-#endif
-#if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
+#    endif
+#    if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
     capsicum_phase2(sock_fd);
-#endif
-#if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
+#    endif
+#    if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
     (void)sock_fd;
     /* Drop network setup and DNS — the session socket is already open.
      * "stdio" covers read, write, poll, close, and exit. */
     pledge("stdio", NULL);
-#endif
-#if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
+#    endif
+#    if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
     (void)sock_fd;
-#endif
+#    endif
 }
 
-void sandbox(void){
+void sandbox(void) {
     /* Legacy entry point — equivalent to phase 2 (chat-loop restriction).
      * Callers that have not been updated to the two-phase API still get the
      * full post-handshake restriction.  Pass -1 since Capsicum callers
@@ -503,10 +567,10 @@ void sandbox(void){
 }
 
 #else
-void harden(void){}                    /* no-op when CIPHER_HARDEN is not set */
-void sandbox_phase1(int sock_fd){ (void)sock_fd; }
-void sandbox_phase2(int sock_fd){ (void)sock_fd; }
-void sandbox(void){}
+void harden(void) {} /* no-op when CIPHER_HARDEN is not set */
+void sandbox_phase1(int sock_fd) { (void)sock_fd; }
+void sandbox_phase2(int sock_fd) { (void)sock_fd; }
+void sandbox(void) {}
 #endif
 
 /* ---- signal handling ---------------------------------------------------- */
@@ -519,7 +583,7 @@ void sandbox(void){}
  *
  * On Windows, WaitForMultipleObjects uses a 250 ms timeout, so g_running=0
  * is observed within one timeout period even without signal interruption. */
-void on_sig(int sig){
+void on_sig(int sig) {
     (void)sig;
     g_running = 0;
 }
@@ -537,7 +601,7 @@ void on_sig(int sig){
  * Without this handler, closing the console window kills the process
  * instantly -- no cleanup, key material and chat plaintext linger in RAM
  * until the OS reclaims the pages. */
-BOOL WINAPI on_console_ctrl(DWORD event){
+BOOL WINAPI on_console_ctrl(DWORD event) {
     (void)event;
     g_running = 0;
     /* Close the socket the main thread is blocking on (accept, connect, recv).
@@ -555,17 +619,17 @@ BOOL WINAPI on_console_ctrl(DWORD event){
 /* Write the current local time as "HH:MM:SS" into buf (size n).
  * Uses the thread-safe localtime_r (POSIX) / localtime_s (Windows).
  * Falls back to "??:??:??" if strftime cannot fit the result. */
-void ts(char *buf, size_t n){
-    time_t now = time(nullptr);
+void ts(char *buf, size_t n) {
+    time_t    now = time(nullptr);
     struct tm tmv;
 #if defined(_WIN32) || defined(_WIN64)
     localtime_s(&tmv, &now);
 #else
     localtime_r(&now, &tmv);
 #endif
-    if (strftime(buf, n, "%H:%M:%S", &tmv) == 0){
+    if (strftime(buf, n, "%H:%M:%S", &tmv) == 0) {
         strncpy(buf, "??:??:??", n);
-        if (n) buf[n-1] = '\0';
+        if (n) buf[n - 1] = '\0';
     }
 }
 
@@ -574,21 +638,21 @@ void ts(char *buf, size_t n){
  * buffer.  Only effective when stdout is a terminal — silently skipped when
  * piping or redirecting. */
 #if defined(_WIN32) || defined(_WIN64)
-void purge_terminal(void){
+void purge_terminal(void) {
     HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     if (h == INVALID_HANDLE_VALUE) return;
     DWORD mode;
-    if (!GetConsoleMode(h, &mode)) return;  /* not a console */
+    if (!GetConsoleMode(h, &mode)) return; /* not a console */
     /* Windows 10+ supports ANSI sequences via ENABLE_VIRTUAL_TERMINAL_PROCESSING */
     if (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) {
         const char seq[] = "\033[2J\033[3J\033[H";
-        DWORD written;
+        DWORD      written;
         WriteConsoleA(h, seq, sizeof seq - 1, &written, NULL);
     } else {
         /* Fallback: clear screen via Console API (no scrollback clear) */
         CONSOLE_SCREEN_BUFFER_INFO csbi;
         if (GetConsoleScreenBufferInfo(h, &csbi)) {
-            DWORD cells = csbi.dwSize.X * csbi.dwSize.Y;
+            DWORD cells  = csbi.dwSize.X * csbi.dwSize.Y;
             COORD origin = {0, 0};
             DWORD written;
             FillConsoleOutputCharacterA(h, ' ', cells, origin, &written);
@@ -597,8 +661,8 @@ void purge_terminal(void){
         }
     }
 }
-#else /* POSIX */
-void purge_terminal(void){
+#else  /* POSIX */
+void purge_terminal(void) {
     if (!isatty(STDOUT_FILENO)) return;
     /* \033[2J  — clear visible screen
      * \033[3J  — clear scrollback buffer (xterm, VTE, Windows Terminal)
@@ -610,15 +674,15 @@ void purge_terminal(void){
 
 /* Encode a 64-bit integer in little-endian byte order.
  * Used to write sequence numbers into frames consistently on all platforms. */
-void le64_store(uint8_t out[8], uint64_t v){
+void le64_store(uint8_t out[8], uint64_t v) {
     int i;
     for (i = 0; i < 8; i++) out[i] = (uint8_t)(v >> (8 * i));
 }
 
 /* Decode a little-endian 64-bit integer from bytes. */
-uint64_t le64_load(const uint8_t in[8]){
+uint64_t le64_load(const uint8_t in[8]) {
     uint64_t v = 0;
-    int i;
+    int      i;
     for (i = 0; i < 8; i++) v |= ((uint64_t)in[i]) << (8 * i);
     return v;
 }

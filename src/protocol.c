@@ -17,9 +17,9 @@
 /* Return 1 if s is a decimal integer in [1, 65535], 0 otherwise.
  * getaddrinfo silently accepts names, negatives, and out-of-range values;
  * this check ensures a typo produces a clear error message. */
-[[nodiscard]] int validate_port(const char *s){
+[[nodiscard]] int validate_port(const char *s) {
     char *end;
-    long n;
+    long  n;
     if (!s || !*s) return 0;
     n = strtol(s, &end, 10);
     return *end == '\0' && n >= 1 && n <= 65535;
@@ -38,11 +38,10 @@
  * character: it advances the cursor to the next tab stop, which an
  * attacker can use to distort layout and spoof visual structure (e.g.
  * fake timestamps, fake sender labels, or alignment tricks). */
-void sanitize_peer_text(uint8_t *buf, uint16_t len){
+void sanitize_peer_text(uint8_t *buf, uint16_t len) {
     uint16_t i;
     for (i = 0; i < len; i++)
-        if (buf[i] < 0x20 || buf[i] > 0x7E)
-            buf[i] = '.';
+        if (buf[i] < 0x20 || buf[i] > 0x7E) buf[i] = '.';
 }
 
 /* ---- protocol ----------------------------------------------------------- */
@@ -50,7 +49,7 @@ void sanitize_peer_text(uint8_t *buf, uint16_t len){
 /* Generate a fresh ephemeral X25519 keypair from the OS CSPRNG.
  * Ephemeral means one session only, never stored.  Past sessions cannot
  * be decrypted after the private key is wiped. */
-void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]){
+void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]) {
     fill_random(priv, KEY);
     crypto_x25519_public_key(pub, priv);
 }
@@ -71,29 +70,29 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]){
  * produces a different prk and therefore a different safety code.
  *
  * Returns 0, or -1 if dh is all-zero (small-subgroup / malicious key). */
-[[nodiscard]] int session_init(session_t *s, int we_init,
-                               const uint8_t self_priv[KEY],
-                               const uint8_t self_pub[KEY],
-                               const uint8_t peer_pub[KEY],
-                               uint8_t sas_key_out[KEY]){
+[[nodiscard]] int session_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
+                               const uint8_t peer_pub[KEY], uint8_t sas_key_out[KEY]) {
     uint8_t dh[KEY];
     crypto_x25519(dh, self_priv, peer_pub);
-    if (is_zero32(dh)){ crypto_wipe(dh, sizeof dh); return -1; }
+    if (is_zero32(dh)) {
+        crypto_wipe(dh, sizeof dh);
+        return -1;
+    }
 
     uint8_t prk[KEY], ikm[KEY * 3];
     /* Canonical ordering (initiator first) so both sides build identical IKM. */
     const uint8_t *init_pub = we_init ? self_pub : peer_pub;
     const uint8_t *resp_pub = we_init ? peer_pub : self_pub;
-    memcpy(ikm,         dh,       KEY);
-    memcpy(ikm + KEY,   init_pub, KEY);
-    memcpy(ikm + KEY*2, resp_pub, KEY);
+    memcpy(ikm, dh, KEY);
+    memcpy(ikm + KEY, init_pub, KEY);
+    memcpy(ikm + KEY * 2, resp_pub, KEY);
     domain_hash(prk, "cipher x25519 sas root v1", ikm, sizeof ikm);
 
     /* Before (v1): derived tx/rx directly from prk, discarded prk.
      * Now (v2): derive a root key that persists across DH ratchet steps,
      * then let ratchet_init derive the initial tx/rx chains from root. */
-    expand(sas_key_out,  prk, "sas");
-    expand(s->root,      prk, "root");
+    expand(sas_key_out, prk, "sas");
+    expand(s->root, prk, "root");
 
     /* Derive bootstrap chains for both directions.  These are used for
      * the very first frame from each side, which also carries FLAG_RATCHET
@@ -101,7 +100,7 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]){
      *
      * Initiator tx = responder rx ("init->resp" direction)
      * Initiator rx = responder tx ("resp->init" direction) */
-    if (we_init){
+    if (we_init) {
         expand(s->tx, s->root, "init->resp");
         expand(s->rx, s->root, "resp->init");
     } else {
@@ -113,14 +112,14 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]){
 
     ratchet_init(s, we_init, self_priv, self_pub, peer_pub);
 
-    crypto_wipe(dh,  sizeof dh);
+    crypto_wipe(dh, sizeof dh);
     crypto_wipe(prk, sizeof prk);
     crypto_wipe(ikm, sizeof ikm);
     return 0;
 }
 
 /* Wipe the entire session state at shutdown. */
-void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
+void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
 
 /* Encrypt one message into a fixed 512-byte frame.
  *
@@ -136,9 +135,8 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
  * ratchet_send before the frame is built.  If the subsequent write fails,
  * the session is inconsistent -- this is acceptable because any I/O
  * failure is session-fatal in SimpleCipher. */
-[[nodiscard]] int frame_build(session_t *s,
-                              const uint8_t *plain, uint16_t len,
-                              uint8_t frame[FRAME_SZ], uint8_t next_chain[KEY]){
+[[nodiscard]] int frame_build(session_t *s, const uint8_t *plain, uint16_t len, uint8_t frame[FRAME_SZ],
+                              uint8_t next_chain[KEY]) {
     /* Check if a DH ratchet step is needed (direction switched).
      *
      * IMPORTANT: save the pre-ratchet tx chain BEFORE calling ratchet_send.
@@ -155,7 +153,7 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
     if (len > max) return -1;
 
     uint8_t mk[KEY], ad[AD_SZ], nonce[NONCE_SZ], pt[CT_SZ];
-    if (ratcheting){
+    if (ratcheting) {
         /* Ratcheted: encrypt with old chain, next_chain = ratcheted tx.
          * The caller commits next_chain after send, installing the new
          * ratcheted chain for subsequent messages. */
@@ -174,8 +172,8 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
      *   Ratchet: [ flags(1) | ratchet_pub(32) | len(2) | message | padding ] */
     memset(pt, 0, sizeof pt);
     size_t off = 0;
-    pt[off++] = ratcheting ? FLAG_RATCHET : 0;
-    if (ratcheting){
+    pt[off++]  = ratcheting ? FLAG_RATCHET : 0;
+    if (ratcheting) {
         memcpy(pt + off, ratchet_pub, KEY);
         off += KEY;
     }
@@ -184,14 +182,12 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
     if (len) memcpy(pt + off, plain, len);
 
     memcpy(frame, ad, AD_SZ);
-    crypto_aead_lock(frame + AD_SZ,
-                     frame + AD_SZ + CT_SZ,
-                     mk, nonce, ad, AD_SZ, pt, CT_SZ);
+    crypto_aead_lock(frame + AD_SZ, frame + AD_SZ + CT_SZ, mk, nonce, ad, AD_SZ, pt, CT_SZ);
 
-    crypto_wipe(mk,            sizeof mk);
-    crypto_wipe(pt,            sizeof pt);
-    crypto_wipe(nonce,         sizeof nonce);
-    crypto_wipe(ratchet_pub,   sizeof ratchet_pub);
+    crypto_wipe(mk, sizeof mk);
+    crypto_wipe(pt, sizeof pt);
+    crypto_wipe(nonce, sizeof nonce);
+    crypto_wipe(ratchet_pub, sizeof ratchet_pub);
     crypto_wipe(encrypt_chain, sizeof encrypt_chain);
     return 0;
 }
@@ -203,23 +199,20 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
  * frame leaves session state untouched.
  *
  * Returns 0 on success (out and out_len filled), -1 on any failure. */
-[[nodiscard]] int frame_open(session_t *s, const uint8_t frame[FRAME_SZ],
-                             uint8_t *out, uint16_t *out_len){
+[[nodiscard]] int frame_open(session_t *s, const uint8_t frame[FRAME_SZ], uint8_t *out, uint16_t *out_len) {
     uint64_t seq = le64_load(frame);
-    if (seq != s->rx_seq) return -1;   /* replay / reorder -- reject */
+    if (seq != s->rx_seq) return -1; /* replay / reorder -- reject */
 
-    uint8_t mk[KEY], next_rx[KEY], nonce[NONCE_SZ], pt[CT_SZ];
+    uint8_t  mk[KEY], next_rx[KEY], nonce[NONCE_SZ], pt[CT_SZ];
     uint16_t len;
     chain_step(s->rx, mk, next_rx);
     make_nonce(nonce, seq);
 
-    if (crypto_aead_unlock(pt,
-                           frame + AD_SZ + CT_SZ,
-                           mk, nonce,
-                           frame, AD_SZ,
-                           frame + AD_SZ, CT_SZ) != 0){
-        crypto_wipe(mk, sizeof mk); crypto_wipe(next_rx, sizeof next_rx);
-        crypto_wipe(pt, sizeof pt); crypto_wipe(nonce, sizeof nonce);
+    if (crypto_aead_unlock(pt, frame + AD_SZ + CT_SZ, mk, nonce, frame, AD_SZ, frame + AD_SZ, CT_SZ) != 0) {
+        crypto_wipe(mk, sizeof mk);
+        crypto_wipe(next_rx, sizeof next_rx);
+        crypto_wipe(pt, sizeof pt);
+        crypto_wipe(nonce, sizeof nonce);
         return -1;
     }
 
@@ -229,13 +222,15 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
      * ratchet_receive modifies s->root, s->rx, s->peer_dh — so we read
      * the ratchet key position first, validate len, and only then commit
      * all state changes (chain advance + ratchet) in one block. */
-    size_t off = 0;
+    size_t  off   = 0;
     uint8_t flags = pt[off++];
 
     /* Reject frames with unknown flag bits (forward compatibility). */
-    if (flags & ~FLAG_RATCHET){
-        crypto_wipe(mk, sizeof mk); crypto_wipe(next_rx, sizeof next_rx);
-        crypto_wipe(pt, sizeof pt); crypto_wipe(nonce, sizeof nonce);
+    if (flags & ~FLAG_RATCHET) {
+        crypto_wipe(mk, sizeof mk);
+        crypto_wipe(next_rx, sizeof next_rx);
+        crypto_wipe(pt, sizeof pt);
+        crypto_wipe(nonce, sizeof nonce);
         return -1;
     }
 
@@ -247,9 +242,11 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
     off += 2;
 
     uint16_t max = (flags & FLAG_RATCHET) ? MAX_MSG_RATCHET : MAX_MSG;
-    if (len > max){
-        crypto_wipe(mk, sizeof mk); crypto_wipe(next_rx, sizeof next_rx);
-        crypto_wipe(pt, sizeof pt); crypto_wipe(nonce, sizeof nonce);
+    if (len > max) {
+        crypto_wipe(mk, sizeof mk);
+        crypto_wipe(next_rx, sizeof next_rx);
+        crypto_wipe(pt, sizeof pt);
+        crypto_wipe(nonce, sizeof nonce);
         return -1;
     }
 
@@ -259,16 +256,16 @@ void session_wipe(session_t *s){ crypto_wipe(s, sizeof *s); }
      * chain for future messages.  We must NOT overwrite it with next_rx
      * (which is the old chain stepped forward).  For non-ratchet frames,
      * advance the existing chain as before. */
-    if (flags & FLAG_RATCHET)
-        ratchet_receive(s, pt + ratchet_off);
-    else
-        memcpy(s->rx, next_rx, KEY);
+    if (flags & FLAG_RATCHET) ratchet_receive(s, pt + ratchet_off);
+    else memcpy(s->rx, next_rx, KEY);
     s->rx_seq++;
     s->need_send_ratchet = 1;
-    if (out)     memcpy(out, pt + off, len);
+    if (out) memcpy(out, pt + off, len);
     if (out_len) *out_len = len;
 
-    crypto_wipe(mk, sizeof mk); crypto_wipe(next_rx, sizeof next_rx);
-    crypto_wipe(pt, sizeof pt); crypto_wipe(nonce, sizeof nonce);
+    crypto_wipe(mk, sizeof mk);
+    crypto_wipe(next_rx, sizeof next_rx);
+    crypto_wipe(pt, sizeof pt);
+    crypto_wipe(nonce, sizeof nonce);
     return 0;
 }

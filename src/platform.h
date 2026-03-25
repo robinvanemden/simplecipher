@@ -24,23 +24,23 @@
  * The #ifndef guards prevent "macro redefined" warnings if the compiler
  * already defines them via -D. */
 #ifndef _GNU_SOURCE
-#define _GNU_SOURCE
+#    define _GNU_SOURCE
 #endif
 /* _POSIX_C_SOURCE enables POSIX APIs on Linux/glibc (localtime_r, etc.).
  * On OpenBSD, defining it HIDES BSD extensions (pledge, unveil, getentropy)
  * and __BSD_VISIBLE does not override it.  So skip it on OpenBSD entirely —
  * OpenBSD's headers expose POSIX APIs by default. */
 #if !defined(__OpenBSD__)
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 200809L
-#endif
+#    ifndef _POSIX_C_SOURCE
+#        define _POSIX_C_SOURCE 200809L
+#    endif
 #endif
 /* On FreeBSD, _POSIX_C_SOURCE hides BSD extensions like getentropy().
  * __BSD_VISIBLE re-exposes them without removing POSIX declarations. */
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
-#ifndef __BSD_VISIBLE
-#define __BSD_VISIBLE 1
-#endif
+#    ifndef __BSD_VISIBLE
+#        define __BSD_VISIBLE 1
+#    endif
 #endif
 
 /* constexpr is C23.  GCC 13+ supports it with -std=c2x, but Clang 16
@@ -61,38 +61,38 @@
 #include <errno.h>
 
 #if defined(_WIN32) || defined(_WIN64)
-  #define WIN32_LEAN_AND_MEAN
-  #include <winsock2.h>
-  #include <ws2tcpip.h>
-  #include <windows.h>
-  #include <bcrypt.h>
-  #include <iphlpapi.h>     /* GetAdaptersAddresses — list local IPs */
+#    define WIN32_LEAN_AND_MEAN
+#    include <winsock2.h>
+#    include <ws2tcpip.h>
+#    include <windows.h>
+#    include <bcrypt.h>
+#    include <iphlpapi.h> /* GetAdaptersAddresses — list local IPs */
 #else
-  #include <sys/socket.h>
-  #include <netinet/in.h>
-  #include <arpa/inet.h>
-  #include <netdb.h>
-  #include <unistd.h>
-  #include <poll.h>
-  #include <netinet/tcp.h>  /* TCP_NODELAY */
-  #include <ifaddrs.h>      /* getifaddrs — list local IP addresses */
-  #ifdef __linux__
-    #include <sys/random.h>  /* getrandom(2) */
-  #endif
-  #ifdef CIPHER_HARDEN
-    #include <sys/mman.h>
-    #include <sys/resource.h>
-    #ifdef __linux__
-      #include <sys/prctl.h>
-    #endif
-  #endif
+#    include <sys/socket.h>
+#    include <netinet/in.h>
+#    include <arpa/inet.h>
+#    include <netdb.h>
+#    include <unistd.h>
+#    include <poll.h>
+#    include <netinet/tcp.h> /* TCP_NODELAY */
+#    include <ifaddrs.h>     /* getifaddrs — list local IP addresses */
+#    ifdef __linux__
+#        include <sys/random.h> /* getrandom(2) */
+#    endif
+#    ifdef CIPHER_HARDEN
+#        include <sys/mman.h>
+#        include <sys/resource.h>
+#        ifdef __linux__
+#            include <sys/prctl.h>
+#        endif
+#    endif
 #endif
 
 /* MSG_NOSIGNAL tells send() not to raise SIGPIPE if the peer closes.
  * Without it, a dropped peer would crash the process on Linux.
  * Windows has no SIGPIPE, so we define it as 0 (no-op flag). */
 #ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL 0
+#    define MSG_NOSIGNAL 0
 #endif
 
 /* =========================================================================
@@ -109,17 +109,17 @@
  * ========================================================================= */
 #if defined(_WIN32) || defined(_WIN64)
 
-  /* On 64-bit Windows, SOCKET is UINT_PTR (8 bytes), not int (4 bytes).
+/* On 64-bit Windows, SOCKET is UINT_PTR (8 bytes), not int (4 bytes).
    * Storing a socket in int silently truncates handles > 0x7FFFFFFF. */
-  typedef SOCKET socket_t;
-  #define INVALID_SOCK  INVALID_SOCKET
-  #define close_sock(s) closesocket(s)
+typedef SOCKET socket_t;
+#    define INVALID_SOCK INVALID_SOCKET
+#    define close_sock(s) closesocket(s)
 
 #else /* POSIX */
 
-  typedef int socket_t;
-  #define INVALID_SOCK  (-1)
-  #define close_sock(s) close(s)
+typedef int socket_t;
+#    define INVALID_SOCK (-1)
+#    define close_sock(s) close(s)
 
 #endif /* platform */
 

@@ -40,14 +40,14 @@ enum {
     FRAME_SZ            = 512,
     AD_SZ               = 8,
     CT_SZ               = FRAME_SZ - AD_SZ - MAC_SZ,
-    HEADER_SZ           = 1,           /* flags byte in plaintext slot  */
-    MAX_MSG             = CT_SZ - 2 - HEADER_SZ,    /* 485 bytes       */
-    MAX_MSG_RATCHET     = MAX_MSG - KEY,             /* 453 bytes       */
+    HEADER_SZ           = 1,                     /* flags byte in plaintext slot  */
+    MAX_MSG             = CT_SZ - 2 - HEADER_SZ, /* 485 bytes       */
+    MAX_MSG_RATCHET     = MAX_MSG - KEY,         /* 453 bytes       */
     PROTOCOL_VERSION    = 2,
     HANDSHAKE_TIMEOUT_S = 30,
     FRAME_TIMEOUT_S     = 30
 };
-static const uint8_t FLAG_RATCHET = 0x01;  /* bit 0: ratchet key follows */
+static const uint8_t FLAG_RATCHET = 0x01; /* bit 0: ratchet key follows */
 
 static_assert(FRAME_SZ == AD_SZ + CT_SZ + MAC_SZ);
 static_assert(MAX_MSG == 485);
@@ -66,11 +66,8 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]);
 /* Derive all session keys from the X25519 output and both public keys.
  * See protocol.c for the full IKM construction and derivation steps.
  * Returns 0, or -1 if dh is all-zero (small-subgroup / malicious key). */
-[[nodiscard]] int session_init(session_t *s, int we_init,
-                               const uint8_t self_priv[KEY],
-                               const uint8_t self_pub[KEY],
-                               const uint8_t peer_pub[KEY],
-                               uint8_t sas_key_out[KEY]);
+[[nodiscard]] int session_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
+                               const uint8_t peer_pub[KEY], uint8_t sas_key_out[KEY]);
 
 /* Wipe the entire session state at shutdown. */
 void session_wipe(session_t *s);
@@ -89,9 +86,8 @@ void session_wipe(session_t *s);
  * ratchet_send before the frame is built.  If the subsequent write fails,
  * the session is inconsistent -- this is acceptable because any I/O
  * failure is session-fatal in SimpleCipher. */
-[[nodiscard]] int frame_build(session_t *s,
-                              const uint8_t *plain, uint16_t len,
-                              uint8_t frame[FRAME_SZ], uint8_t next_chain[KEY]);
+[[nodiscard]] int frame_build(session_t *s, const uint8_t *plain, uint16_t len, uint8_t frame[FRAME_SZ],
+                              uint8_t next_chain[KEY]);
 
 /* Decrypt and authenticate one 512-byte frame.
  *
@@ -100,8 +96,7 @@ void session_wipe(session_t *s);
  * frame leaves session state untouched.
  *
  * Returns 0 on success (out and out_len filled), -1 on any failure. */
-[[nodiscard]] int frame_open(session_t *s, const uint8_t frame[FRAME_SZ],
-                             uint8_t *out, uint16_t *out_len);
+[[nodiscard]] int frame_open(session_t *s, const uint8_t frame[FRAME_SZ], uint8_t *out, uint16_t *out_len);
 
 /* Return 1 if s is a decimal integer in [1, 65535], 0 otherwise.
  * getaddrinfo silently accepts names, negatives, and out-of-range values;

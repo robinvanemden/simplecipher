@@ -89,20 +89,20 @@ enum tui_sender { TUI_ME, TUI_PEER, TUI_SYSTEM };
 /* The ring buffer is declared as extern so both tui.c and the platform
  * event loop files (tui_posix.c / tui_win.c) can access it. */
 extern struct tui_msg_entry {
-    char            ts[16];       /* "HH:MM:SS" timestamp of the message */
-    enum tui_sender who;          /* who sent it: local user, peer, or system */
+    char            ts[16]; /* "HH:MM:SS" timestamp of the message */
+    enum tui_sender who;    /* who sent it: local user, peer, or system */
     char            text[TUI_MSG_TEXT];
 } tui_msgs[TUI_MSG_MAX];
 
-extern int tui_msg_count;    /* total messages stored (up to TUI_MSG_MAX) */
-extern int tui_msg_start;    /* index of oldest message in the ring */
+extern int tui_msg_count; /* total messages stored (up to TUI_MSG_MAX) */
+extern int tui_msg_start; /* index of oldest message in the ring */
 
 /* Cursor-movement and colour escape sequences as macros for readability. */
-#define TUI_GOTO(r,c) printf("\033[%d;%dH", (r), (c))
+#define TUI_GOTO(r, c) printf("\033[%d;%dH", (r), (c))
 #define TUI_CLEAR_LINE() printf("\033[2K")
 #define TUI_COLOR_RESET "\033[0m"
-#define TUI_COLOR_DIM   "\033[2m"
-#define TUI_COLOR_CYAN  "\033[36m"
+#define TUI_COLOR_DIM "\033[2m"
+#define TUI_COLOR_CYAN "\033[36m"
 #define TUI_COLOR_BCYAN "\033[1;36m"
 #define TUI_COLOR_YELLOW "\033[33m"
 #define TUI_COLOR_GREEN "\033[32m"
@@ -149,7 +149,6 @@ void tui_status_screen(const char *line1, const char *line2);
 /* Show the listen screen with port and local IP addresses.
  * ips is a newline-separated string of IP addresses (from get_local_ips). */
 void tui_listen_screen(const char *port, const char *ips);
-
 
 /* Display the SAS verification screen and require user to type first 4
  * characters to confirm.  Returns 1 on match, 0 on mismatch or abort. */

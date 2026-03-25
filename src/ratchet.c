@@ -29,26 +29,23 @@
  * The label "cipher ratchet v2" matches PROTOCOL_VERSION=2 and is
  * domain-separated from the handshake labels ("cipher x25519 sas root v1",
  * "cipher commit v1") which use "v1". */
-static void ratchet_step(uint8_t root[KEY], uint8_t chain_out[KEY],
-                          const uint8_t our_priv[KEY],
-                          const uint8_t their_pub[KEY]){
+static void ratchet_step(uint8_t root[KEY], uint8_t chain_out[KEY], const uint8_t our_priv[KEY],
+                         const uint8_t their_pub[KEY]) {
     uint8_t dh[KEY], ikm[KEY * 2];
 
     crypto_x25519(dh, our_priv, their_pub);
 
-    memcpy(ikm,       root, KEY);
-    memcpy(ikm + KEY, dh,   KEY);
+    memcpy(ikm, root, KEY);
+    memcpy(ikm + KEY, dh, KEY);
     domain_hash(root, "cipher ratchet v2", ikm, sizeof ikm);
     expand(chain_out, root, "chain");
 
-    crypto_wipe(dh,  sizeof dh);
+    crypto_wipe(dh, sizeof dh);
     crypto_wipe(ikm, sizeof ikm);
 }
 
-void ratchet_init(session_t *s, int we_init,
-                  const uint8_t self_priv[KEY],
-                  const uint8_t self_pub[KEY],
-                  const uint8_t peer_pub[KEY]){
+void ratchet_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
+                  const uint8_t peer_pub[KEY]) {
     /* Both sides start with peer_dh set to the other's handshake public key.
      * This is a public value (not secret) and is overwritten as soon as the
      * first ratchet key arrives from the peer. */
@@ -66,12 +63,12 @@ void ratchet_init(session_t *s, int we_init,
      * key arrives. */
     (void)we_init;
     memcpy(s->dh_priv, self_priv, KEY);
-    memcpy(s->dh_pub,  self_pub,  KEY);
+    memcpy(s->dh_pub, self_pub, KEY);
 
-    s->need_send_ratchet = 1;  /* first send must ratchet */
+    s->need_send_ratchet = 1; /* first send must ratchet */
 }
 
-int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]){
+int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
     if (!s->need_send_ratchet) return 0;
 
     /* Generate a fresh X25519 keypair for this ratchet step. */
@@ -88,7 +85,7 @@ int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]){
     return 1;
 }
 
-void ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]){
+void ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
     /* Store the peer's new ratchet public key. */
     memcpy(s->peer_dh, peer_new_pub, KEY);
 

@@ -37,9 +37,7 @@ void set_sock_opts(socket_t fd);
 
 /* Exchange one value simultaneously with the peer.
  * The initiator sends first to avoid both sides waiting for each other. */
-[[nodiscard]] int exchange(socket_t fd, int we_init,
-                           const uint8_t *out, size_t out_n,
-                           uint8_t *in,        size_t in_n);
+[[nodiscard]] int exchange(socket_t fd, int we_init, const uint8_t *out, size_t out_n, uint8_t *in, size_t in_n);
 
 /* Connect to host:port, trying all addresses getaddrinfo returns.
  * Returns the connected socket, or INVALID_SOCK on failure. */
@@ -52,15 +50,14 @@ void set_sock_opts(socket_t fd);
 /* Like listen_socket, but calls on_idle() periodically (every ~250ms)
  * while waiting for a connection.  Allows TUI redraws on resize.
  * on_idle receives its opaque context pointer.  */
-[[nodiscard]] socket_t listen_socket_cb(const char *port,
-                                        void (*on_idle)(void *ctx), void *ctx);
+[[nodiscard]] socket_t listen_socket_cb(const char *port, void (*on_idle)(void *ctx), void *ctx);
 
 /* Connect through a SOCKS5 proxy (RFC 1928).
  * Opens TCP to the proxy, negotiates SOCKS5 no-auth, sends a CONNECT
  * request for target_host:target_port, then returns the connected socket.
  * The caller uses this socket exactly like one from connect_socket(). */
-[[nodiscard]] socket_t connect_socket_socks5(const char *proxy_host, const char *proxy_port,
-                                              const char *target_host, const char *target_port);
+[[nodiscard]] socket_t connect_socket_socks5(const char *proxy_host, const char *proxy_port, const char *target_host,
+                                             const char *target_port);
 
 /* Print non-loopback IP addresses so the user can tell their peer where
  * to connect.  Skips link-local (169.254.x.x, fe80::) and loopback. */
@@ -79,8 +76,7 @@ enum { SOCKS5_REQ_MAX = 262 };
 /* Build a SOCKS5 CONNECT request.  Returns request length, or 0 on invalid
  * input (null pointers, empty host, host > 255 bytes, port out of range).
  * buf must be at least SOCKS5_REQ_MAX bytes. */
-int socks5_build_request(uint8_t *buf, size_t buf_sz,
-                         const char *host, const char *port_str);
+int socks5_build_request(uint8_t *buf, size_t buf_sz, const char *host, const char *port_str);
 
 /* Compute bytes to skip after SOCKS5 reply header, based on address type.
  * For atyp 0x03, caller must read the 1-byte domain length first.

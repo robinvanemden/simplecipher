@@ -17,18 +17,24 @@
  * wiping the buffer, we ensure no plaintext copy persists in libc.
  *
  * The format is: [HH:MM:SS] label: message\n */
-void secure_chat_print(const char *label, const char *msg){
+void secure_chat_print(const char *label, const char *msg) {
     char t[16];
-    char buf[MAX_MSG + 64];  /* message + timestamp + label + formatting */
+    char buf[MAX_MSG + 64]; /* message + timestamp + label + formatting */
     int  n;
     ts(t, sizeof t);
     n = snprintf(buf, sizeof buf, "[%s] %s: %s\n", t, label, msg);
     if (n < 0) n = 0;
     if (n > (int)sizeof buf) n = (int)sizeof buf;
 #if defined(_WIN32) || defined(_WIN64)
-    { DWORD w; WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buf, (DWORD)n, &w, nullptr); }
+    {
+        DWORD w;
+        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buf, (DWORD)n, &w, nullptr);
+    }
 #else
-    { ssize_t r; do { r = write(STDOUT_FILENO, buf, (size_t)n); } while (r < 0 && errno == EINTR); }
+    {
+        ssize_t r;
+        do { r = write(STDOUT_FILENO, buf, (size_t)n); } while (r < 0 && errno == EINTR);
+    }
 #endif
     crypto_wipe(buf, sizeof buf);
 }

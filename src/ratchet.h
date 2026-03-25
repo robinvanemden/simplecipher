@@ -71,9 +71,7 @@
  * self_priv/self_pub are the HANDSHAKE keypair — used only to compute the
  * initial peer_dh and the initiator's first DH.  A fresh ratchet keypair
  * is generated immediately; the handshake private key is NOT retained. */
-void ratchet_init(session_t *s, int we_init,
-                  const uint8_t self_priv[KEY],
-                  const uint8_t self_pub[KEY],
+void ratchet_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
                   const uint8_t peer_pub[KEY]);
 
 /* Prepare to send a frame.

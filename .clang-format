@@ -1,21 +1,22 @@
 # SimpleCipher C code style — K&R with 4-space indent.
 #
-# Matches the existing codebase style:
+# Matches the existing codebase conventions:
 #   - Opening brace on same line (K&R / "attach")
-#   - 4-space indentation (no tabs)
+#   - 4-space indentation, no tabs
 #   - /* */ block comments only (no //)
-#   - Pointer: int *p (space before asterisk)
-#   - No space before opening paren in function calls
-#   - Space after keywords (if, for, while, switch)
-#   - 100-column soft limit
+#   - Pointer: int *p (asterisk with the name)
+#   - Column-aligned struct fields, variable declarations, and assignments
+#   - Compact one-liner functions and error handlers
+#   - Hand-formatted BPF tables and crypto_wipe groups (use clang-format off)
 #
-# Run: clang-format --dry-run -Werror src/*.c src/*.h
+# Enforced in CI: clang-format-19 --dry-run -Werror src/*.c src/*.h
+# Sections that need hand formatting use // clang-format off/on guards.
 
 BasedOnStyle: LLVM
 
 IndentWidth: 4
 UseTab: Never
-ColumnLimit: 100
+ColumnLimit: 120
 
 # K&R brace style: opening brace on same line
 BreakBeforeBraces: Attach
@@ -26,18 +27,22 @@ PointerAlignment: Right
 # Space after keywords, not after function names
 SpaceBeforeParens: ControlStatements
 
-# Keep short functions on one line only if they fit
-AllowShortFunctionsOnASingleLine: None
-AllowShortIfStatementsOnASingleLine: Never
-AllowShortLoopsOnASingleLine: false
+# Allow compact one-liners (the codebase uses these extensively)
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortLoopsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Always
 
-# Don't reflow comments (preserve hand-written formatting)
+# Preserve column-aligned declarations and assignments
+AlignConsecutiveDeclarations: true
+AlignConsecutiveAssignments: true
+
+# Don't reflow comments (preserve hand-written doc blocks)
 ReflowComments: false
 
-# Sort includes within groups but don't reorder groups
+# Don't reorder includes (groups are deliberate)
 SortIncludes: Never
+IncludeBlocks: Preserve
 
-# Align consecutive assignments and declarations: off
-# (the codebase does not use column-alignment)
-AlignConsecutiveAssignments: false
-AlignConsecutiveDeclarations: false
+# Preprocessor indentation: match existing style
+IndentPPDirectives: AfterHash
