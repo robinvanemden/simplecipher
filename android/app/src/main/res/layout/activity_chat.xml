@@ -175,7 +175,7 @@
                 android:filterTouchesWhenObscured="true"
                     android:focusableInTouchMode="true"
                 android:maxLines="1"
-                android:maxLength="486"
+                android:maxLength="453"
                 android:textSize="14sp"
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_hint"

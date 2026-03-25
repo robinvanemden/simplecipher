@@ -166,7 +166,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
             }
             if (ch == '\r' || ch == '\n') {
                 if (line_len == 0) continue;
-                if (line_len > (size_t)MAX_MSG) {
+                if (line_len > (size_t)MAX_MSG_RATCHET) {
                     tui_msg_add(TUI_SYSTEM, "[message too long]");
                     tui_draw_messages();
                     tui_draw_input(line, line_len);
@@ -201,7 +201,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                 crypto_wipe(next_tx, sizeof next_tx);
                 continue;
             }
-            if (ch >= 0x20 && ch <= 0x7E && line_len < (size_t)MAX_MSG) {
+            if (ch >= 0x20 && ch <= 0x7E && line_len < (size_t)MAX_MSG_RATCHET) {
                 line[line_len++] = (char)ch;
                 line[line_len]   = '\0';
                 tui_draw_input(line, line_len);

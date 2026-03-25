@@ -168,7 +168,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                     tui_draw_input(line, line_len);
                     continue;
                 }
-                if (ch >= 0x20 && ch <= 0x7E && line_len < (size_t)MAX_MSG) {
+                if (ch >= 0x20 && ch <= 0x7E && line_len < (size_t)MAX_MSG_RATCHET) {
                     line[line_len++] = (char)ch;
                     line[line_len]   = '\0';
                     tui_draw_input(line, line_len);

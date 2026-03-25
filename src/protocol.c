@@ -137,7 +137,16 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
  * failure is session-fatal in SimpleCipher. */
 [[nodiscard]] int frame_build(session_t *s, const uint8_t *plain, uint16_t len, uint8_t frame[FRAME_SZ],
                               uint8_t next_chain[KEY]) {
-    /* Check if a DH ratchet step is needed (direction switched).
+    /* Check payload size BEFORE mutating ratchet state.  The first send
+     * after a receive triggers a DH ratchet, which embeds a 32-byte public
+     * key in the frame — reducing the available payload by KEY bytes.
+     * If we checked after ratchet_send(), a too-large message would leave
+     * the session in a half-ratcheted state (new keypair generated but
+     * never sent to the peer). */
+    uint16_t max = s->need_send_ratchet ? MAX_MSG_RATCHET : MAX_MSG;
+    if (len > max) return -1;
+
+    /* Now safe to ratchet — we know the payload fits.
      *
      * IMPORTANT: save the pre-ratchet tx chain BEFORE calling ratchet_send.
      * ratchet_send derives a new tx chain for future messages, but THIS
@@ -148,9 +157,6 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     uint8_t encrypt_chain[KEY];
     memcpy(encrypt_chain, s->tx, KEY);
     int ratcheting = ratchet_send(s, ratchet_pub);
-
-    uint16_t max = ratcheting ? MAX_MSG_RATCHET : MAX_MSG;
-    if (len > max) return -1;
 
     uint8_t mk[KEY], ad[AD_SZ], nonce[NONCE_SZ], pt[CT_SZ];
     if (ratcheting) {

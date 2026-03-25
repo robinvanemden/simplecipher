@@ -252,7 +252,7 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
 
                     ch = k->uChar.AsciiChar;
                     if (ch >= 0x20 && ch <= 0x7E) {
-                        if (line_len < (size_t)MAX_MSG) {
+                        if (line_len < (size_t)MAX_MSG_RATCHET) {
                             line[line_len++] = ch;
                             line[line_len]   = '\0';
                             putchar(ch);

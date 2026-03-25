@@ -239,7 +239,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
                     cli_redraw_input(line, line_len);
                     continue;
                 }
-                if (line_len > (size_t)MAX_MSG) {
+                if (line_len > (size_t)MAX_MSG_RATCHET) {
                     const char *msg = "[too long]\n";
                     ssize_t     r;
                     do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
@@ -286,7 +286,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
             /* Printable ASCII characters: append to the line buffer and
              * echo the character to the terminal. */
             if (ch >= 0x20 && ch <= 0x7E) {
-                if (line_len < (size_t)MAX_MSG) {
+                if (line_len < (size_t)MAX_MSG_RATCHET) {
                     line[line_len++] = (char)ch;
                     line[line_len]   = '\0';
                     ssize_t r;
@@ -371,8 +371,8 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
                 crypto_wipe(line, sizeof line);
                 continue;
             }
-            if (n > (size_t)MAX_MSG) {
-                printf("[too long -- max %d bytes]\n", MAX_MSG);
+            if (n > (size_t)MAX_MSG_RATCHET) {
+                printf("[too long -- max %d bytes]\n", MAX_MSG_RATCHET);
                 crypto_wipe(line, sizeof line);
                 continue;
             }
