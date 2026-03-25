@@ -20,11 +20,10 @@
  * =================
  *   1. Parse args, init platform, optionally harden the process.
  *   2. Open TCP connection (connect or listen for one peer).
- *   3. Handshake with 30-second timeout:
- *        a. Exchange version bytes
- *        b. Exchange commitments  H(our_key) <-> H(peer_key)
- *        c. Exchange public keys  our_key    <-> peer_key
- *        d. Verify commitment matches reveal; abort if not.
+ *   3. Handshake with 30-second timeout (2 rounds):
+ *        a. Exchange version + commitment  (33 bytes each way)
+ *        b. Exchange public keys           (32 bytes each way)
+ *        c. Verify version, commitment, derive keys; abort on mismatch.
  *   4. Derive session keys (X25519 + transcript hash).
  *   5. Show safety code; wait for user to confirm out-of-band.
  *   6. Single-threaded event loop:

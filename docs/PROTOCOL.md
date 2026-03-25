@@ -111,6 +111,7 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 - Harvest-now-decrypt-later — forward secrecy (chain ratchet wipes old keys)
 - Post-session device seizure — no keys on disk, nothing to find
 - Mid-session RAM compromise — DH ratchet recovers after the next direction switch
+- Frame injection during idle — MAC failure tolerance (3 consecutive failures before teardown) prevents a single forged frame from killing the session
 
 **SimpleCipher does NOT defend against:**
 - An adversary present at session start who can substitute keys AND prevent SAS verification (if the user skips verification, all bets are off)
@@ -137,6 +138,8 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 | **Message-length hiding** | Fixed 512-byte frames prevent length-based analysis |
 | **Terminal safety** | Peer messages are sanitized (non-printable bytes replaced with `.`) |
 | **Post-compromise security** | DH ratchet mixes fresh X25519 entropy on each direction switch |
+| **Frame injection resistance** | MAC failures are tolerated (up to 3); a single forged frame does not kill the session |
+| **Handshake indistinguishability** | Version and commitment bundled in one round; all failure modes have identical timing |
 | **Ephemeral keys** | New keypair every session; nothing stored to disk |
 
 ### Key lifecycle
