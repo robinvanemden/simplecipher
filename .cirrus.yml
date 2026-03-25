@@ -1,3 +1,6 @@
+# Secondary FreeBSD CI (supplements the primary bare-metal test in ci.yml).
+# Cirrus CI provides free FreeBSD VMs but Capsicum enforcement is identical
+# to bare-metal since FreeBSD 14 includes it in the GENERIC kernel.
 freebsd_task:
   name: test-freebsd
   freebsd_instance:
