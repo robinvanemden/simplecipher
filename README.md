@@ -74,7 +74,7 @@ All desktop binaries are fully static with zero runtime dependencies. Both Andro
 
 ## Quick start
 
-The easiest way to chat across different networks is with [Tailscale](https://tailscale.com/) (free for personal use, 2-minute setup). Tailscale creates a WireGuard mesh so your devices can reach each other. SimpleCipher encrypts on top of that — ephemeral keys, SAS verification, and forward secrecy that Tailscale alone does not provide.
+The easiest way to chat across different networks is with [Tailscale](https://tailscale.com/) (free for personal use, 2-minute setup). Tailscale creates a WireGuard mesh so your devices can reach each other. SimpleCipher encrypts on top of that — [ephemeral](docs/PROTOCOL.md#ephemeral) keys, [SAS](docs/PROTOCOL.md#sas) verification, and [forward secrecy](docs/PROTOCOL.md#forward-secrecy) that Tailscale alone does not provide.
 
 ```bash
 # Both devices: install Tailscale (one-time)
@@ -216,7 +216,7 @@ SimpleCipher encrypts your conversation. The operating system protects everythin
 | [Qubes OS](https://www.qubes-os.org/) | Compartmentalized — each app runs in its own virtual machine | A compromised browser in one VM cannot touch your chat in another. Use a disposable qube for one-time sessions. |
 | [FreeBSD](https://www.freebsd.org/) | Capsicum capability sandbox integrated, CI-tested on bare-metal | Capsicum restricts per-fd operations after `cap_enter()` — no new files or filesystem access. Simpler model than seccomp. Sandbox enforcement CI-verified on bare-metal FreeBSD 14.3. |
 | [OpenBSD](https://www.openbsd.org/) | Smallest attack surface of any general-purpose OS, `pledge`/`unveil` sandboxing | Secure by default. Fewer things running means fewer things to exploit. Sandbox enforcement CI-verified on bare-metal OpenBSD 7.7. |
-| Any Linux with full-disk encryption | `mlockall` + seccomp enabled, encrypted swap | A fresh Debian, Fedora, or Arch install with no unnecessary services. Encrypt the disk so a stolen laptop reveals nothing. |
+| Any Linux with full-disk encryption | `mlockall` + [seccomp](docs/PROTOCOL.md#seccomp) enabled, encrypted swap | A fresh Debian, Fedora, or Arch install with no unnecessary services. Encrypt the disk so a stolen laptop reveals nothing. |
 | Windows 10/11 with BitLocker | Encrypted disk, standard protections | Better than an unencrypted machine. Less hardening available than Linux. |
 
 **Android:**
@@ -231,7 +231,7 @@ SimpleCipher encrypts your conversation. The operating system protects everythin
 ## FAQ
 
 **Can someone read my messages?**
-Not if you compare the safety code. The encryption uses the same industry-standard algorithms as Signal and WhatsApp (X25519, XChaCha20-Poly1305). The code has been tested with 582 automated tests, formally verified with CBMC, and the crypto library ([Monocypher](https://monocypher.org/)) has been [professionally audited](https://monocypher.org/quality-assurance/audit). That said, SimpleCipher itself has not been independently audited as a complete system. If your safety depends on this tool, commission a professional audit first.
+Not if you compare the safety code. The encryption uses the same industry-standard algorithms as Signal and WhatsApp ([X25519](docs/PROTOCOL.md#x25519), [XChaCha20-Poly1305](docs/PROTOCOL.md#xchacha20-poly1305)). The code has been tested with 582 automated tests, formally verified with CBMC, and the crypto library ([Monocypher](https://monocypher.org/)) has been [professionally audited](https://monocypher.org/quality-assurance/audit). That said, SimpleCipher itself has not been independently audited as a complete system. If your safety depends on this tool, commission a professional audit first.
 
 **Can someone intercept the connection?**
 They can try, but the safety code comparison stops them. Both sides lock in their keys before revealing them, then derive a code that must match. If it matches, no one is in the middle. If you skip the comparison, all bets are off.

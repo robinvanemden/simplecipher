@@ -14,7 +14,7 @@ Use SimpleCipher on **Tails** (USB, amnesic) or a **hardened Linux** desktop, ov
 |--------|-----|-----------|
 | **Tails** (best) | Boots from USB, writes nothing to disk, routes everything through Tor, shuts down clean | Must reboot to use; no persistent state by design |
 | **Qubes OS** | Each app in its own VM; a compromised browser cannot touch your chat | More complex setup; needs compatible hardware |
-| **Hardened Linux** (Debian/Fedora + FDE) | `mlockall` + seccomp enabled; full-disk encryption protects at rest | Swap and terminal scrollback may retain traces |
+| **Hardened Linux** (Debian/Fedora + FDE) | `mlockall` + [seccomp](PROTOCOL.md#seccomp) enabled; full-disk encryption protects at rest | Swap and terminal scrollback may retain traces |
 
 Do **not** use Windows for high-risk use — no `mlockall`, no seccomp, no memory locking.
 
@@ -58,7 +58,7 @@ Your peer connects to the `.onion` address via `--socks5`. Neither side learns t
 
 ### 3. Identity verification: pre-shared fingerprints
 
-The strongest verification method is **fingerprints exchanged on paper** when you meet in person. This eliminates the need for a phone call at connection time and provides 64-bit cryptographic verification (vs 32-bit for the safety code).
+The strongest verification method is **fingerprints exchanged on paper** when you meet in person. This eliminates the need for a phone call at connection time and provides 64-bit cryptographic verification (vs 32-bit for the [safety code](PROTOCOL.md#sas)).
 
 **Setup (one-time, in person):**
 
@@ -78,7 +78,7 @@ simplecipher connect --peer-fingerprint XXXX-XXXX-XXXX-XXXX <address>
 
 If the fingerprint matches, the connection proceeds without a safety code prompt. If it doesn't match, the connection is aborted — someone is intercepting.
 
-**Important:** Fingerprints are ephemeral. They change every session. A printed fingerprint works exactly once. Exchange new ones when you meet again, or fall back to the safety code (voice/video call) for sessions where you don't have a current fingerprint.
+**Important:** Fingerprints are [ephemeral](PROTOCOL.md#ephemeral). They change every session. A printed fingerprint works exactly once. Exchange new ones when you meet again, or fall back to the safety code (voice/video call) for sessions where you don't have a current fingerprint.
 
 ### 4. Operational security checklist
 

@@ -61,7 +61,7 @@ When you connect to someone, how do you know it's really them and not someone in
 
 After connecting, both sides see the same short code (like `A3F2-91BC`). Call your peer — video or voice — and read the code out loud. If it matches, type it in to confirm. If it doesn't match, someone is intercepting. Disconnect immediately.
 
-**Strength:** 32 bits of entropy. The commitment scheme prevents an attacker from brute-forcing a match, so 32 bits is sufficient for interactive verification.
+**Strength:** 32 bits of entropy. The [commitment scheme](PROTOCOL.md#commitment-scheme) prevents an attacker from brute-forcing a match, so 32 bits is sufficient for interactive verification.
 
 **When to use:** When you can make a call at connection time but haven't prepared anything in advance.
 
@@ -97,7 +97,7 @@ Before connecting, both sides generate a fingerprint — a 16-character code lik
 
 A fingerprint is derived from a public key — the same key that's exchanged openly during the handshake. There is zero secret information in a fingerprint. If someone finds your printed QR code or reads your fingerprint, they gain nothing. They cannot forge a key that produces the same fingerprint.
 
-Fingerprints are ephemeral. They change every session. A printed code works exactly once — for the session it was generated in.
+Fingerprints are [ephemeral](PROTOCOL.md#ephemeral). They change every session. A printed code works exactly once — for the session it was generated in.
 
 ### What if you skip verification?
 
@@ -134,7 +134,7 @@ The chat is still encrypted. But without verification, you can't be sure who you
 └───────────────────────────────────────────┘
 ```
 
-**Why a single native thread?** All crypto, session, and socket state lives on one POSIX thread. Java communicates through a pipe. No mutexes needed for the protocol itself, no possibility of nonce reuse. Two threads reading the same key/nonce pair breaks XChaCha20-Poly1305 confidentiality completely — this architecture makes that structurally impossible. A small number of lifecycle/control globals (pipe fd, listen socket, session-active flag, generation counter) are shared between the JNI calling thread and the session thread using C11 atomics. These carry no crypto material.
+**Why a single native thread?** All crypto, session, and socket state lives on one POSIX thread. Java communicates through a pipe. No mutexes needed for the protocol itself, no possibility of [nonce](PROTOCOL.md#nonce) reuse. Two threads reading the same key/nonce pair breaks [XChaCha20-Poly1305](PROTOCOL.md#xchacha20-poly1305) confidentiality completely — this architecture makes that structurally impossible. A small number of lifecycle/control globals (pipe fd, listen socket, session-active flag, generation counter) are shared between the JNI calling thread and the session thread using C11 atomics. These carry no crypto material.
 
 ## Security measures
 
@@ -145,7 +145,7 @@ The chat is still encrypted. But without verification, you can't be sure who you
 | Screenshot blocking (`FLAG_SECURE`) | Screenshots and screen recording of the chat and verification screens |
 | Overlay blocking (`HIDE_OVERLAY_WINDOWS`) | Other apps drawing on top of the screen to read your safety code |
 | Tapjacking protection (`filterTouchesWhenObscured`) | All inputs reject touches when another app draws on top — prevents invisible overlays from capturing taps |
-| Custom keyboard (`SimpleKeyboard`) | Keystroke logging by third-party keyboards — covers all inputs: host, port, fingerprint (connect screen) and SAS, chat (chat screen). The system keyboard is never shown. |
+| Custom keyboard (`SimpleKeyboard`) | Keystroke logging by third-party keyboards — covers all inputs: host, port, fingerprint (connect screen) and [SAS](PROTOCOL.md#sas), chat (chat screen). The system keyboard is never shown. |
 | No keyboard learning (`IME_FLAG_NO_PERSONALIZED_LEARNING`) | System keyboard caching what you type (defence in depth, all inputs) |
 | Session kill on background (`onStop` → `nativeStop()`) | Keys sitting in memory while the app is not visible. Uses out-of-band forced teardown (socket shutdown + pipe close + POLLHUP detection), not the command pipe, so quit cannot be blocked by network backpressure. |
 | Widget clearing on pause (`onPause`) | Plaintext lingering in UI text fields |
@@ -188,7 +188,7 @@ For a complete guide to high-risk deployment with Tor (including onion services)
 | Keyboard safety | Terminal handles input directly | Custom keyboard bypasses system IME |
 | Screenshot protection | Not applicable (terminal) | `FLAG_SECURE` blocks screenshots |
 | Memory locking | `mlockall` prevents swap-to-disk | Not available on Android |
-| Seccomp sandboxing | Enabled (Linux only) | Not available on Android |
+| [Seccomp](PROTOCOL.md#seccomp) sandboxing | Enabled (Linux only) | Not available on Android |
 | Binary size | ~80 KB, zero dependencies | Minimal: ~154 KB; Full: ~854 KB |
 
 ### If security is your top priority
