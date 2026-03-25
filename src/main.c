@@ -330,8 +330,9 @@ int main(int argc, char *argv[]){
      * syscalls to those needed for the handshake.  Blocks socket(), connect(),
      * bind(), listen(), accept(), getifaddrs(), getaddrinfo(), and DNS resolution.
      * A compromised process can no longer open new connections.  On OpenBSD,
-     * this drops to pledge("stdio") + unveil(NULL, NULL). */
-    sandbox_phase1();
+     * this drops to pledge("stdio") + unveil(NULL, NULL).  On FreeBSD,
+     * cap_enter() + per-fd Capsicum rights on the socket and terminal. */
+    sandbox_phase1((int)g_fd);
 
     /* ------------------------------------------------------------------
      * STEP 2: Commit-then-reveal handshake
@@ -488,7 +489,7 @@ int main(int argc, char *argv[]){
             goto out;
         }
 
-        sandbox_phase2();  /* tighten syscalls: drop connect/socket/DNS before chat loop */
+        sandbox_phase2((int)g_fd);  /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
         tui_chat_loop(g_fd, &g_sess);
     } else {
     printf("\n");
@@ -572,7 +573,7 @@ int main(int argc, char *argv[]){
     printf("  Type a message and press Enter to send.\n");
     printf("\n");
 
-    sandbox_phase2();  /* tighten syscalls: drop connect/socket/DNS before chat loop */
+    sandbox_phase2((int)g_fd);  /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
     cli_chat_loop(g_fd, &g_sess);
     } /* end else (CLI mode) */
 

@@ -374,11 +374,90 @@ static void install_seccomp_phase2(void){
 #endif /* SECCOMP_AUDIT_ARCH */
 #endif /* __linux__ */
 
-void sandbox_phase1(void){
+/* ---- FreeBSD Capsicum --------------------------------------------------- */
+
+/* Capsicum is a capability-based sandbox built into the FreeBSD kernel.
+ * Unlike seccomp (which filters syscall numbers), Capsicum restricts
+ * operations on file descriptors.  cap_enter() is irreversible and blocks
+ * ALL new fd creation (open, socket, accept).  Per-fd rights are narrowed
+ * with cap_rights_limit() (rights can only be removed, never added).
+ *
+ * Syscalls that don't touch fds — arc4random_buf(), clock_gettime(),
+ * sigaction(), exit() — work unconditionally in capability mode.
+ * This makes Capsicum simpler than seccomp: no need to enumerate every
+ * glibc/musl internal syscall.
+ *
+ * Phase 1: cap_enter() + generous per-fd rights (need setsockopt for
+ *          handshake, ioctl for terminal setup).
+ * Phase 2: narrow rights — drop setsockopt/getsockopt on the socket. */
+#if defined(__FreeBSD__)
+#include <sys/capsicum.h>
+
+static void capsicum_phase1(int sock_fd){
+    /* Enter capability mode — no new fds from this point on.
+     * Idempotent: calling twice is a harmless no-op. */
+    if (cap_enter() != 0) return;  /* best-effort (e.g. kernel w/o Capsicum) */
+
+    /* Socket fd: read, write, poll, shutdown, get/setsockopt.
+     * get/setsockopt is needed during handshake (TCP_NODELAY, SO_KEEPALIVE,
+     * timeouts).  Phase 2 will drop these. */
+    {
+        cap_rights_t rights;
+        cap_rights_init(&rights,
+            CAP_READ, CAP_WRITE, CAP_EVENT,
+            CAP_SHUTDOWN,
+            CAP_SETSOCKOPT, CAP_GETSOCKOPT);
+        cap_rights_limit(sock_fd, &rights);
+    }
+
+    /* stdin: read + poll + ioctl (terminal mode: TIOCGETA/TIOCSETA/TIOCGWINSZ) */
+    {
+        cap_rights_t rights;
+        cap_rights_init(&rights, CAP_READ, CAP_EVENT, CAP_IOCTL);
+        cap_rights_limit(STDIN_FILENO, &rights);
+        unsigned long ioctls[] = { TIOCGETA, TIOCSETA, TIOCGWINSZ };
+        cap_ioctls_limit(STDIN_FILENO, ioctls, 3);
+    }
+
+    /* stdout: write + ioctl (terminal mode queries, window size) */
+    {
+        cap_rights_t rights;
+        cap_rights_init(&rights, CAP_WRITE, CAP_EVENT, CAP_IOCTL);
+        cap_rights_limit(STDOUT_FILENO, &rights);
+        unsigned long ioctls[] = { TIOCGETA, TIOCSETA, TIOCGWINSZ };
+        cap_ioctls_limit(STDOUT_FILENO, ioctls, 3);
+    }
+
+    /* stderr: write only (error messages) */
+    {
+        cap_rights_t rights;
+        cap_rights_init(&rights, CAP_WRITE);
+        cap_rights_limit(STDERR_FILENO, &rights);
+    }
+}
+
+static void capsicum_phase2(int sock_fd){
+    /* Tighten socket rights: drop setsockopt/getsockopt — no longer needed
+     * after handshake.  cap_rights_limit() only narrows, never widens. */
+    cap_rights_t rights;
+    cap_rights_init(&rights,
+        CAP_READ, CAP_WRITE, CAP_EVENT, CAP_SHUTDOWN);
+    cap_rights_limit(sock_fd, &rights);
+}
+#endif /* __FreeBSD__ */
+
+/* ---- sandbox entry points ----------------------------------------------- */
+
+void sandbox_phase1(int sock_fd){
 #if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
+    (void)sock_fd;
     install_seccomp_phase1();
 #endif
+#if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
+    capsicum_phase1(sock_fd);
+#endif
 #if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
+    (void)sock_fd;
     /* Lock filesystem access — no file paths needed at any phase. */
     unveil(NULL, NULL);
     /* TCP connection is already established.  Allow only I/O on existing
@@ -386,30 +465,42 @@ void sandbox_phase1(void){
      * "inet" is NOT needed — we have the connected socket already. */
     pledge("stdio", NULL);
 #endif
+#if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
+    (void)sock_fd;
+#endif
 }
 
-void sandbox_phase2(void){
+void sandbox_phase2(int sock_fd){
 #if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
+    (void)sock_fd;
     install_seccomp_phase2();
 #endif
+#if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
+    capsicum_phase2(sock_fd);
+#endif
 #if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
+    (void)sock_fd;
     /* Drop network setup and DNS — the session socket is already open.
      * "stdio" covers read, write, poll, close, and exit. */
     pledge("stdio", NULL);
+#endif
+#if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
+    (void)sock_fd;
 #endif
 }
 
 void sandbox(void){
     /* Legacy entry point — equivalent to phase 2 (chat-loop restriction).
      * Callers that have not been updated to the two-phase API still get the
-     * full post-handshake restriction. */
-    sandbox_phase2();
+     * full post-handshake restriction.  Pass -1 since Capsicum callers
+     * should use sandbox_phase2(fd) directly. */
+    sandbox_phase2(-1);
 }
 
 #else
-void harden(void){}         /* no-op when CIPHER_HARDEN is not set */
-void sandbox_phase1(void){}
-void sandbox_phase2(void){}
+void harden(void){}                    /* no-op when CIPHER_HARDEN is not set */
+void sandbox_phase1(int sock_fd){ (void)sock_fd; }
+void sandbox_phase2(int sock_fd){ (void)sock_fd; }
 void sandbox(void){}
 #endif
 

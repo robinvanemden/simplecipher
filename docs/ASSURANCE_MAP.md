@@ -56,7 +56,8 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | FORTIFY_SOURCE | `-D_FORTIFY_SOURCE=2` | `test_android.sh` (`_chk` functions in .so) |
 | Seccomp sandbox phase 1 (Linux) | `platform.c:sandbox_phase1()` — after TCP connection, before handshake. Blocks socket/connect/bind/listen/accept. | Source-level check (`test_linux.sh`). **No functional seccomp test in CI** — CI builds without `CIPHER_HARDEN`. Needs validation on hardened Linux. |
 | Seccomp sandbox phase 2 (Linux) | `platform.c:sandbox_phase2()` — after handshake, before chat loop. Tightened from phase 1: drops setup-only syscalls (select, nanosleep, prctl, mlock, fcntl, setrlimit, etc.) that are no longer needed during chat. | Source-level check (`test_linux.sh`). **No functional test** — same caveat. |
-| OpenBSD pledge/unveil | `platform.c:sandbox_phase1()` (`"stdio"`), `sandbox_phase2()` (`"stdio"`) | Source-level check only. **No OpenBSD CI runner** — pledge tested manually. FreeBSD build on Cirrus CI verifies POSIX compatibility. |
+| Capsicum sandbox (FreeBSD) | `platform.c:capsicum_phase1()` — `cap_enter()` + per-fd rights; `capsicum_phase2()` — narrows socket rights. | Cirrus CI builds and runs tests on FreeBSD. **No functional Capsicum test** — needs a child process that attempts a blocked operation. |
+| OpenBSD pledge/unveil | `platform.c:sandbox_phase1()` (`"stdio"`), `sandbox_phase2()` (`"stdio"`) | Source-level check only. **No OpenBSD CI runner** — pledge tested manually. |
 | `mlockall` (Linux) | `platform.c:harden_process()` | `test_p2p.c:test_harden_codepath` |
 | Anti-ptrace (Android) | `jni_bridge.c:JNI_OnLoad` `PR_SET_DUMPABLE=0` | `test_android.sh` (grep source) |
 | No core dumps (Android) | `jni_bridge.c:JNI_OnLoad` `RLIMIT_CORE=0` | `test_android.sh` (grep source) |

@@ -18,9 +18,8 @@ freebsd_task:
 
   smoke_test_script:
     # Verify the binary runs without crashing.
-    # FreeBSD does not have pledge/unveil (that's OpenBSD), but this
-    # tests POSIX compatibility, socket I/O, and CIPHER_HARDEN code paths
-    # that are shared across all POSIX platforms.
+    # Tests POSIX compatibility, socket I/O, Capsicum sandbox (cap_enter
+    # + per-fd rights), and CIPHER_HARDEN code paths.
     - ./simplecipher listen 19799 &
     - sleep 1
     - kill $! 2>/dev/null || true

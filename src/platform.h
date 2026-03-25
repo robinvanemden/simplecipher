@@ -141,29 +141,35 @@ void harden(void);
 
 /* Two-phase syscall sandboxing.
  *
- * sandbox_phase1() — call AFTER the TCP connection is established, BEFORE
- *   the handshake.  Connection setup (getifaddrs, getaddrinfo, socket,
- *   connect, bind, listen, accept) runs unrestricted.  Phase 1 blocks
- *   new connections — a compromised process cannot open additional sockets.
+ * sandbox_phase1(sock_fd) — call AFTER the TCP connection is established,
+ *   BEFORE the handshake.  Connection setup (getifaddrs, getaddrinfo,
+ *   socket, connect, bind, listen, accept) runs unrestricted.  Phase 1
+ *   blocks new connections — a compromised process cannot open additional
+ *   sockets.
  *   On Linux (seccomp-BPF): allows read, write, close, poll/ppoll, getrandom,
  *   mmap/mprotect/brk, sigaction, exit/exit_group, clock_gettime, nanosleep,
  *   ioctl, shutdown.  Does NOT allow socket, connect, bind, listen, accept.
- *   On OpenBSD: pledge("stdio") + unveil(NULL, NULL) — filesystem locked,
- *   no new network connections.
+ *   On FreeBSD (Capsicum): cap_enter() + per-fd rights on sock_fd and
+ *   stdin/stdout/stderr.  No new file descriptors can be created.
+ *   On OpenBSD: pledge("stdio") + unveil(NULL, NULL).
  *   No-op on other platforms or when CIPHER_HARDEN is not set.
  *
- * sandbox_phase2() — call after handshake completes, before the chat loop.
- *   Tightens further: drops socket(), connect(), bind(), listen(), accept(),
- *   and DNS syscalls.  After the handshake the process only needs read/write
- *   on existing fds, poll, getrandom, and exit.  Even if an attacker achieves
- *   code execution, they cannot open new connections or exec a shell.
+ * sandbox_phase2(sock_fd) — call after handshake completes, before the
+ *   chat loop.  Tightens further: on Linux drops setup-only syscalls;
+ *   on FreeBSD narrows per-fd Capsicum rights (removes setsockopt/
+ *   getsockopt).  After the handshake the process only needs read/write
+ *   on existing fds, poll, getrandom, and exit.
  *   On OpenBSD: pledge("stdio", NULL).
  *   No-op on other platforms or when CIPHER_HARDEN is not set.
  *
- * sandbox() is kept for backward compatibility — it calls sandbox_phase2(). */
-void sandbox_phase1(void);
-void sandbox_phase2(void);
-void sandbox(void); /* legacy: equivalent to sandbox_phase2() */
+ * The sock_fd parameter is the connected session socket.  Capsicum needs
+ * it to set per-fd capability rights; Linux seccomp and OpenBSD pledge
+ * ignore it (they operate at the syscall/process level).
+ *
+ * sandbox() is kept for backward compatibility — calls sandbox_phase2(-1). */
+void sandbox_phase1(int sock_fd);
+void sandbox_phase2(int sock_fd);
+void sandbox(void); /* legacy: equivalent to sandbox_phase2(-1) */
 
 /* Signal handler: set the stop flag so the main loop exits on its next
  * iteration.  See platform.c for details on POSIX vs Windows behavior. */

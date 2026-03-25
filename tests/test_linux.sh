@@ -176,9 +176,9 @@ if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/src/main.c" ]; then
     echo "=== Source-level hardening tests ==="
 
     check "main.c calls sandbox_phase1" \
-        "grep -q 'sandbox_phase1()' '$REPO_ROOT/src/main.c'"
+        "grep -q 'sandbox_phase1(' '$REPO_ROOT/src/main.c'"
     check "main.c calls sandbox_phase2" \
-        "grep -q 'sandbox_phase2()' '$REPO_ROOT/src/main.c'"
+        "grep -q 'sandbox_phase2(' '$REPO_ROOT/src/main.c'"
     check "platform.c implements sandbox_phase1" \
         "grep -q 'void sandbox_phase1' '$REPO_ROOT/src/platform.c'"
     check "platform.c implements sandbox_phase2" \
