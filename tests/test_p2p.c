@@ -2404,18 +2404,22 @@ static void test_harden_codepath(void) {
                  * to avoid cap_rights_limit() on stdin/stdout which may
                  * not exist in the forked test child.
                  *
+                 * Capsicum blocks namespace operations (open, connect,
+                 * bind) but NOT socket() which only creates an fd.
+                 * Test with open() which is definitively blocked.
+                 *
                  * Exit codes for diagnosis:
-                 *   42 = success (socket blocked with ECAPMODE)
+                 *   42 = success (open blocked with ECAPMODE/ENOTCAPABLE)
                  *   77 = cap_enter() failed (SKIP)
-                 *   80 = socket() failed but NOT with ECAPMODE
-                 *   81 = socket() succeeded (sandbox not enforced)  */
+                 *   80 = open() failed but wrong errno
+                 *   81 = open() succeeded (sandbox not enforced)  */
                 if (cap_enter() != 0)
                     _exit(77);
-                int s = socket(AF_INET, SOCK_STREAM, 0);
-                if (s == -1 && errno == ECAPMODE)
+                int f = open("/dev/null", 0 /* O_RDONLY */);
+                if (f == -1 && (errno == ECAPMODE || errno == ENOTCAPABLE))
                     _exit(42);  /* success: sandbox blocked it */
-                if (s >= 0) { close(s); _exit(81); }
-                _exit(80);      /* socket failed with unexpected errno */
+                if (f >= 0) { close(f); _exit(81); }
+                _exit(80);      /* open failed with unexpected errno */
     #elif defined(__OpenBSD__)
                 /* pledge("stdio") then socket() → kernel sends SIGABRT.
                  * If we reach _exit, pledge didn't enforce. */
@@ -2440,25 +2444,24 @@ static void test_harden_codepath(void) {
                 if (WIFEXITED(status)) {
                     int code = WEXITSTATUS(status);
                     if (code == 42) {
-                        TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 1);
+                        TEST("Capsicum blocks open() after cap_enter", 1);
                     } else if (code == 77) {
                         printf("  SKIP: cap_enter() failed (jail/VM restriction?)\n");
                     } else if (code == 81) {
-                        printf("  SKIP: cap_enter() succeeded but kernel not enforcing "
-                               "(Capsicum may be compiled out or VM restriction)\n");
+                        printf("  SKIP: cap_enter() succeeded but open() not blocked\n");
                     } else if (code == 80) {
-                        printf("  DIAG: socket() failed but errno != ECAPMODE\n");
-                        TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
+                        printf("  DIAG: open() failed but errno != ECAPMODE/ENOTCAPABLE\n");
+                        TEST("Capsicum blocks open() after cap_enter", 0);
                     } else {
                         printf("  DIAG: child exited with unexpected code %d\n", code);
-                        TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
+                        TEST("Capsicum blocks open() after cap_enter", 0);
                     }
                 } else if (WIFSIGNALED(status)) {
                     printf("  DIAG: child killed by signal %d\n", WTERMSIG(status));
-                    TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
+                    TEST("Capsicum blocks open() after cap_enter", 0);
                 } else {
                     printf("  DIAG: child stopped/unknown status 0x%x\n", status);
-                    TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
+                    TEST("Capsicum blocks open() after cap_enter", 0);
                 }
     #elif defined(__OpenBSD__)
                 if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) {
