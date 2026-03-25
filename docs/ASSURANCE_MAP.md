@@ -23,7 +23,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 
 | Claim | Code | Test |
 |-------|------|------|
-| Private key wiped after session_init | `main.c:400`, `jni_bridge.c:451` | `test_p2p.c:test_session_init_wipes_intermediates` |
+| Private key wiped after session_init | `main.c:415`, `jni_bridge.c:598` | `test_p2p.c:test_session_init_wipes_intermediates` |
 | Chain key wiped after each message | `crypto.c:chain_step()` overwrites | `test_p2p.c:test_chain_step_wipes_safe` |
 | Session state wiped on exit | `protocol.c:session_wipe()` | `test_p2p.c:test_session_wipe`, `test_p2p.c:test_global_session_wipe` |
 | Frame build wipes intermediates | `protocol.c:frame_build()` | `test_p2p.c:test_frame_build_wipes_intermediates` |
@@ -50,12 +50,12 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | Claim | Code | Test |
 |-------|------|------|
 | Static binary, zero deps | `CMakeLists.txt` static linking flags | `ci.yml:test-linux` (runs on bare runner) |
-| ASLR + DEP (Windows) | `CMakeLists.txt:81` `/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA` | `test_windows.ps1:87` (PE header check) |
+| ASLR + DEP (Windows) | `CMakeLists.txt:81` `--dynamicbase --nxcompat --high-entropy-va` | `test_windows.ps1:87` (PE header check) |
 | Full RELRO (Linux) | `CMakeLists.txt` `-Wl,-z,relro,-z,now` | `ci.yml:test-linux` (readelf check) |
 | Stack canary | `-fstack-protector-strong` | `test_android.sh` (readelf `__stack_chk_fail`) |
 | FORTIFY_SOURCE | `-D_FORTIFY_SOURCE=2` | `test_android.sh` (`_chk` functions in .so) |
 | Seccomp sandbox phase 1 (Linux) | `platform.c:sandbox_phase1()` — after TCP connection, before handshake. Blocks socket/connect/bind/listen/accept. | Source-level check (`test_linux.sh`). **No functional seccomp test in CI** — CI builds without `CIPHER_HARDEN`. Needs validation on hardened Linux. |
-| Seccomp sandbox phase 2 (Linux) | `platform.c:sandbox_phase2()` — after handshake, before chat loop. Same restrictions as phase 1 but tighter. | Source-level check (`test_linux.sh`). **No functional test** — same caveat. |
+| Seccomp sandbox phase 2 (Linux) | `platform.c:sandbox_phase2()` — after handshake, before chat loop. Tightened from phase 1: drops setup-only syscalls (select, nanosleep, prctl, mlock, fcntl, setrlimit, etc.) that are no longer needed during chat. | Source-level check (`test_linux.sh`). **No functional test** — same caveat. |
 | OpenBSD pledge/unveil | `platform.c:sandbox_phase1()` (`"stdio"`), `sandbox_phase2()` (`"stdio"`) | Source-level check only. **No OpenBSD CI runner** — pledge tested manually. FreeBSD build on Cirrus CI verifies POSIX compatibility. |
 | `mlockall` (Linux) | `platform.c:harden_process()` | `test_p2p.c:test_harden_codepath` |
 | Anti-ptrace (Android) | `jni_bridge.c:JNI_OnLoad` `PR_SET_DUMPABLE=0` | `test_android.sh` (grep source) |

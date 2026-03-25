@@ -283,11 +283,23 @@ static void install_seccomp_phase1(void){
 
 /* Phase 2 filter — chat loop phase.
  *
- * Tightened from phase 1: drops socket(), connect(), bind(), listen(),
- * accept(), and DNS-related syscalls.  After the handshake the process
- * only needs I/O on already-open fds, poll, getrandom (DH ratchet),
- * and signal/exit handling.  Even if an attacker achieves code execution
- * they cannot open new connections, exec a shell, or read files.
+ * Tightened from phase 1: drops setup-only syscalls that were needed
+ * between TCP connect and handshake completion but are no longer
+ * required during the chat loop:
+ *   select       — handshake may use it; chat loop uses poll only
+ *   nanosleep    — timing only needed during handshake retry
+ *   gettimeofday — superseded by clock_gettime in chat
+ *   mlock/mlockall — memory locking done once in harden()
+ *   rt_sigprocmask — signal mask setup done once
+ *   prctl        — PR_SET_DUMPABLE done once in harden()
+ *   setrlimit    — core dump disable done once in harden()
+ *   fcntl        — socket O_NONBLOCK set during connect, not needed after
+ *   exit         — only exit_group needed (exit is per-thread)
+ *
+ * After the handshake the process only needs I/O on already-open fds,
+ * poll, getrandom (DH ratchet), and signal/exit handling.  Even if an
+ * attacker achieves code execution they cannot open new connections,
+ * exec a shell, or read files.
  *
  * Allowed syscalls (the minimum for poll-based encrypted chat):
  *   read/write       — socket and terminal I/O

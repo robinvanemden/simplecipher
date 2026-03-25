@@ -34,15 +34,15 @@ $ simplecipher connect
 **Step 3 — Both see the same safety code:**
 
 ```
-  Safety code:  58A4-0798          (both screens show this)
+  Safety code:  9052-EF29          (both screens show this)
 ```
 
-Alice and Bob compare the code over a video call: *"I see 58A4-0798 — same for you?" "Yes."*
+Alice and Bob compare the code over a video call: *"I see 9052-EF29 — same for you?" "Yes."*
 
 Both type the code to confirm:
 
 ```
-  Confirm: 58A40798
+  Confirm: 9052EF29
   Secure session active. Ctrl+C to quit.
 ```
 

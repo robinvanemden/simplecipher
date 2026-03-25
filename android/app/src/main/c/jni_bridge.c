@@ -51,6 +51,15 @@
  * when the pipe is full or the session thread is blocked in I/O.
  * CMD_QUIT (0x03) is still handled in the event loop for robustness
  * but is no longer the primary quit path.
+ *
+ * How nativeStop() unblocks each phase:
+ *   Connect:  poll() on pipe fd returns POLLHUP → abort connect
+ *   Listen:   select() marks pipe fd readable (EOF) + close(listen_sock)
+ *             makes select() return on srv → accept() fails → break
+ *   SAS wait: pipe_read_exact() returns EOF → goto cleanup
+ *   Chat:     poll() on pipe fd returns POLLHUP → pipe_read_exact()
+ *             returns EOF → break;  shutdown(sock) also unblocks any
+ *             in-progress read_exact() on the socket side
  */
 
 #include "platform.h"
@@ -301,12 +310,13 @@ static void *session_thread(void *arg) {
     snprintf(port_str, sizeof port_str, "%d", port);
 
     if (mode == 1) {
-        /* Connect mode — interruptible via pipe.
+        /* Connect mode — interruptible via nativeStop().
          *
          * We can't use connect_socket() directly because connect() can
          * block for up to 127 seconds (kernel SYN timeout) with no way
          * to interrupt it.  Instead, use non-blocking connect + poll()
-         * on both the socket and the pipe so CMD_QUIT is seen promptly. */
+         * on both the socket and the pipe so nativeStop()'s pipe close
+         * (POLLHUP) is detected promptly. */
         LOGI("connecting to %s:%s", host ? host : "(null)", port_str);
 
         struct addrinfo hints, *res, *p;
@@ -335,7 +345,9 @@ static void *session_thread(void *arg) {
                     continue;
                 }
 
-                /* Poll: wait for connect to complete or CMD_QUIT on pipe */
+                /* Poll: wait for connect to complete or stop signal on pipe.
+                 * nativeStop() closes the write end, producing POLLHUP (not
+                 * POLLIN) on Linux — check both plus POLLERR for safety. */
                 struct pollfd cfds[2];
                 cfds[0].fd     = (int)fd;
                 cfds[0].events = POLLOUT;
@@ -344,8 +356,8 @@ static void *session_thread(void *arg) {
 
                 int connected = 0;
                 int ret = poll(cfds, 2, HANDSHAKE_TIMEOUT_S * 1000);
-                if (ret > 0 && (cfds[1].revents & POLLIN)) {
-                    /* CMD_QUIT arrived during connect — abort */
+                if (ret > 0 && (cfds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
+                    /* nativeStop() closed the pipe (or CMD_QUIT fallback) — abort */
                     LOGI("quit received during connect");
                     close_sock(fd); fd = INVALID_SOCK;
                     freeaddrinfo(res);
@@ -371,13 +383,15 @@ static void *session_thread(void *arg) {
         }
         we_init = 1;
     } else {
-        /* Listen mode.
+        /* Listen mode — interruptible via nativeStop().
          *
          * We can't use listen_socket() directly because it blocks in
          * accept() with no way to interrupt it.  Instead, use select()
-         * with a timeout so we can periodically check the pipe for
-         * CMD_QUIT.  This lets the user press Back and immediately
-         * re-listen on the same port. */
+         * with a 250ms timeout so nativeStop()'s pipe close or listen
+         * socket close is detected promptly.  nativeStop() also closes
+         * g_listen_sock, which makes select() return with srv readable
+         * (accept then fails, breaking the loop).  This lets the user
+         * press Back and immediately re-listen on the same port. */
         LOGI("listening on port %s", port_str);
 
         /* Bind and listen using the same setup as listen_socket but
@@ -412,7 +426,10 @@ static void *session_thread(void *arg) {
             goto cleanup;
         }
 
-        /* Poll: wait for either a peer connection or CMD_QUIT on the pipe. */
+        /* Select: wait for a peer connection or nativeStop() signal.
+         * When nativeStop() closes the pipe write end, select() marks
+         * pipe_rd readable; read() then returns EOF.  nativeStop() also
+         * closes g_listen_sock, making select() return on srv too. */
         g_listen_sock = srv;
         while (fd == INVALID_SOCK) {
             fd_set rfds;
@@ -426,7 +443,7 @@ static void *session_thread(void *arg) {
             if (ready < 0) break;
 
             if (FD_ISSET(pipe_rd, &rfds)) {
-                /* CMD_QUIT arrived — abort listen */
+                /* nativeStop() closed pipe (or CMD_QUIT fallback) — abort */
                 LOGI("quit received during listen");
                 close_sock(srv);
                 g_listen_sock = INVALID_SOCK;
@@ -594,6 +611,10 @@ static void *session_thread(void *arg) {
 
     /* ================================================================
      * Phase 3: Wait for SAS confirmation from Java (via pipe)
+     *
+     * Blocking read on pipe.  If nativeStop() closes the write end,
+     * read() returns 0 (EOF) and pipe_read_exact() returns -1, which
+     * we catch here.  CMD_QUIT is still handled below as a fallback.
      * ================================================================ */
 
     {
@@ -694,11 +715,15 @@ static void *session_thread(void *arg) {
                 crypto_wipe(plain, sizeof plain);
             }
 
-            /* --- Pipe readable: command from Java --- */
+            /* --- Pipe readable: command from Java, or nativeStop() ---
+             * POLLHUP/POLLERR: nativeStop() closed the write end;
+             * pipe_read_exact() returns EOF and we break out.
+             * POLLIN: normal command (CMD_SEND, CMD_CONFIRM_SAS,
+             * or CMD_QUIT fallback). */
             if (fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
                 uint8_t hdr[3];
                 if (pipe_read_exact(pipe_rd, hdr, 3) != 0) {
-                    LOGE("pipe read error");
+                    /* EOF from nativeStop() pipe close, or read error */
                     break;
                 }
 
@@ -1118,7 +1143,8 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
  * pipe is full), this function acts out-of-band by directly closing and
  * shutting down the resources the session thread is blocked on:
  *
- *   1. Close the pipe write end → pipe_read_exact() returns EOF
+ *   1. Close the pipe write end → POLLHUP on the read end (connect-phase
+ *      poll) or EOF from pipe_read_exact() (session-phase reads)
  *   2. Shutdown the session socket → read_exact()/write_exact() return -1
  *   3. Close the listen socket → select()/accept() return -1
  *
@@ -1134,7 +1160,8 @@ Java_com_example_simplecipher_ChatActivity_nativeStop(
     (void)env;
     (void)thiz;
 
-    /* 1. Close pipe write end → EOF on read end */
+    /* 1. Close pipe write end → POLLHUP on read end (connect/chat poll)
+     *    or EOF from pipe_read_exact (SAS wait, event loop reads) */
     {
         int wr = g_pipe_wr;
         g_pipe_wr = -1;

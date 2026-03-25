@@ -39,8 +39,9 @@ This is exactly what goes over the wire. Each arrow is one TCP write.
           |  verify H(pub_B) == commitment   |  both sides
           |  verify H(pub_A) == commitment   |
           |                                  |
-          |  shared = X25519(priv, peer_pub) |  both compute
-          |  SAS = BLAKE2b(shared)[:4]       |  same value
+          |  dh  = X25519(priv, peer_pub)    |  both compute
+          |  prk = BLAKE2b(dh || both pubs)  |  domain-separated
+          |  SAS = expand(prk, "sas")[:4]    |  same value
           |                                  |
           |  [optional: verify fingerprint]  |
           |                                  |
@@ -159,7 +160,7 @@ Nothing is stored to disk, ever.
 
 ### Fingerprint verification (optional)
 
-In addition to SAS comparison, peers can exchange fingerprints out-of-band before connecting. A fingerprint is the first 8 bytes of `BLAKE2b(pub_key)` formatted as `XXXX-XXXX-XXXX-XXXX`. Since the fingerprint is derived from the public key (which is exchanged openly during the handshake), it has zero secret value — sharing it on paper, QR code, or any channel carries no risk.
+In addition to SAS comparison, peers can exchange fingerprints out-of-band before connecting. A fingerprint is the first 8 bytes of `BLAKE2b_keyed(label="cipher fingerprint v2", pub_key)` formatted as `XXXX-XXXX-XXXX-XXXX`. The domain label ensures the fingerprint hash is distinct from all other hashes in the protocol. Since the fingerprint is derived from the public key (which is exchanged openly during the handshake), it has zero secret value — sharing it on paper, QR code, or any channel carries no risk.
 
 After the commitment and key exchange phases, the native layer compares the received peer public key's fingerprint against the pre-shared value using a constant-time comparison. If they match, the SAS step is skipped. If they don't match, the connection is aborted immediately.
 

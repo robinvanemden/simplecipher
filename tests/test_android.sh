@@ -251,9 +251,9 @@ check "MainActivity has FLAG_SECURE" \
 check "ChatActivity wipes UI in onPause" \
     "grep -A5 'onPause' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'setText'"
 
-# Session end on stop (backgrounding = session end via CMD_QUIT)
-check "ChatActivity posts CMD_QUIT in onStop" \
-    "grep -A10 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'CMD_QUIT'"
+# Session end on stop (backgrounding = forced teardown via nativeStop)
+check "ChatActivity calls nativeStop in onStop" \
+    "grep -A20 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'nativeStop'"
 
 # SAS wiped after confirmation
 check "SAS code cleared after confirm" \

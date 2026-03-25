@@ -33,8 +33,8 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Stripped symbols | yes | yes | yes |
 | **Runtime** (`-DCIPHER_HARDEN`) | | | |
 | Lock memory (prevent swap) | `mlockall` | — | — |
-| Disable core dumps | `RLIMIT_CORE=0` | `SetErrorMode` (WER off) | — |
-| Block ptrace / memory inspection | `PR_SET_DUMPABLE=0` | — | — |
+| Disable core dumps | `RLIMIT_CORE=0` | `SetErrorMode` (WER off) | `RLIMIT_CORE=0` (unconditional in JNI_OnLoad) |
+| Block ptrace / memory inspection | `PR_SET_DUMPABLE=0` | — | `PR_SET_DUMPABLE=0` (unconditional in JNI_OnLoad) |
 | Seccomp-BPF syscall filter (two-phase) | yes: phase 1 after TCP connect (blocks new sockets), phase 2 after handshake (tightest) | — | — |
 | OpenBSD pledge/unveil | — | — | — |
 | **Key management** | | | |
@@ -102,7 +102,7 @@ Two complementary tools that catch different classes of timing side channels:
 | **Speed** | Seconds (deterministic) | Minutes (~2M measurements per function) |
 | **When to use** | After any code change | Before release, new hardware targets |
 
-All 7 secret-handling functions pass both tools: `is_zero32`, `verify_commit`, `domain_hash`, `expand`, `chain_step`, `crypto_x25519`, `frame_build`.
+All 8 secret-handling functions pass both tools: `is_zero32`, `verify_commit`, `domain_hash`, `expand`, `chain_step`, `crypto_x25519`, `frame_build`, `ct_compare`.
 
 Known-accept: `frame_open` shows timing variance in dudect because Monocypher intentionally skips decryption on MAC failure (not exploitable — MAC comparison is constant-time).
 

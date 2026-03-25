@@ -119,8 +119,8 @@ void print_local_ips(const char *port){
             char ip[INET6_ADDRSTRLEN];
             if (sa->sa_family == AF_INET){
                 struct sockaddr_in *s4 = (struct sockaddr_in *)sa;
-                if ((ntohl(s4->sin_addr.s_addr) >> 24) == 127) continue;
-                if ((ntohl(s4->sin_addr.s_addr) >> 16) == 0xa9fe) continue;
+                if ((ntohl(s4->sin_addr.s_addr) >> 24) == 127) continue;   /* 127.x.x.x loopback */
+                if ((ntohl(s4->sin_addr.s_addr) >> 16) == 0xa9fe) continue; /* 169.254.x.x link-local */
                 inet_ntop(AF_INET, &s4->sin_addr, ip, sizeof ip);
             } else if (sa->sa_family == AF_INET6){
                 struct sockaddr_in6 *s6 = (struct sockaddr_in6 *)sa;
@@ -143,8 +143,8 @@ void print_local_ips(const char *port){
         char ip[INET6_ADDRSTRLEN];
         if (p->ifa_addr->sa_family == AF_INET){
             struct sockaddr_in *s4 = (struct sockaddr_in *)p->ifa_addr;
-            if (ntohl(s4->sin_addr.s_addr) >> 24 == 127) continue;
-            if ((ntohl(s4->sin_addr.s_addr) >> 16) == 0xa9fe) continue;
+            if (ntohl(s4->sin_addr.s_addr) >> 24 == 127) continue;       /* 127.x.x.x loopback */
+            if ((ntohl(s4->sin_addr.s_addr) >> 16) == 0xa9fe) continue; /* 169.254.x.x link-local */
             inet_ntop(AF_INET, &s4->sin_addr, ip, sizeof ip);
         } else if (p->ifa_addr->sa_family == AF_INET6){
             struct sockaddr_in6 *s6 = (struct sockaddr_in6 *)p->ifa_addr;
