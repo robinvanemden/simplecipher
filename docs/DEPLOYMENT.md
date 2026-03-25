@@ -30,9 +30,12 @@ SimpleCipher encrypts message content, but your IP address is visible to the pee
 # Install Tor (Tails has it built in)
 sudo apt install tor
 
-# Connect through Tor's SOCKS5 proxy
-simplecipher connect --socks5 127.0.0.1:9050 <peer-onion-address>
+# Connect through Tor's SOCKS5 proxy (interactive — keeps address out of argv)
+simplecipher connect --socks5 127.0.0.1:9050
+#   Host: <peer-onion-address>
 ```
+
+**Note:** The `--socks5` flag itself appears in `/proc/cmdline` and shell history. This reveals that you're using a SOCKS5 proxy but not who you're connecting to (the host is entered interactively). On Tails this is not a concern — the amnesic OS discards everything on shutdown.
 
 **Listening as a Tor onion service:**
 

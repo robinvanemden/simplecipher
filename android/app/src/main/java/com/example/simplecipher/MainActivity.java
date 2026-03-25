@@ -176,6 +176,12 @@ public class MainActivity extends Activity {
           fpContent.setVisibility(fpExpanded ? View.VISIBLE : View.GONE);
           if (fpExpanded && selfFingerprint == null) {
             selfFingerprint = nativeGenerateKey();
+            if (selfFingerprint == null) {
+              Toast.makeText(this, "Key generation failed", Toast.LENGTH_SHORT).show();
+              fpExpanded = false;
+              fpContent.setVisibility(View.GONE);
+              return;
+            }
             fpSelfText.setText(selfFingerprint);
             if (qr.hasScanner()) {
               fpQrImage.setImageBitmap(qr.generateBitmap(selfFingerprint, 512));

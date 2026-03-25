@@ -394,6 +394,10 @@ check "JNI direct connect uses AI_NUMERICHOST (no DNS)" \
 check "Java validates numeric IP on direct connect" \
     "grep -q 'isNumericAddress' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 
+# nativeGenerateKey null return handled
+check "nativeGenerateKey null return handled (no NPE on OOM)" \
+    "grep -A5 'nativeGenerateKey' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java' | grep -q 'selfFingerprint == null'"
+
 # pendingSas wiped in onPause
 check "pendingSas cleared in onPause" \
     "grep -A20 'onPause' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'pendingSas = null'"
