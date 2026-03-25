@@ -174,7 +174,9 @@ The Android app supports SOCKS5 proxies in connect mode. Enter the proxy address
 4. Enter `127.0.0.1:9050` as the SOCKS5 proxy
 5. Tap Start
 
-**Limitation:** SOCKS5 is connect-mode only. To accept incoming connections anonymously on Android, you would need to configure a Tor onion service, which requires root or a separate Tor daemon — use the desktop CLI for this.
+**Limitations:**
+- SOCKS5 is connect-mode only. To accept incoming connections anonymously on Android, you would need to configure a Tor onion service, which requires root or a separate Tor daemon — use the desktop CLI for this.
+- The proxy must be on localhost (`127.0.0.1`, `localhost`, or `::1`). Remote proxies are rejected — the blocking connect could hang the session thread beyond nativeStop()'s reach. This is enforced in both the Java UI and the native JNI layer.
 
 For a complete guide to high-risk deployment with Tor (including onion services), see [High-Risk Deployment](DEPLOYMENT.md).
 

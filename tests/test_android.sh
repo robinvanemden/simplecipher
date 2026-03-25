@@ -312,6 +312,16 @@ check "SOCKS5 fails closed on malformed proxy (no silent direct connect)" \
     "grep -q 'proxy string malformed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 check "SOCKS5 fails closed on strdup OOM" \
     "grep -q 'SOCKS5 strdup failed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "SOCKS5 restricted to loopback in Java" \
+    "grep -q '127.0.0.1.*localhost.*::1' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+check "SOCKS5 restricted to loopback in JNI (defence in depth)" \
+    "grep -q 'proxy must be localhost' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI strdup(host) null-checked" \
+    "grep -q 'strdup(host) failed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI NewGlobalRef null-checked" \
+    "grep -q 'NewGlobalRef failed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "setPeerFingerprint clears stale state on invalid input" \
+    "grep -q 'clearPeerFingerprint()' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 check "JNI frees socks5_host on cleanup" \
     "grep -q 'free(socks5_host)' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 check "JNI frees socks5_port on cleanup" \

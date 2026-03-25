@@ -1039,6 +1039,14 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         }
         ta->host = strdup(h);
         (*env)->ReleaseStringUTFChars(env, host, h);
+        if (!ta->host) {
+            LOGE("strdup(host) failed (OOM)");
+            free(ta);
+            close(pipefd[0]);
+            close(pipefd[1]);
+            g_pipe_wr = -1;
+            return -1;
+        }
     } else {
         ta->host = NULL;
     }
@@ -1059,6 +1067,24 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
                 size_t hlen = (size_t)(colon - p);
                 ta->socks5_host = strndup(p, hlen);
                 ta->socks5_port = strdup(colon + 1);
+                /* Defence in depth: reject non-loopback proxies.
+                 * Blocking connect to a remote proxy can hang the
+                 * session thread beyond nativeStop()'s reach. */
+                if (ta->socks5_host &&
+                    strcmp(ta->socks5_host, "127.0.0.1") != 0 &&
+                    strcmp(ta->socks5_host, "localhost") != 0 &&
+                    strcmp(ta->socks5_host, "::1") != 0) {
+                    LOGE("SOCKS5 proxy must be localhost, got: %s", ta->socks5_host);
+                    free(ta->socks5_host);
+                    free(ta->socks5_port);
+                    (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
+                    free(ta->host);
+                    free(ta);
+                    close(pipefd[0]);
+                    close(pipefd[1]);
+                    g_pipe_wr = -1;
+                    return -1;
+                }
                 if (!ta->socks5_host || !ta->socks5_port) {
                     /* OOM on strdup — fail closed, don't fall to direct connect */
                     LOGE("SOCKS5 strdup failed (OOM)");
@@ -1110,6 +1136,17 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
 
     /* Create a JNI global ref so the callback survives across threads */
     ta->callback = (*env)->NewGlobalRef(env, callback);
+    if (!ta->callback) {
+        LOGE("NewGlobalRef failed (OOM)");
+        free(ta->socks5_host);
+        free(ta->socks5_port);
+        free(ta->host);
+        free(ta);
+        close(pipefd[0]);
+        close(pipefd[1]);
+        g_pipe_wr = -1;
+        return -1;
+    }
 
     /* Look up all 7 callback method IDs */
     ta->mid_onConnected        = (*env)->GetMethodID(env, cls, "onConnected",        "()V");

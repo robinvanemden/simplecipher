@@ -271,11 +271,26 @@ public class MainActivity extends Activity {
 
           String socks5 = socks5Input.getText().toString().trim();
           if (!socks5.isEmpty()) {
-            /* Validate host:port format */
+            /* Validate host:port format and enforce loopback-only.
+             * The SOCKS5 connect uses blocking I/O (not interruptible
+             * by nativeStop), so we restrict to localhost where TCP
+             * connect completes instantly. Remote proxies could hang
+             * the session thread indefinitely. */
             int colon = socks5.lastIndexOf(':');
             if (colon <= 0 || colon == socks5.length() - 1) {
               Toast.makeText(
                       this, "Proxy must be host:port (e.g. 127.0.0.1:9050)", Toast.LENGTH_SHORT)
+                  .show();
+              return;
+            }
+            String proxyHost = socks5.substring(0, colon);
+            if (!proxyHost.equals("127.0.0.1")
+                && !proxyHost.equals("localhost")
+                && !proxyHost.equals("::1")) {
+              Toast.makeText(
+                      this,
+                      "Proxy must be on localhost (127.0.0.1, localhost, or ::1)",
+                      Toast.LENGTH_LONG)
                   .show();
               return;
             }
@@ -493,6 +508,9 @@ public class MainActivity extends Activity {
     String normalized = fp.trim().toUpperCase(java.util.Locale.ROOT);
     String stripped = normalized.replace("-", "");
     if (stripped.length() != 16 || !stripped.matches("[0-9A-F]+")) {
+      /* Clear any previously valid fingerprint — don't leave stale
+       * state armed after an invalid scan or edit. */
+      if (peerFingerprint != null) clearPeerFingerprint();
       Toast.makeText(this, "Invalid fingerprint format", Toast.LENGTH_SHORT).show();
       return;
     }
