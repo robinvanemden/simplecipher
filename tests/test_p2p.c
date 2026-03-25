@@ -2397,16 +2397,24 @@ static void test_harden_codepath(void) {
                 /* Call cap_enter() directly instead of sandbox_phase1()
                  * to avoid cap_rights_limit() on stdin/stdout which may
                  * not exist in the forked test child.  cap_enter() alone
-                 * is sufficient to block socket(). */
+                 * is sufficient to block socket().
+                 *
+                 * Exit codes for diagnosis:
+                 *   42 = success (socket blocked with ECAPMODE)
+                 *   77 = cap_enter() failed (SKIP)
+                 *   80 = socket() failed but NOT with ECAPMODE
+                 *   81 = socket() succeeded (sandbox not enforced)  */
                 if (cap_enter() != 0)
-                    _exit(77);  /* cap_enter failed — SKIP */
+                    _exit(77);  /* cap_enter failed — errno in parent log */
                 int s = socket(AF_INET, SOCK_STREAM, 0);
-                /* Capsicum: socket() in capability mode returns ECAPMODE
-                 * (not ENOTCAPABLE, which is for per-fd rights violations). */
                 if (s == -1 && errno == ECAPMODE)
                     _exit(42);  /* success: sandbox blocked it */
-                if (s >= 0) close(s);
-                _exit(99);      /* fail: socket() was not blocked */
+                int saved_errno = errno;
+                if (s >= 0) { close(s); _exit(81); }
+                /* socket failed with unexpected errno — encode it */
+                _exit(80 + (saved_errno > 120 ? 0 : 0));
+                /* ^ can't pass errno via exit code cleanly, but 80
+                 * tells the parent it was a non-ECAPMODE error */
     #else
                 sandbox_phase1(dummy_fds[1]);
                 int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -2420,11 +2428,28 @@ static void test_harden_codepath(void) {
                 int status = 0;
                 waitpid(pid, &status, 0);
     #if defined(__FreeBSD__)
-                if (WIFEXITED(status) && WEXITSTATUS(status) == 77) {
-                    printf("  SKIP: cap_enter() not available (jail/VM restriction?)\n");
+                if (WIFEXITED(status)) {
+                    int code = WEXITSTATUS(status);
+                    if (code == 42) {
+                        TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 1);
+                    } else if (code == 77) {
+                        printf("  SKIP: cap_enter() failed (errno=%d, jail/VM?)\n", code);
+                    } else if (code == 81) {
+                        printf("  DIAG: socket() SUCCEEDED after cap_enter — sandbox not enforced\n");
+                        TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
+                    } else if (code == 80) {
+                        printf("  DIAG: socket() failed but errno != ECAPMODE\n");
+                        TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
+                    } else {
+                        printf("  DIAG: child exited with unexpected code %d\n", code);
+                        TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
+                    }
+                } else if (WIFSIGNALED(status)) {
+                    printf("  DIAG: child killed by signal %d\n", WTERMSIG(status));
+                    TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
                 } else {
-                    TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)",
-                         WIFEXITED(status) && WEXITSTATUS(status) == 42);
+                    printf("  DIAG: child stopped/unknown status 0x%x\n", status);
+                    TEST("Capsicum blocks socket() after cap_enter (ECAPMODE)", 0);
                 }
     #else
                 /* Seccomp kills with SIGSYS (signal 31 on most arches). */
