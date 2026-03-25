@@ -127,7 +127,11 @@ int main(int argc, char *argv[]) {
 
     /* Parse leading flags (--tui, --socks5, --peer-fingerprint) and shift
      * argv so the positional args (listen/connect, host, port) remain.
-     * Flags can appear in any order before the subcommand. */
+     * Flags can appear before or after the subcommand:
+     *   simplecipher --tui connect --socks5 ... host
+     *   simplecipher connect --socks5 ... host
+     * Both forms work.  The second parse loop runs after the
+     * subcommand is consumed. */
     while (argc >= 2) {
         if (strcmp(argv[1], "--tui") == 0) {
             tui_mode = 1;
@@ -214,6 +218,44 @@ int main(int argc, char *argv[]) {
     we_init = (strcmp(argv[1], "connect") == 0);
     if (!we_init && strcmp(argv[1], "listen") != 0) usage(argv[0]);
 
+    /* Shift past the subcommand, then parse flags again.
+     * This allows both `simplecipher --socks5 ... connect host` and
+     * `simplecipher connect --socks5 ... host` as documented. */
+    argv++;
+    argc--;
+    while (argc >= 1) {
+        if (strcmp(argv[0], "--tui") == 0) {
+            tui_mode = 1;
+            argv++;
+            argc--;
+        } else if (strcmp(argv[0], "--socks5") == 0 && argc >= 2) {
+            const char *arg   = argv[1];
+            const char *colon = strrchr(arg, ':');
+            if (!colon || colon == arg || !colon[1]) {
+                fprintf(stderr, "  --socks5 requires host:port format\n");
+                return 1;
+            }
+            size_t hlen = (size_t)(colon - arg);
+            if (hlen >= sizeof s5host) {
+                fprintf(stderr, "  socks5 host too long\n");
+                return 1;
+            }
+            memcpy(s5host, arg, hlen);
+            s5host[hlen] = '\0';
+            snprintf(s5port, sizeof s5port, "%s", colon + 1);
+            socks5_host = s5host;
+            socks5_port = s5port;
+            argv += 2;
+            argc -= 2;
+        } else if (strcmp(argv[0], "--peer-fingerprint") == 0 && argc >= 2) {
+            peer_fp_expected = argv[1];
+            argv += 2;
+            argc -= 2;
+        } else {
+            break;
+        }
+    }
+
     /* Interactive connect prompt: if "connect" is given without a host,
      * prompt on stdin.  This keeps the target address out of argv, shell
      * history, and process listings — useful when connecting to sensitive
@@ -221,7 +263,7 @@ int main(int argc, char *argv[]) {
     static char prompt_host[256];
     static char prompt_port[8];
 
-    if (we_init && argc < 3) {
+    if (we_init && argc < 1) {
         printf("  Host: ");
         fflush(stdout);
         if (!fgets(prompt_host, sizeof prompt_host, stdin) || !prompt_host[0]) {
@@ -244,10 +286,10 @@ int main(int argc, char *argv[]) {
             if (prompt_port[0]) port = prompt_port;
         }
     } else if (we_init) {
-        host = argv[2];
-        if (argc >= 4) port = argv[3];
+        host = argv[0];
+        if (argc >= 2) port = argv[1];
     } else {
-        if (argc >= 3) port = argv[2];
+        if (argc >= 1) port = argv[0];
     }
     if (!validate_port(port)) {
         fprintf(stderr, "invalid port: %s\n", port);
