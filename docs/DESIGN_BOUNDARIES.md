@@ -27,7 +27,7 @@ SimpleCipher is not Signal, WhatsApp, or any persistent messaging system. The di
 
 **Stateless.** No configuration files, no databases, no saved preferences. The binary runs with zero setup. This eliminates an entire class of bugs (corrupted state, migration errors, backup leaks) and reduces the forensic footprint — though the binary itself on disk is evidence the tool was used.
 
-**Serverless.** Both peers connect directly over TCP. No relay, no push notification service, no coordination server. This means both people must be online at the same time and one must have a reachable IP — but it also means no third party handles the message content. Note: IP addresses are visible to the network and to each peer unless Tor is used (desktop only — see [ANDROID.md](ANDROID.md) "Android is direct-connect only"). Network metadata (who connected to whom, when, for how long) is observable by anyone on the network path.
+**Serverless.** Both peers connect directly over TCP. No relay, no push notification service, no coordination server. This means both people must be online at the same time and one must have a reachable IP — but it also means no third party handles the message content. Note: IP addresses are visible to the network and to each peer unless Tor is used (desktop via `--socks5`, Android via Orbot — see [ANDROID.md](ANDROID.md) "SOCKS5 / Tor support"). Network metadata (who connected to whom, when, for how long) is observable by anyone on the network path.
 
 **Auditable.** The entire protocol is implemented in a handful of focused C modules, totaling ~2,000 lines of code. The single cryptographic dependency (Monocypher) is vendored and has been professionally audited. The codebase is designed to be read and understood in an afternoon.
 

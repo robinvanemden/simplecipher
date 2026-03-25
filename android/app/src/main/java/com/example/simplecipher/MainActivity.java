@@ -6,8 +6,6 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -446,13 +444,11 @@ public class MainActivity extends Activity {
                       Toast.LENGTH_LONG)
                   .show();
             }
-            /* Auto-clear clipboard after 30 seconds */
-            new Handler(Looper.getMainLooper())
-                .postDelayed(
-                    () -> {
-                      cm.setPrimaryClip(ClipData.newPlainText("", ""));
-                    },
-                    30000);
+            /* Auto-clear clipboard after 30 seconds.
+             * Uses copyBtn.postDelayed — when the view is detached
+             * (activity destroyed / localIpsContainer.removeAllViews),
+             * pending callbacks are automatically cancelled. */
+            v.postDelayed(() -> cm.setPrimaryClip(ClipData.newPlainText("", "")), 30000);
           });
       row.addView(copyBtn);
 
