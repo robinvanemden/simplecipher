@@ -334,6 +334,29 @@ check "chat input has filterTouchesWhenObscured" \
     "grep -A15 'chatInput' '$REPO_ROOT/android/app/src/main/res/layout/activity_chat.xml' | grep -q 'filterTouchesWhenObscured'"
 check "SAS input has filterTouchesWhenObscured" \
     "grep -A15 'sasInput' '$REPO_ROOT/android/app/src/main/res/layout/activity_chat.xml' | grep -q 'filterTouchesWhenObscured'"
+check "Go button has filterTouchesWhenObscured" \
+    "grep -A15 'goButton' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'filterTouchesWhenObscured'"
+check "Send button has filterTouchesWhenObscured" \
+    "grep -A15 'sendBtn' '$REPO_ROOT/android/app/src/main/res/layout/activity_chat.xml' | grep -q 'filterTouchesWhenObscured'"
+check "FP scan button has filterTouchesWhenObscured" \
+    "grep -A15 'fpScanBtn' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'filterTouchesWhenObscured'"
+check "Listen radio has filterTouchesWhenObscured" \
+    "grep -A15 'radioListen' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'filterTouchesWhenObscured'"
+check "Connect radio has filterTouchesWhenObscured" \
+    "grep -A15 'radioConnect' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'filterTouchesWhenObscured'"
+
+# Fingerprint state management
+check "nativeClearPeerFingerprint exists in JNI" \
+    "grep -q 'nativeClearPeerFingerprint' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "clearPeerFingerprint called when input becomes invalid" \
+    "grep -q 'clearPeerFingerprint()' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+check "nativeClearPeerFingerprint wipes g_peer_fp" \
+    "grep -A5 'nativeClearPeerFingerprint' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c' | grep -q 'crypto_wipe'"
+
+# SOCKS5 reply validation
+check "SOCKS5 reply checks version byte (0x05)" \
+    "grep -q 'reply\[0\] != 0x05' '$REPO_ROOT/src/network.c'"
+
 check "SOCKS5 input wiped on background" \
     "grep -q 'socks5Input.*setText' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 
