@@ -57,7 +57,7 @@ See [HARDENING.md](HARDENING.md) for the full verification stack (sanitizers, fu
 
 ## Code style
 
-The C code follows **K&R style** enforced by `clang-format` in CI:
+The C code follows **K&R style** (Kernighan & Ritchie), the standard for systems and crypto C:
 
 - Opening brace on same line (`if (...) {`)
 - 4-space indentation, no tabs
@@ -65,17 +65,14 @@ The C code follows **K&R style** enforced by `clang-format` in CI:
 - Pointer declaration: `int *p` (asterisk with the name)
 - `snake_case` for functions and variables
 - `UPPER_CASE` for constants (via `enum {}`)
-- 100-column soft limit
-- No column-aligned declarations
+- Column-aligned struct fields and BPF filter tables for readability
+- Compact one-liner error handlers where the pattern is clear
 
 The Java code (Android) follows standard Android/Google Java style: `camelCase` methods, `PascalCase` classes, 4-space indent.
 
-Configuration files: `.clang-format` (C style), `.clang-tidy` (static analysis checks), `.editorconfig` (editor defaults).
+Style is enforced by convention and review, not by automated formatting tools. The codebase uses intentional alignment (struct fields, seccomp tables, crypto wipe groups) that automated formatters destroy.
 
-```bash
-# Check formatting locally
-clang-format --dry-run -Werror src/*.c src/*.h
-```
+Configuration files: `.clang-format` (editor hint for new code), `.clang-tidy` (static analysis in CI), `.editorconfig` (editor defaults).
 
 ## Project structure
 
