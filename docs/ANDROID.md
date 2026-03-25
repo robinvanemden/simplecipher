@@ -144,6 +144,7 @@ The chat is still encrypted. But without verification, you can't be sure who you
 |---------|-----------------|
 | Screenshot blocking (`FLAG_SECURE`) | Screenshots and screen recording of the chat and verification screens |
 | Overlay blocking (`HIDE_OVERLAY_WINDOWS`) | Other apps drawing on top of the screen to read your safety code |
+| Tapjacking protection (`filterTouchesWhenObscured`) | All inputs reject touches when another app draws on top — prevents invisible overlays from capturing taps |
 | Custom keyboard (`SimpleKeyboard`) | Keystroke logging by third-party keyboards — covers all inputs: host, port, fingerprint (connect screen) and SAS, chat (chat screen). The system keyboard is never shown. |
 | No keyboard learning (`IME_FLAG_NO_PERSONALIZED_LEARNING`) | System keyboard caching what you type (defence in depth, all inputs) |
 | Session kill on background (`onStop` → `nativeStop()`) | Keys sitting in memory while the app is not visible. Uses out-of-band forced teardown (socket shutdown + pipe close + POLLHUP detection), not the command pipe, so quit cannot be blocked by network backpressure. |
