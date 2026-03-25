@@ -98,7 +98,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
     uint8_t     next_tx[KEY];
     uint8_t     plain[MAX_MSG + 1];
     uint16_t    plen;
-    const char *status = "Secure session active  |  Ctrl+C to quit";
+    const char *status     = "Secure session active  |  Ctrl+C to quit";
     int         auth_fails = 0;
 
     memset(line, 0, sizeof line);
@@ -145,7 +145,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                 }
                 continue;
             }
-            auth_fails = 0;
+            auth_fails  = 0;
             plain[plen] = '\0';
             sanitize_peer_text(plain, plen);
             tui_msg_add(TUI_PEER, (char *)plain);

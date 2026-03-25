@@ -95,21 +95,6 @@ void sock_shutdown_both(socket_t s) { shutdown(s, SHUT_RDWR); }
 
 #    if defined(_WIN32) || defined(_WIN64)
 
-/* Process mitigation policy types (Windows 8+).  Defined here because
- * MinGW headers may not include the full processthreadsapi.h enums.
- * Values from MSDN: PROCESS_MITIGATION_POLICY enumeration. */
-#        ifndef ProcessDEPPolicy
-#            define PM_DEPPolicy              0
-#            define PM_DynamicCodePolicy       2
-#            define PM_StrictHandleCheckPolicy 3
-#            define PM_ExtensionPointDisablePolicy 7
-/* Struct layout for PROCESS_MITIGATION_DYNAMIC_CODE_POLICY (single DWORD flags) */
-typedef struct { DWORD Flags; } pm_dynamic_code_t;
-typedef struct { DWORD Flags; } pm_ext_point_t;
-typedef struct { DWORD Flags; } pm_strict_handle_t;
-#            define PM_STRUCTS_DEFINED 1
-#        endif
-
 void harden(void) {
     /* Disable crash dumps (WER: Windows Error Reporting).
      * SEM_FAILCRITICALERRORS: suppress hard-error dialog boxes
@@ -120,9 +105,9 @@ void harden(void) {
 
     /* Process mitigation policies (Windows 8+, best-effort).
      *
-     * These restrict what a compromised process can do, similar in
-     * spirit to seccomp on Linux.  Windows has no syscall-level
-     * sandbox, but these policies block common exploitation techniques.
+     * Loaded via GetProcAddress because llvm-mingw headers do not
+     * declare SetProcessMitigationPolicy.  The function exists in
+     * kernel32.dll on Windows 8+ and is a no-op on older systems.
      *
      * ProhibitDynamicCode: blocks VirtualAlloc(PAGE_EXECUTE) and
      *   similar — prevents JIT shellcode and ROP-to-VirtualProtect.
@@ -130,20 +115,19 @@ void harden(void) {
      *   (AppInit_DLLs, Winsock LSPs) that malware uses to inject code.
      * RaiseExceptionOnInvalidHandleReference: terminates the process
      *   on invalid handle use — catches handle-reuse exploitation. */
-#        ifdef PM_STRUCTS_DEFINED
-    {
-        pm_dynamic_code_t dc = { .Flags = 0x1 }; /* ProhibitDynamicCode */
-        (void)SetProcessMitigationPolicy(PM_DynamicCodePolicy, &dc, sizeof dc);
+    typedef BOOL(WINAPI * pSetPMP)(int, PVOID, SIZE_T);
+    HMODULE k32 = GetModuleHandleA("kernel32.dll");
+    if (k32) {
+        pSetPMP fn = (pSetPMP)(void *)GetProcAddress(k32, "SetProcessMitigationPolicy");
+        if (fn) {
+            DWORD dc = 0x1; /* ProhibitDynamicCode */
+            (void)fn(/*ProcessDynamicCodePolicy*/ 2, &dc, sizeof dc);
+            DWORD ep = 0x1; /* DisableExtensionPoints */
+            (void)fn(/*ProcessExtensionPointDisablePolicy*/ 7, &ep, sizeof ep);
+            DWORD sh = 0x1; /* RaiseExceptionOnInvalidHandleReference */
+            (void)fn(/*ProcessStrictHandleCheckPolicy*/ 3, &sh, sizeof sh);
+        }
     }
-    {
-        pm_ext_point_t ep = { .Flags = 0x1 }; /* DisableExtensionPoints */
-        (void)SetProcessMitigationPolicy(PM_ExtensionPointDisablePolicy, &ep, sizeof ep);
-    }
-    {
-        pm_strict_handle_t sh = { .Flags = 0x1 }; /* RaiseExceptionOnInvalidHandleReference */
-        (void)SetProcessMitigationPolicy(PM_StrictHandleCheckPolicy, &sh, sizeof sh);
-    }
-#        endif
 }
 #    else /* POSIX */
 void harden(void) {

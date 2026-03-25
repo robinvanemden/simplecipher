@@ -56,7 +56,7 @@ enum {
      * After MAX_AUTH_FAILURES consecutive failures with no valid frame in
      * between, the session is torn down — either the peer is misbehaving
      * or the TCP stream is permanently corrupted by injection. */
-    MAX_AUTH_FAILURES   = 3
+    MAX_AUTH_FAILURES = 3
 };
 static const uint8_t FLAG_RATCHET = 0x01; /* bit 0: ratchet key follows */
 

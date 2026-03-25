@@ -181,7 +181,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
                 }
                 continue;
             }
-            auth_fails = 0;
+            auth_fails  = 0;
             plain[plen] = '\0';
             sanitize_peer_text(plain, plen);
 
@@ -362,7 +362,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
                 }
                 continue;
             }
-            auth_fails = 0;
+            auth_fails  = 0;
             plain[plen] = '\0';
             sanitize_peer_text(plain, plen); /* strip terminal escape bytes */
             secure_chat_print("peer", (char *)plain);

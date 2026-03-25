@@ -149,8 +149,8 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
         char     out_text[MAX_MSG + 1];
         char     line[MAX_MSG + 1];
         size_t   line_len   = 0;
-        int      loop_error  = 0;
-        int      auth_fails  = 0;
+        int      loop_error = 0;
+        int      auth_fails = 0;
 
         memset(in_frame, 0, sizeof in_frame);
         memset(out_frame, 0, sizeof out_frame);
@@ -319,7 +319,7 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
                                     }
                                     continue;
                                 }
-                                auth_fails = 0;
+                                auth_fails  = 0;
                                 plain[plen] = '\0';
                                 sanitize_peer_text(plain, plen);
                                 win_print_chat("peer", (char *)plain, line, line_len);

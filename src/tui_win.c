@@ -80,7 +80,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
     int         out_active = 0;
     char        out_text[MAX_MSG + 1];
     WSAEVENT    net_ev;
-    const char *status = "Secure session active  |  Ctrl+C to quit";
+    const char *status     = "Secure session active  |  Ctrl+C to quit";
     int         auth_fails = 0;
 
     if (!win_console_open(&h_in, &h_in_mode)) return;
@@ -206,7 +206,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                                 }
                                 break; /* back to WaitForMultipleObjects */
                             }
-                            auth_fails = 0;
+                            auth_fails  = 0;
                             plain[plen] = '\0';
                             sanitize_peer_text(plain, plen);
                             tui_msg_add(TUI_PEER, (char *)plain);
