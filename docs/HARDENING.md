@@ -36,8 +36,8 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Disable core dumps | `RLIMIT_CORE=0` | `SetErrorMode` (WER off) | `RLIMIT_CORE=0` (unconditional in JNI_OnLoad) |
 | Block ptrace / memory inspection | `PR_SET_DUMPABLE=0` | — | `PR_SET_DUMPABLE=0` (unconditional in JNI_OnLoad) |
 | Seccomp-BPF syscall filter (two-phase) | yes: phase 1 after TCP connect (blocks new sockets), phase 2 after handshake (tightest) | — | — |
-| Capsicum capability sandbox (two-phase, FreeBSD) | — | — | — |
-| pledge/unveil (OpenBSD) | — | — | — |
+| Capsicum capability sandbox (FreeBSD only) | — (FreeBSD: two-phase `cap_enter()` + per-fd rights, CI-verified) | — | — |
+| pledge/unveil (OpenBSD only) | — (OpenBSD: `pledge("stdio")` + `unveil(NULL,NULL)`, CI-verified) | — | — |
 | **Key management** | | | |
 | Wipe all keys after use (`crypto_wipe`) | yes | yes | yes (native layer) |
 | Ephemeral keys only (nothing on disk) | yes | yes | yes |

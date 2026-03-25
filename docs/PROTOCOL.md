@@ -115,7 +115,7 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 **SimpleCipher does NOT defend against:**
 - An adversary present at session start who can substitute keys AND prevent SAS verification (if the user skips verification, all bets are off)
 - An adversary who controls the peer's device (the peer IS the adversary)
-- OS-level forensic artifacts (swap, terminal scrollback, shell history) — mitigated by `mlockall`, seccomp, and interactive prompt, but not eliminated
+- OS-level forensic artifacts (swap, terminal scrollback, shell history) — mitigated by `mlockall`, syscall sandboxing (seccomp/Capsicum/pledge), and interactive prompt, but not eliminated
 - Traffic analysis beyond message length (timing, frequency, endpoints visible unless using Tor)
 - An adversary who compromises both directions simultaneously mid-session (DH ratchet recovers on direction switch, not instantly)
 
@@ -194,6 +194,6 @@ Recommended reading order:
 4. `ratchet.h` — DH ratchet for post-compromise security
 5. `network.h` — TCP socket I/O
 6. `tui.h` / `cli.h` — user interface event loops
-7. `platform.h` — OS abstraction (sockets, RNG, signals, seccomp)
+7. `platform.h` — OS abstraction (sockets, RNG, signals, sandboxing)
 
 Each module can be read and understood independently. Every header has a teaching-style comment block explaining what the module does, why it exists, and what to read next.

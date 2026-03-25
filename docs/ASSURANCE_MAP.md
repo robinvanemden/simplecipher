@@ -90,5 +90,5 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | Android direct-connect only (no SOCKS5/Tor) | Simplicity trade-off, reduces attack surface | `ANDROID.md:Android is direct-connect only` |
 | Clipboard on API 28-29 | Background apps can read clipboard on older Android | `ANDROID.md:Security measures`, app warns user |
 | Terminal scrollback may retain messages | OS-level, outside app control | `PROTOCOL.md:What it does NOT provide` |
-| Seccomp is Linux-only, pledge is OpenBSD-only | No equivalent on Windows/macOS | `HARDENING.md` platform table |
+| Syscall sandbox is Linux/FreeBSD/OpenBSD only | Seccomp (Linux), Capsicum (FreeBSD), pledge (OpenBSD). No equivalent on Windows/macOS | `HARDENING.md` platform table |
 | No cross-session recovery | Ephemeral by design | `PROTOCOL.md:What it does NOT provide` |

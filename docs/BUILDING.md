@@ -97,7 +97,7 @@ The protocol is split into focused modules. Each module exposes a header; consum
 ```
 lib/monocypher.c          (vendored crypto primitives — X25519, XChaCha20-Poly1305, BLAKE2b)
         │
-src/platform.h/c          OS abstraction (sockets, CSPRNG, signals, seccomp)
+src/platform.h/c          OS abstraction (sockets, CSPRNG, signals, sandboxing)
 src/crypto.h/c            KDF, symmetric chain ratchet, commitment scheme
 src/ratchet.h/c           DH ratchet (post-compromise security)
         │

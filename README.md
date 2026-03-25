@@ -214,8 +214,8 @@ SimpleCipher encrypts your conversation. The operating system protects everythin
 |----|-----|--------------|
 | [Tails](https://tails.net/) | Amnesic — runs from USB, writes nothing to disk, routes everything through Tor | Boots fresh every time. Nothing survives a reboot — not even by accident. Use with `--socks5 127.0.0.1:9050` for full anonymity. |
 | [Qubes OS](https://www.qubes-os.org/) | Compartmentalized — each app runs in its own virtual machine | A compromised browser in one VM cannot touch your chat in another. Use a disposable qube for one-time sessions. |
-| [FreeBSD](https://www.freebsd.org/) | Capsicum capability sandbox integrated, CI-tested on Cirrus | Capsicum restricts per-fd operations after `cap_enter()` — no new files, sockets, or connections. Simpler model than seccomp. Builds and tests verified in CI. |
-| [OpenBSD](https://www.openbsd.org/) | Smallest attack surface of any general-purpose OS, `pledge`/`unveil` sandboxing | Secure by default. Fewer things running means fewer things to exploit. **Note:** OpenBSD builds compile and are source-reviewed but have no CI runner — tested manually only. See [Assurance Map](docs/ASSURANCE_MAP.md). |
+| [FreeBSD](https://www.freebsd.org/) | Capsicum capability sandbox integrated, CI-tested on bare-metal | Capsicum restricts per-fd operations after `cap_enter()` — no new files or filesystem access. Simpler model than seccomp. Sandbox enforcement CI-verified on bare-metal FreeBSD 14.3. |
+| [OpenBSD](https://www.openbsd.org/) | Smallest attack surface of any general-purpose OS, `pledge`/`unveil` sandboxing | Secure by default. Fewer things running means fewer things to exploit. Sandbox enforcement CI-verified on bare-metal OpenBSD 7.7. |
 | Any Linux with full-disk encryption | `mlockall` + seccomp enabled, encrypted swap | A fresh Debian, Fedora, or Arch install with no unnecessary services. Encrypt the disk so a stolen laptop reveals nothing. |
 | Windows 10/11 with BitLocker | Encrypted disk, standard protections | Better than an unencrypted machine. Less hardening available than Linux. |
 

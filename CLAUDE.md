@@ -26,7 +26,7 @@ make test
 ```
 src/
 ├── main.c              entry point
-├── platform.h/c        OS abstraction (sockets, random, signals, time, seccomp)
+├── platform.h/c        OS abstraction (sockets, random, signals, time, sandboxing)
 ├── crypto.h/c          KDF, symmetric chain ratchet, commitment scheme
 ├── ratchet.h/c         DH ratchet (post-compromise security)
 ├── protocol.h/c        sessions, frames, handshake helpers
