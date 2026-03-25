@@ -400,7 +400,7 @@ check "nativeGenerateKey null return handled (no NPE on OOM)" \
 
 # pendingSas wiped in onPause
 check "pendingSas cleared in onPause" \
-    "grep -A20 'onPause' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'pendingSas = null'"
+    "grep -A25 'protected void onPause' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'pendingSas = null'"
 
 # Dynamic COPY button has tapjacking protection
 check "Dynamic COPY button has setFilterTouchesWhenObscured" \

@@ -305,6 +305,7 @@ jobs:
         run: sudo apt-get install -y --no-install-recommends clang-19
       - name: Build and run under ASan + UBSan
         run: |
+          mkdir -p build
           clang-19 -std=c2x -DCIPHER_HARDEN -pthread -Isrc -Ilib \
             -fsanitize=address,undefined -fno-omit-frame-pointer -O1 -g \
             -o build/test_asan \
@@ -336,6 +337,7 @@ jobs:
         run: sudo apt-get install -y --no-install-recommends clang-19
       - name: Fuzz smoke test (30s per target)
         run: |
+          mkdir -p build
           for target in fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5 fuzz_fingerprint; do
             clang-19 -std=c2x -Isrc -Ilib -O1 -g \
               -fsanitize=fuzzer,address,undefined \
