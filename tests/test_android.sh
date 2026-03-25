@@ -335,7 +335,7 @@ check "SOCKS5 GetStringUTFChars OOM aborts (no silent direct connect)" \
 
 # Fingerprint GetStringUTFChars OOM clears stale state
 check "fingerprint GetStringUTFChars OOM clears g_peer_fp" \
-    "grep -A3 'fp_str.*!fp_str' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c' | grep -q 'g_peer_fp_valid = 0'"
+    "grep -A5 '!fp_str' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c' | grep -q 'g_peer_fp_valid = 0'"
 check "JNI frees socks5_host on cleanup" \
     "grep -q 'free(socks5_host)' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 check "JNI frees socks5_port on cleanup" \
