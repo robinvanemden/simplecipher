@@ -40,7 +40,8 @@
  *   All writes are < PIPE_BUF (4096) so they are atomic from any thread.
  *   The write end is O_NONBLOCK so the UI thread never stalls; if the
  *   pipe is full (session thread stuck in a socket write), the command
- *   is dropped with an EAGAIN log.
+ *   is dropped and nativePostCommand() returns JNI_FALSE so Java can
+ *   show the failure instead of a phantom "sent" message.
  *
  * CMD_SEND         = 0x01  (payload = UTF-8 message, max 486 bytes)
  * CMD_CONFIRM_SAS  = 0x02  (no payload)
@@ -994,9 +995,19 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     ta->pipe_rd = pipefd[0];
     ta->gen     = ++g_session_gen;  /* unique generation for this session */
 
-    /* Copy host string (connect mode only) */
+    /* Copy host string (connect mode only).
+     * GetStringUTFChars may return NULL on OOM (JNI spec).  If so,
+     * strdup(NULL) is undefined — guard against it. */
     if (host) {
         const char *h = (*env)->GetStringUTFChars(env, host, NULL);
+        if (!h) {
+            LOGE("GetStringUTFChars failed (OOM)");
+            free(ta);
+            close(pipefd[0]);
+            close(pipefd[1]);
+            g_pipe_wr = -1;
+            return;
+        }
         ta->host = strdup(h);
         (*env)->ReleaseStringUTFChars(env, host, h);
     } else {
@@ -1084,15 +1095,19 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
  *
  * Format: [cmd_byte][len_le16][payload]
  * Total size is always < PIPE_BUF so the write is atomic.
+ *
+ * Returns JNI_TRUE if the write succeeded, JNI_FALSE if the pipe was
+ * full (EAGAIN) or any other error occurred.  The Java side uses this
+ * to avoid showing phantom "sent" messages under backpressure.
  */
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_com_example_simplecipher_ChatActivity_nativePostCommand(
         JNIEnv *env, jobject thiz, jint cmd, jbyteArray payload) {
 
     int wr = g_pipe_wr;
     if (wr < 0) {
-        /* No active session — silently ignore. */
-        return;
+        /* No active session. */
+        return JNI_FALSE;
     }
 
     /* Determine payload length */
@@ -1102,28 +1117,32 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
         jsize jlen = (*env)->GetArrayLength(env, payload);
         if (jlen > MAX_MSG) {
             LOGE("nativePostCommand: payload too large (%d > %d)", (int)jlen, MAX_MSG);
-            return;
+            return JNI_FALSE;
         }
         plen = (uint16_t)jlen;
         pbuf = (*env)->GetByteArrayElements(env, payload, NULL);
+        if (!pbuf) {
+            /* JNI allocation failure (OOM).  Do NOT proceed with plen > 0
+             * and a NULL buffer — that would write uninitialized bytes. */
+            LOGE("GetByteArrayElements failed (OOM)");
+            return JNI_FALSE;
+        }
     }
 
     /* Build the command buffer: [cmd(1)][len_le16(2)][payload(plen)]
      * Max total = 1 + 2 + 486 = 489, well under PIPE_BUF (4096). */
-    uint8_t hdr[3];
-    hdr[0] = (uint8_t)cmd;
-    hdr[1] = (uint8_t)(plen & 0xFF);
-    hdr[2] = (uint8_t)((plen >> 8) & 0xFF);
-
-    /* Single atomic write: header + payload in one buffer */
     uint8_t buf[3 + MAX_MSG];
-    memcpy(buf, hdr, 3);
-    if (plen > 0 && pbuf) {
+    buf[0] = (uint8_t)cmd;
+    buf[1] = (uint8_t)(plen & 0xFF);
+    buf[2] = (uint8_t)((plen >> 8) & 0xFF);
+    if (plen > 0) {
         memcpy(buf + 3, pbuf, plen);
     }
 
+    jboolean ok = JNI_TRUE;
     ssize_t written = write(wr, buf, 3 + plen);
     if (written < 0) {
+        ok = JNI_FALSE;
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             LOGE("pipe full — command dropped (session thread may be blocked)");
         } else {
@@ -1131,9 +1150,8 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
         }
     }
 
-    if (pbuf) {
-        (*env)->ReleaseByteArrayElements(env, payload, pbuf, JNI_ABORT);
-    }
+    (*env)->ReleaseByteArrayElements(env, payload, pbuf, JNI_ABORT);
+    return ok;
 }
 
 /*

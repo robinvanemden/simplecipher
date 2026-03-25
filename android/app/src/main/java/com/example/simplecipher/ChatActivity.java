@@ -42,7 +42,7 @@ public class ChatActivity extends Activity implements NativeCallback {
 
     /* Native methods. */
     private native int  nativeStart(int mode, String host, int port, NativeCallback callback);
-    private native void nativePostCommand(int cmd, byte[] payload);
+    private native boolean nativePostCommand(int cmd, byte[] payload);
     private native void nativeStop();  /* out-of-band forced teardown */
 
     /* Command constants — must match jni_bridge.c */
@@ -193,12 +193,17 @@ public class ChatActivity extends Activity implements NativeCallback {
         if (msg.isEmpty()) return;
         chatInput.setText("");
 
-        /* Show the message immediately in the chat log (optimistic) */
-        appendChat("me", msg);
-
         try {
             byte[] payload = msg.getBytes("UTF-8");
-            nativePostCommand(CMD_SEND, payload);
+            boolean ok = nativePostCommand(CMD_SEND, payload);
+            /* Show the message only after we know it reached the pipe.
+             * If the pipe is full (backpressure), the user sees the failure
+             * instead of a phantom "sent" message. */
+            if (ok) {
+                appendChat("me", msg);
+            } else {
+                appendChat("system", "[send failed — pipe full, try again]");
+            }
         } catch (UnsupportedEncodingException e) {
             appendChat("system", "[encoding error]");
         }
