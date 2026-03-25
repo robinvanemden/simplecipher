@@ -322,6 +322,20 @@ check "JNI NewGlobalRef null-checked" \
     "grep -q 'NewGlobalRef failed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 check "setPeerFingerprint clears stale state on invalid input" \
     "grep -q 'clearPeerFingerprint()' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+
+# Paused-state guards on sensitive callbacks
+check "onSasReady checks paused before populating UI" \
+    "grep -A5 'onSasReady' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'paused'"
+check "CMD_CONFIRM_SAS checks nativePostCommand return" \
+    "grep -B1 -A1 'CMD_CONFIRM_SAS' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q '!nativePostCommand'"
+
+# SOCKS5 GetStringUTFChars OOM fails closed
+check "SOCKS5 GetStringUTFChars OOM aborts (no silent direct connect)" \
+    "grep -q 'GetStringUTFChars(socks5_proxy) failed' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+
+# Fingerprint GetStringUTFChars OOM clears stale state
+check "fingerprint GetStringUTFChars OOM clears g_peer_fp" \
+    "grep -A3 'fp_str.*!fp_str' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c' | grep -q 'g_peer_fp_valid = 0'"
 check "JNI frees socks5_host on cleanup" \
     "grep -q 'free(socks5_host)' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 check "JNI frees socks5_port on cleanup" \

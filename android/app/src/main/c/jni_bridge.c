@@ -1061,7 +1061,17 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     ta->socks5_port = NULL;
     if (socks5_proxy) {
         const char *p = (*env)->GetStringUTFChars(env, socks5_proxy, NULL);
-        if (p && p[0]) {
+        if (!p) {
+            /* OOM on a non-null proxy string — fail closed. */
+            LOGE("GetStringUTFChars(socks5_proxy) failed (OOM)");
+            free(ta->host);
+            free(ta);
+            close(pipefd[0]);
+            close(pipefd[1]);
+            g_pipe_wr = -1;
+            return -1;
+        }
+        if (p[0]) {
             const char *colon = strrchr(p, ':');
             if (colon && colon != p && colon[1]) {
                 size_t hlen = (size_t)(colon - p);
@@ -1110,7 +1120,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
                 return -1;
             }
         }
-        if (p) (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
+        (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
     }
 
     /* Copy pre-generated key into thread arg, then wipe globals */
@@ -1352,7 +1362,12 @@ Java_com_example_simplecipher_MainActivity_nativeSetPeerFingerprint(
         JNIEnv *env, jobject thiz, jstring fingerprint) {
     (void)thiz;
     const char *fp_str = (*env)->GetStringUTFChars(env, fingerprint, NULL);
-    if (!fp_str) return;
+    if (!fp_str) {
+        /* OOM — clear any stale fingerprint rather than leaving it armed */
+        crypto_wipe(g_peer_fp, sizeof g_peer_fp);
+        g_peer_fp_valid = 0;
+        return;
+    }
     if (parse_fingerprint(g_peer_fp, fp_str) == 0) {
         g_peer_fp_valid = 1;
     } else {

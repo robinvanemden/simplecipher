@@ -241,9 +241,13 @@ public class ChatActivity extends Activity implements NativeCallback {
   public void onSasReady(String code) {
     uiHandler.post(
         () -> {
+          /* Do not populate sensitive UI while paused — onPause() has
+           * already wiped the widgets and nativeStop() may have fired. */
+          if (paused) return;
+
           /* If peer fingerprint was pre-verified, skip SAS input */
           if (fingerprintVerified) {
-            nativePostCommand(CMD_CONFIRM_SAS, null);
+            if (!nativePostCommand(CMD_CONFIRM_SAS, null)) return;
 
             sasLayout.setVisibility(View.GONE);
             chatLayout.setVisibility(View.VISIBLE);
@@ -291,8 +295,14 @@ public class ChatActivity extends Activity implements NativeCallback {
                   return;
                 }
 
-                /* SAS verified — tell native thread, transition to chat UI */
-                nativePostCommand(CMD_CONFIRM_SAS, null);
+                /* SAS verified — tell native thread, transition to chat UI.
+                 * If the pipe write fails (session already torn down),
+                 * don't transition to chat — the session is gone. */
+                if (!nativePostCommand(CMD_CONFIRM_SAS, null)) {
+                  Toast.makeText(ChatActivity.this, "Session ended", Toast.LENGTH_SHORT).show();
+                  finish();
+                  return;
+                }
 
                 sasInput.setText("");
                 sasCodeText.setText("");
