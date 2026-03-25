@@ -68,19 +68,21 @@ The C code follows **K&R style** (Kernighan & Ritchie), the standard for systems
 - Column-aligned struct fields and BPF filter tables for readability
 - Compact one-liner error handlers where the pattern is clear
 
-The Java code (Android) follows standard Android/Google Java style: `camelCase` methods, `PascalCase` classes, 4-space indent.
+The Java code (Android) follows **Google Java Style**, enforced by `google-java-format` in CI: 2-space indent, `camelCase` methods, `PascalCase` classes.
 
-Style is enforced by `clang-format-19` in CI (`--dry-run -Werror`). New code must pass before merge.
+Both are enforced in CI. New code must pass before merge.
 
 ```bash
-# Check formatting locally
+# Check C formatting locally
 clang-format-19 --dry-run -Werror src/*.c src/*.h
+clang-format-19 -i src/*.c src/*.h              # auto-fix
 
-# Auto-fix formatting
-clang-format-19 -i src/*.c src/*.h
+# Check Java formatting locally (requires google-java-format jar)
+find android -name '*.java' -not -path '*/build/*' | \
+  xargs java -jar google-java-format.jar --dry-run --set-exit-if-changed
 ```
 
-Configuration files: `.clang-format` (style rules), `.clang-tidy` (static analysis), `.editorconfig` (editor defaults).
+Configuration files: `.clang-format` (C style rules), `.clang-tidy` (static analysis), `.editorconfig` (editor defaults).
 
 ## Project structure
 

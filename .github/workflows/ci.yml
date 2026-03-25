@@ -153,8 +153,16 @@ jobs:
             src/main.c src/platform.c src/crypto.c src/protocol.c \
             src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c
 
-      - name: Check code formatting (clang-format)
+      - name: Check C code formatting (clang-format)
         run: clang-format-19 --dry-run -Werror src/*.c src/*.h
+
+      - name: Check Java code formatting (google-java-format)
+        run: |
+          GJF_VERSION=1.25.2
+          GJF_JAR="google-java-format-${GJF_VERSION}-all-deps.jar"
+          curl -sL "https://github.com/google/google-java-format/releases/download/v${GJF_VERSION}/${GJF_JAR}" -o /tmp/gjf.jar
+          find android -name '*.java' -not -path '*/build/*' | sort | \
+            xargs java -jar /tmp/gjf.jar --dry-run --set-exit-if-changed
 
   build:
     runs-on: ubuntu-24.04
