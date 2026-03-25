@@ -55,6 +55,28 @@ bash tests/test_binary.sh
 
 See [HARDENING.md](HARDENING.md) for the full verification stack (sanitizers, fuzzing, CBMC, constant-time).
 
+## Code style
+
+The C code follows **K&R style** enforced by `clang-format` in CI:
+
+- Opening brace on same line (`if (...) {`)
+- 4-space indentation, no tabs
+- `/* */` block comments only (no `//`)
+- Pointer declaration: `int *p` (asterisk with the name)
+- `snake_case` for functions and variables
+- `UPPER_CASE` for constants (via `enum {}`)
+- 100-column soft limit
+- No column-aligned declarations
+
+The Java code (Android) follows standard Android/Google Java style: `camelCase` methods, `PascalCase` classes, 4-space indent.
+
+Configuration files: `.clang-format` (C style), `.clang-tidy` (static analysis checks), `.editorconfig` (editor defaults).
+
+```bash
+# Check formatting locally
+clang-format --dry-run -Werror src/*.c src/*.h
+```
+
 ## Project structure
 
 ```

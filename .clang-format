@@ -1,0 +1,44 @@
+# SimpleCipher C code style — K&R with 4-space indent.
+#
+# Matches the existing codebase style:
+#   - Opening brace on same line (K&R / "attach")
+#   - 4-space indentation (no tabs)
+#   - /* */ block comments only (no //)
+#   - Pointer: int *p (space before asterisk)
+#   - No space before opening paren in function calls
+#   - Space after keywords (if, for, while, switch)
+#   - 100-column soft limit
+#
+# Run: clang-format --dry-run -Werror src/*.c src/*.h
+
+Language: C
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# K&R brace style: opening brace on same line
+BreakBeforeBraces: Attach
+
+# Pointer alignment: int *p (not int* p)
+PointerAlignment: Right
+
+# Space after keywords, not after function names
+SpaceBeforeParens: ControlStatements
+
+# Keep short functions on one line only if they fit
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Don't reflow comments (preserve hand-written formatting)
+ReflowComments: false
+
+# Sort includes within groups but don't reorder groups
+SortIncludes: Never
+
+# Align consecutive assignments and declarations: off
+# (the codebase does not use column-alignment)
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
