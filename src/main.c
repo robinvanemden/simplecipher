@@ -125,48 +125,45 @@ int main(int argc, char *argv[]) {
     static char s5host[256];
     static char s5port[8];
 
-    /* Parse leading flags (--tui, --socks5, --peer-fingerprint) and shift
-     * argv so the positional args (listen/connect, host, port) remain.
-     * Flags can appear before or after the subcommand:
+    /* Parse all flags from argv in a single pass.  Flags can appear
+     * anywhere — before or after the subcommand:
      *   simplecipher --tui connect --socks5 ... host
-     *   simplecipher connect --socks5 ... host
-     * Both forms work.  The second parse loop runs after the
-     * subcommand is consumed. */
-    while (argc >= 2) {
-        if (strcmp(argv[1], "--tui") == 0) {
-            tui_mode = 1;
-            argv++;
-            argc--;
-        } else if (strcmp(argv[1], "--socks5") == 0 && argc >= 3) {
-            /* --socks5 host:port — split into host and port components. */
-            const char *arg   = argv[2];
-            const char *colon = strrchr(arg, ':');
-            if (!colon || colon == arg || !colon[1]) {
-                fprintf(stderr, "  --socks5 requires host:port format\n");
-                return 1;
+     *   simplecipher connect --peer-fingerprint ... host
+     * We compact positional args (program, subcommand, host, port)
+     * into the front of argv, stripping consumed flags. */
+    const char *prog = argv[0];
+    {
+        int out = 1;
+        for (int i = 1; i < argc; i++) {
+            if (strcmp(argv[i], "--tui") == 0) {
+                tui_mode = 1;
+            } else if (strcmp(argv[i], "--socks5") == 0 && i + 1 < argc) {
+                const char *arg   = argv[++i];
+                const char *colon = strrchr(arg, ':');
+                if (!colon || colon == arg || !colon[1]) {
+                    fprintf(stderr, "  --socks5 requires host:port format\n");
+                    return 1;
+                }
+                size_t hlen = (size_t)(colon - arg);
+                if (hlen >= sizeof s5host) {
+                    fprintf(stderr, "  socks5 host too long\n");
+                    return 1;
+                }
+                memcpy(s5host, arg, hlen);
+                s5host[hlen] = '\0';
+                snprintf(s5port, sizeof s5port, "%s", colon + 1);
+                socks5_host = s5host;
+                socks5_port = s5port;
+            } else if (strcmp(argv[i], "--peer-fingerprint") == 0 && i + 1 < argc) {
+                peer_fp_expected = argv[++i];
+            } else {
+                argv[out++] = argv[i];
             }
-            size_t hlen = (size_t)(colon - arg);
-            if (hlen >= sizeof s5host) {
-                fprintf(stderr, "  socks5 host too long\n");
-                return 1;
-            }
-            memcpy(s5host, arg, hlen);
-            s5host[hlen] = '\0';
-            snprintf(s5port, sizeof s5port, "%s", colon + 1);
-            socks5_host = s5host;
-            socks5_port = s5port;
-            argv += 2;
-            argc -= 2;
-        } else if (strcmp(argv[1], "--peer-fingerprint") == 0 && argc >= 3) {
-            peer_fp_expected = argv[2];
-            argv += 2;
-            argc -= 2;
-        } else {
-            break; /* not a flag — start of positional args */
         }
+        argc = out;
     }
 
-    if (argc < 2) usage(argv[0]);
+    if (argc < 2) usage(prog);
     if (plat_init() != 0) {
         fprintf(stderr, "platform init failed\n");
         return 1;
@@ -216,45 +213,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     we_init = (strcmp(argv[1], "connect") == 0);
-    if (!we_init && strcmp(argv[1], "listen") != 0) usage(argv[0]);
-
-    /* Shift past the subcommand, then parse flags again.
-     * This allows both `simplecipher --socks5 ... connect host` and
-     * `simplecipher connect --socks5 ... host` as documented. */
-    argv++;
-    argc--;
-    while (argc >= 1) {
-        if (strcmp(argv[0], "--tui") == 0) {
-            tui_mode = 1;
-            argv++;
-            argc--;
-        } else if (strcmp(argv[0], "--socks5") == 0 && argc >= 2) {
-            const char *arg   = argv[1];
-            const char *colon = strrchr(arg, ':');
-            if (!colon || colon == arg || !colon[1]) {
-                fprintf(stderr, "  --socks5 requires host:port format\n");
-                return 1;
-            }
-            size_t hlen = (size_t)(colon - arg);
-            if (hlen >= sizeof s5host) {
-                fprintf(stderr, "  socks5 host too long\n");
-                return 1;
-            }
-            memcpy(s5host, arg, hlen);
-            s5host[hlen] = '\0';
-            snprintf(s5port, sizeof s5port, "%s", colon + 1);
-            socks5_host = s5host;
-            socks5_port = s5port;
-            argv += 2;
-            argc -= 2;
-        } else if (strcmp(argv[0], "--peer-fingerprint") == 0 && argc >= 2) {
-            peer_fp_expected = argv[1];
-            argv += 2;
-            argc -= 2;
-        } else {
-            break;
-        }
-    }
+    if (!we_init && strcmp(argv[1], "listen") != 0) usage(prog);
 
     /* Interactive connect prompt: if "connect" is given without a host,
      * prompt on stdin.  This keeps the target address out of argv, shell
@@ -263,7 +222,7 @@ int main(int argc, char *argv[]) {
     static char prompt_host[256];
     static char prompt_port[8];
 
-    if (we_init && argc < 1) {
+    if (we_init && argc < 3) {
         printf("  Host: ");
         fflush(stdout);
         if (!fgets(prompt_host, sizeof prompt_host, stdin) || !prompt_host[0]) {
@@ -286,10 +245,10 @@ int main(int argc, char *argv[]) {
             if (prompt_port[0]) port = prompt_port;
         }
     } else if (we_init) {
-        host = argv[0];
-        if (argc >= 2) port = argv[1];
+        host = argv[2];
+        if (argc >= 4) port = argv[3];
     } else {
-        if (argc >= 1) port = argv[0];
+        if (argc >= 3) port = argv[2];
     }
     if (!validate_port(port)) {
         fprintf(stderr, "invalid port: %s\n", port);
