@@ -259,7 +259,7 @@ check "ChatActivity calls nativeStop in onStop" \
 check "nativePostCommand returns boolean (not void)" \
     "grep -q 'native boolean nativePostCommand' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java'"
 check "JNI nativePostCommand returns jboolean" \
-    "grep -q 'JNIEXPORT jboolean.*nativePostCommand' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+    "grep -A1 'JNIEXPORT jboolean' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c' | grep -q 'nativePostCommand'"
 check "sendMessage checks nativePostCommand result before showing message" \
     "grep -A10 'sendMessage' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'boolean ok'"
 check "JNI GetByteArrayElements null-checked (prevents uninitialized data leak)" \
