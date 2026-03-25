@@ -1324,3 +1324,11 @@ Java_com_example_simplecipher_MainActivity_nativeSetPeerFingerprint(
     }
     (*env)->ReleaseStringUTFChars(env, fingerprint, fp_str);
 }
+
+JNIEXPORT void JNICALL
+Java_com_example_simplecipher_MainActivity_nativeClearPeerFingerprint(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    crypto_wipe(g_peer_fp, sizeof g_peer_fp);
+    g_peer_fp_valid = 0;
+}

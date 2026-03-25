@@ -38,6 +38,8 @@ public class MainActivity extends Activity {
 
   private native void nativeSetPeerFingerprint(String fingerprint);
 
+  private native void nativeClearPeerFingerprint();
+
   private RadioGroup modeGroup;
   private TextView connectLabel;
   private EditText hostInput;
@@ -209,8 +211,13 @@ public class MainActivity extends Activity {
 
           public void afterTextChanged(android.text.Editable s) {
             String text = s.toString().trim();
-            if (text.replace("-", "").length() == 16) {
+            String stripped = text.replace("-", "");
+            if (stripped.length() == 16 && stripped.matches("[0-9A-Fa-f]+")) {
               setPeerFingerprint(text);
+            } else if (peerFingerprint != null) {
+              /* Input no longer valid — clear the stored fingerprint
+               * so a stale value doesn't get used for verification. */
+              clearPeerFingerprint();
             }
           }
         });
@@ -473,6 +480,13 @@ public class MainActivity extends Activity {
     } else if (requestCode == 100) {
       Toast.makeText(this, R.string.fp_camera_denied, Toast.LENGTH_SHORT).show();
     }
+  }
+
+  private void clearPeerFingerprint() {
+    peerFingerprint = null;
+    nativeClearPeerFingerprint();
+    fpPeerStatus.setText(R.string.fp_peer_none);
+    fpPeerStatus.setTextColor(0xFFAAAAAA);
   }
 
   private void setPeerFingerprint(String fp) {

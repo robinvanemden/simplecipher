@@ -192,6 +192,7 @@
                 android:background="@drawable/bg_send_button"
                 android:layout_marginStart="10dp"
                 android:textAllCaps="false"
+                android:filterTouchesWhenObscured="true"
                 android:contentDescription="Send message" />
         </LinearLayout>
     </LinearLayout>

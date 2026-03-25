@@ -327,9 +327,10 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
         return INVALID_SOCK;
     }
 
-    /* Phase 3: Read and parse CONNECT reply. */
+    /* Phase 3: Read and parse CONNECT reply.
+     * Validate version (0x05), status (0x00 = success), and reserved (0x00). */
     uint8_t reply[4];
-    if (read_exact(fd, reply, 4) != 0 || reply[1] != 0x00) {
+    if (read_exact(fd, reply, 4) != 0 || reply[0] != 0x05 || reply[1] != 0x00 || reply[2] != 0x00) {
         close_sock(fd);
         return INVALID_SOCK;
     }
