@@ -255,6 +255,18 @@ check "ChatActivity wipes UI in onPause" \
 check "ChatActivity calls nativeStop in onStop" \
     "grep -A20 'onStop' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'nativeStop'"
 
+# Send-drop semantics: nativePostCommand returns boolean, Java checks result
+check "nativePostCommand returns boolean (not void)" \
+    "grep -q 'native boolean nativePostCommand' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java'"
+check "JNI nativePostCommand returns jboolean" \
+    "grep -q 'JNIEXPORT jboolean.*nativePostCommand' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "sendMessage checks nativePostCommand result before showing message" \
+    "grep -A10 'sendMessage' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java' | grep -q 'boolean ok'"
+check "JNI GetByteArrayElements null-checked (prevents uninitialized data leak)" \
+    "grep -q '!pbuf' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI GetStringUTFChars null-checked in nativeStart" \
+    "grep -B2 -A2 'GetStringUTFChars' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c' | grep -q 'OOM'"
+
 # SAS wiped after confirmation
 check "SAS code cleared after confirm" \
     "grep -q 'sasCodeText.setText' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java'"
@@ -308,6 +320,16 @@ check "SOCKS5 input has filterTouchesWhenObscured" \
     "grep -A15 'socks5Input' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'filterTouchesWhenObscured'"
 check "SOCKS5 input has importantForAutofill=no" \
     "grep -A15 'socks5Input' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'importantForAutofill'"
+check "host input has filterTouchesWhenObscured" \
+    "grep -A15 'hostInput' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'filterTouchesWhenObscured'"
+check "port input has filterTouchesWhenObscured" \
+    "grep -A15 'portInput' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'filterTouchesWhenObscured'"
+check "fingerprint input has filterTouchesWhenObscured" \
+    "grep -A15 'fpManualInput' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'filterTouchesWhenObscured'"
+check "chat input has filterTouchesWhenObscured" \
+    "grep -A15 'chatInput' '$REPO_ROOT/android/app/src/main/res/layout/activity_chat.xml' | grep -q 'filterTouchesWhenObscured'"
+check "SAS input has filterTouchesWhenObscured" \
+    "grep -A15 'sasInput' '$REPO_ROOT/android/app/src/main/res/layout/activity_chat.xml' | grep -q 'filterTouchesWhenObscured'"
 check "SOCKS5 input wiped on background" \
     "grep -q 'socks5Input.*setText' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 
