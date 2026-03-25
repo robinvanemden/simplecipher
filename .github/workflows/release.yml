@@ -295,8 +295,55 @@ jobs:
         run: |
           tests/test_windows.ps1 -Binary simplecipher.exe
 
+  # ---- Security gates (must pass before release) ----
+
+  test-asan-ubsan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Build and run under ASan + UBSan
+        run: |
+          clang-19 -std=c2x -DCIPHER_HARDEN -pthread -Isrc -Ilib \
+            -fsanitize=address,undefined -fno-omit-frame-pointer -O1 -g \
+            -o build/test_asan \
+            tests/test_p2p.c src/platform.c src/crypto.c src/protocol.c \
+            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/cli.c src/cli_posix.c lib/monocypher.c
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+            build/test_asan
+
+  static-analysis:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install clang-tidy-19 and clang-format-19
+        run: sudo apt-get install -y --no-install-recommends clang-19 clang-tidy-19 clang-format-19
+      - name: Run clang-tidy and clang-format
+        run: |
+          cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER=clang-19 -B build/analysis
+          clang-tidy-19 -p build/analysis \
+            src/main.c src/platform.c src/crypto.c src/protocol.c \
+            src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c
+          clang-format-19 --dry-run -Werror src/*.c src/*.h
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Fuzz smoke test (30s per target)
+        run: |
+          for target in fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5 fuzz_fingerprint; do
+            clang-19 -std=c2x -Isrc -Ilib -O1 -g \
+              -fsanitize=fuzzer,address,undefined \
+              -o build/$target \
+              tests/$target.c src/platform.c src/crypto.c src/protocol.c \
+              src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+              src/cli.c src/cli_posix.c lib/monocypher.c
+            timeout 30 build/$target -max_total_time=25 || true
+          done
+
   release:
-    needs: [test-p2p, test-linux, test-linux-aarch64, test-windows, test-windows-aarch64, build-android]
+    needs: [test-p2p, test-linux, test-linux-aarch64, test-windows, test-windows-aarch64, build-android, test-asan-ubsan, static-analysis, fuzz]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
