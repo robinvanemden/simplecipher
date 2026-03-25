@@ -2314,8 +2314,9 @@ static void test_harden_codepath(void) {
     printf("\n=== CIPHER_HARDEN codepath ===\n");
 
 #ifdef CIPHER_HARDEN
-    /* harden() was already called or we call it now.
-     * Verify the observable effects. */
+    /* Call harden() explicitly — test_p2p has its own main() that does
+     * not call it.  harden() is idempotent so double-calling is safe. */
+    harden();
 
     /* 1. Core dumps should be disabled (RLIMIT_CORE soft == 0).
      * The hard limit can only be lowered to 0 by root, so we only check soft. */
