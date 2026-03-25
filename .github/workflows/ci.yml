@@ -546,4 +546,4 @@ jobs:
           # Clean up SSH key
           rm -f ~/.ssh/openbsd_key
 
-  # Cirrus CI (.cirrus.yml) also runs FreeBSD tests as a secondary check.
+  # BSD testing uses bare-metal Vultr servers via SSH (test-freebsd, test-openbsd above).
