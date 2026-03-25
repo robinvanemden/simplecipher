@@ -392,6 +392,7 @@ static void install_seccomp_phase2(void){
  * Phase 2: narrow rights — drop setsockopt/getsockopt on the socket. */
 #if defined(__FreeBSD__)
 #include <sys/capsicum.h>
+#include <sys/ttycom.h>    /* TIOCGETA, TIOCSETA, TIOCGWINSZ */
 
 static void capsicum_phase1(int sock_fd){
     /* Enter capability mode — no new fds from this point on.
