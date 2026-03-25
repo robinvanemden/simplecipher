@@ -2,26 +2,71 @@
 
 > **Audience:** Students learning about encrypted P2P protocols, and cryptography/security experts auditing the design.
 
+## Explain it like I'm 10
+
+Imagine you and your friend want to pass secret notes in class, but a bully sits between you and can read or change anything you pass.
+
+**The trick:** You and your friend each pick a secret number. You do some special math with your numbers that lets you both figure out the same secret code — without ever writing that code down or passing it. The bully sees the math fly by but can't figure out the code. (This is [key exchange](#glossary).)
+
+**But wait** — what if the bully is clever? He could grab your math, throw it away, and send his own math to your friend, pretending to be you. Now he has a secret code with your friend AND a secret code with you. He reads everything in the middle.
+
+**The fix:** Before you show your math, you each seal a promise in an envelope: *"My math will be THIS."* You swap envelopes, THEN show your math. If the bully tried to swap in his own math, the promise won't match — and you both know something's wrong. (This is the [commitment scheme](#glossary).)
+
+**One more check:** After the math, both your screens show a short code — like `A3F2-91BC`. You call your friend on the phone: *"What's your code?"* If it matches, nobody's in the middle. (This is the [SAS](#glossary).)
+
+**Now you chat.** Every message gets its own lock-and-key. After each message, you throw the key away. If someone steals a key later, they can only open that one message — not any of the others. (This is [forward secrecy](#glossary).) And every time you take turns talking, you make brand-new keys from scratch, so even if someone stole your current key, the next round of keys is safe. (This is [post-compromise security](#glossary).)
+
+**When you're done,** the keys vanish from memory. Nothing was ever written to the desk. There's nothing left to find. (This is [ephemeral](#glossary).)
+
+That's SimpleCipher. The rest of this document explains exactly how each piece works, with the real math and the real code.
+
+---
+
 ## Glossary
 
-If you're new to cryptography, start here. Every term used in this document is explained below in plain English.
+If you're new to cryptography, start here. Every term used in this document is explained in plain English with an analogy. Terms in the body text are [linked](#x25519) back here.
 
-| Term | What it is | Analogy |
-|------|-----------|---------|
-| **X25519** | A key exchange algorithm. Two people each generate a random keypair (private + public). They exchange public keys, and both compute the same shared secret — without ever sending it over the wire. Based on elliptic-curve math (Curve25519). | Two people each mix a secret paint color into a shared base. They exchange their mixed results. Each person mixes in their own secret again — and both arrive at the same final color. Nobody watching the exchange can figure out that color. |
-| **XChaCha20-Poly1305** | An authenticated encryption algorithm. It does two things at once: encrypts a message so only the keyholder can read it, AND produces a tag (MAC) that detects any tampering. If even one bit is changed, decryption fails. "XChaCha20" is the cipher (scrambles the data); "Poly1305" is the authenticator (proves it wasn't modified). | A locked box with a tamper-evident seal. Only the keyholder can open it, and if anyone messes with the seal, the recipient knows immediately. |
-| **BLAKE2b** | A hash function. Takes any input (a key, a message, a label) and produces a fixed 32-byte fingerprint. The same input always gives the same output, but you cannot reverse it — knowing the hash tells you nothing about the input. Used here for commitments, key derivation, and fingerprints. | A paper shredder that always produces the same confetti pattern for the same document. You can verify a document matches its confetti, but you can't reconstruct the document from confetti. |
-| **KDF** (Key Derivation Function) | Takes one secret and derives multiple independent keys from it. SimpleCipher uses BLAKE2b as its KDF: the shared DH secret goes in, and separate keys for sending, receiving, and the safety code come out. Each derived key is independent — knowing one reveals nothing about the others. | A master key that opens a key-cutting machine. You put in the master key and a label ("front door", "back door"), and each label produces a different cut. |
-| **Nonce** | "Number used once." A value that must never be reused with the same key. In SimpleCipher, each message uses a different key (from the chain ratchet), so the nonce is just the sequence number — the (key, nonce) pair is always unique. | A serial number on a check. Using the same serial twice would let the bank detect fraud. |
-| **MAC** (Message Authentication Code) | A short tag appended to each message that proves it wasn't tampered with. Poly1305 computes the MAC; the receiver recomputes it and compares. If they differ, the message was modified in transit. | A wax seal on a letter. If the seal is broken, you know someone opened it. |
-| **Forward secrecy** | The property that compromising today's key cannot decrypt yesterday's messages. SimpleCipher achieves this with the chain ratchet: each message derives a fresh key, uses it once, and wipes it. Old keys don't exist anymore. | Burning the key after locking each box. Even if someone steals your current key, the old boxes are sealed forever. |
-| **Post-compromise security** | The property that stealing a key now does not let you read future messages. The DH ratchet achieves this: the next time the conversation direction switches, fresh randomness is mixed in, creating a new chain the attacker cannot predict. | Changing all the locks after a break-in. The thief's copied key no longer works. |
-| **Commitment scheme** | A two-phase protocol: first commit (send a hash of your value), then reveal (send the actual value). The receiver checks that the hash matches. This prevents the sender from changing their mind after seeing the other side's value. In SimpleCipher, both sides commit to their public keys before revealing them, blocking a man-in-the-middle from adapting. | Sealing your answer in an envelope before seeing the other person's answer. You can't cheat after the fact. |
-| **SAS** (Short Authentication String) | A short code derived from the shared secret, displayed on both screens. Users compare it out-of-band (phone call, video). If it matches, no one is in the middle. 32 bits is enough because the commitment scheme prevents brute-force search. | A serial number printed on both sides of a secure phone call. If both sides see the same number, the line isn't tapped. |
-| **Ratchet** | A mechanism that only moves forward. In cryptography, a ratchet derives new keys from old ones and then wipes the old ones. You can't go backward. SimpleCipher has two: the *chain ratchet* (forward secrecy per message) and the *DH ratchet* (post-compromise security per direction switch). Together they form a "Double Ratchet" — the same architecture Signal uses. | A turnstile. You can walk through, but you can't walk back. |
-| **Ephemeral** | Temporary, not stored. SimpleCipher's keys are ephemeral — generated fresh each session, held only in RAM, wiped on exit. Nothing is written to disk. If the device is seized after the session, there are no keys to find. | A sandcastle. It exists while you're building it, then the tide takes it. |
-| **AEAD** (Authenticated Encryption with Associated Data) | Encryption that also authenticates. XChaCha20-Poly1305 is an AEAD cipher. The "associated data" (AD) is extra information that is authenticated but not encrypted — in SimpleCipher, the sequence number is AD (visible, but tamper-proof). | A transparent envelope with a tamper seal. Everyone can see the address (AD), but only the recipient can read the letter inside, and any tampering breaks the seal. |
-| **Seccomp / Capsicum / pledge** | OS-level syscall sandboxes. After the handshake, SimpleCipher restricts itself to only the syscalls it needs (read, write, poll, close). Even if an attacker achieves code execution, they cannot open files, spawn processes, or make new network connections. | A room where the only tools left are a pen and paper. Even if someone breaks in, they can't use power tools because the tools aren't in the room. |
+<a id="x25519"></a>**X25519** — A key exchange algorithm. Two people each generate a random keypair (private + public). They exchange public keys, and both compute the same shared secret — without ever sending it over the wire. Based on elliptic-curve math (Curve25519).
+> *Analogy:* Two people each mix a secret paint color into a shared base. They swap results, then each mixes in their own secret again — both arrive at the same final color. Nobody watching can figure it out.
+
+<a id="xchacha20-poly1305"></a>**XChaCha20-Poly1305** — An [authenticated encryption](#aead) algorithm. Encrypts a message so only the keyholder can read it, AND produces a tag ([MAC](#mac)) that detects any tampering. "XChaCha20" scrambles the data; "Poly1305" proves it wasn't modified.
+> *Analogy:* A locked box with a tamper-evident seal. Only the keyholder can open it, and if anyone messes with the seal, the recipient knows immediately.
+
+<a id="blake2b"></a>**BLAKE2b** — A hash function. Takes any input and produces a fixed 32-byte fingerprint. Same input always gives the same output, but you can't reverse it. Used for [commitments](#commitment-scheme), [key derivation](#kdf), and fingerprints.
+> *Analogy:* A paper shredder that always produces the same confetti pattern for the same document. You can verify a document matches its confetti, but you can't reconstruct the document from confetti.
+
+<a id="kdf"></a>**KDF** (Key Derivation Function) — Takes one secret and derives multiple independent keys from it. SimpleCipher uses [BLAKE2b](#blake2b) as its KDF: the shared secret goes in, and separate keys for sending, receiving, and the [SAS](#sas) come out. Knowing one derived key reveals nothing about the others.
+> *Analogy:* A master key that opens a key-cutting machine. Put in the master key and a label ("front door", "back door"), and each label produces a different cut.
+
+<a id="nonce"></a>**Nonce** — "Number used once." A value that must never repeat with the same key. In SimpleCipher, each message uses a different key (from the chain [ratchet](#ratchet)), so the nonce is just the sequence number — the (key, nonce) pair is always unique.
+> *Analogy:* A serial number on a check. Using the same serial twice would let the bank detect fraud.
+
+<a id="mac"></a>**MAC** (Message Authentication Code) — A short tag appended to each message that proves it wasn't tampered with. Poly1305 computes the MAC; the receiver recomputes it and compares. If they differ, the message was modified.
+> *Analogy:* A wax seal on a letter. If the seal is broken, you know someone opened it.
+
+<a id="forward-secrecy"></a>**Forward secrecy** — Compromising today's key cannot decrypt yesterday's messages. The chain [ratchet](#ratchet) derives a fresh key per message, uses it once, and wipes it. Old keys don't exist anymore.
+> *Analogy:* Burning the key after locking each box. Even if someone steals your current key, the old boxes are sealed forever.
+
+<a id="post-compromise-security"></a>**Post-compromise security** — Stealing a key now does not let you read future messages. The DH [ratchet](#ratchet) mixes fresh randomness on each direction switch, creating a new chain the attacker cannot predict.
+> *Analogy:* Changing all the locks after a break-in. The thief's copied key no longer works.
+
+<a id="commitment-scheme"></a>**Commitment scheme** — Two phases: first commit (send a [hash](#blake2b) of your value), then reveal (send the actual value). The receiver checks the hash matches. Prevents changing your mind after seeing the other side's value. In SimpleCipher, both sides commit to their public keys before revealing them.
+> *Analogy:* Sealing your answer in an envelope before seeing the other person's answer. You can't cheat after the fact.
+
+<a id="sas"></a>**SAS** (Short Authentication String) — A short code derived from the shared secret, displayed on both screens. Users compare it out-of-band (phone, video). If it matches, no one is in the middle. 32 bits is enough because the [commitment scheme](#commitment-scheme) prevents brute-force search.
+> *Analogy:* A serial number printed on both sides of a secure phone call. Same number = no one's listening.
+
+<a id="ratchet"></a>**Ratchet** — A mechanism that only moves forward. Derives new keys from old ones, then wipes the old. SimpleCipher has two: the *chain ratchet* ([forward secrecy](#forward-secrecy) per message) and the *DH ratchet* ([post-compromise security](#post-compromise-security) per direction switch). Together: a "Double Ratchet" — the same architecture Signal uses.
+> *Analogy:* A turnstile. You can walk through, but you can't walk back.
+
+<a id="ephemeral"></a>**Ephemeral** — Temporary, not stored. Keys are generated fresh each session, held only in RAM, wiped on exit. Nothing written to disk. Device seized after session = nothing to find.
+> *Analogy:* A sandcastle. It exists while you're building it, then the tide takes it.
+
+<a id="aead"></a>**AEAD** (Authenticated Encryption with Associated Data) — Encryption that also authenticates. [XChaCha20-Poly1305](#xchacha20-poly1305) is an AEAD cipher. The "associated data" is authenticated but not encrypted — in SimpleCipher, the sequence number is AD (visible but tamper-proof).
+> *Analogy:* A transparent envelope with a tamper seal. Everyone can see the address, but only the recipient can read the letter, and any tampering breaks the seal.
+
+<a id="seccomp"></a>**Seccomp / Capsicum / pledge** — OS-level syscall sandboxes. After the handshake, the process restricts itself to only the syscalls it needs (read, write, poll, close). Code execution cannot open files, spawn processes, or make new connections.
+> *Analogy:* A room where the only tools left are a pen and paper. Even if someone breaks in, they can't use power tools — the tools aren't in the room.
 
 ## How it works
 
@@ -29,11 +74,11 @@ SimpleCipher implements a complete encrypted chat protocol across a handful of f
 
 ### 1. Key exchange
 
-Each side generates a random X25519 keypair for this session only. The private key never leaves the machine. Through the mathematics of elliptic-curve Diffie-Hellman, both sides compute the same shared secret without ever transmitting it.
+Each side generates a random [X25519](#x25519) keypair for this session only. The private key never leaves the machine. Through the mathematics of elliptic-curve Diffie-Hellman, both sides compute the same shared secret without ever transmitting it.
 
 ### 2. Commitment scheme (anti-MITM)
 
-Before revealing public keys, each side sends a hash (commitment) of their key. This prevents a man-in-the-middle from seeing one key and then crafting a fake key that produces a matching safety code. The commitment locks both sides into their keys before the reveal. The version byte and commitment are sent together in a single exchange so that version-mismatch and commitment-mismatch failures are timing-indistinguishable from the wire.
+Before revealing public keys, each side sends a [hash](#blake2b) ([commitment](#commitment-scheme)) of their key. This prevents a man-in-the-middle from seeing one key and then crafting a fake key that produces a matching safety code. The commitment locks both sides into their keys before the reveal. The version byte and commitment are sent together in a single exchange so that version-mismatch and commitment-mismatch failures are timing-indistinguishable from the wire.
 
 ```
 Round 1:  Alice -> version || H(key_A)    Bob -> version || H(key_B)    (commit)
@@ -75,13 +120,13 @@ If a man-in-the-middle tries to intercept, they must commit to their fake keys b
 
 ### 3. Safety code verification
 
-A short authentication string (SAS) is derived from the shared secret and displayed as `XXXX-XXXX`. Both people compare this code through a trusted channel — ideally a video call (you see and hear the person), or a voice call (you recognize their voice). A 32-bit code space is sufficient because the commitment scheme prevents brute-force search.
+A [short authentication string (SAS)](#sas) is derived from the shared secret and displayed as `XXXX-XXXX`. Both people compare this code through a trusted channel — ideally a video call (you see and hear the person), or a voice call (you recognize their voice). A 32-bit code space is sufficient because the [commitment scheme](#commitment-scheme) prevents brute-force search.
 
 ### 4. Encrypted messaging with forward secrecy and post-compromise security
 
-Messages are encrypted with XChaCha20-Poly1305 using a two-layer ratchet:
+Messages are encrypted with [XChaCha20-Poly1305](#xchacha20-poly1305) using a two-layer [ratchet](#ratchet):
 
-**Layer 1 — Symmetric chain ratchet (forward secrecy):**
+**Layer 1 — Symmetric chain ratchet ([forward secrecy](#forward-secrecy)):**
 
 Each message derives a fresh encryption key from the current chain key, then the chain steps forward and the old key is wiped. Compromising one key reveals nothing about past messages.
 
@@ -93,9 +138,9 @@ chain[1]  -->  message_key[1]  (encrypt message 1, then wipe)
 chain[2]  -->  ...
 ```
 
-**Layer 2 — DH ratchet (post-compromise security):**
+**Layer 2 — DH ratchet ([post-compromise security](#post-compromise-security)):**
 
-When the conversation direction switches (Alice was listening, now she replies), the sender generates a fresh X25519 keypair and mixes the new shared secret into a root key. This derives a completely new chain that an attacker cannot predict, even if they stole the old chain key.
+When the conversation direction switches (Alice was listening, now she replies), the sender generates a fresh [X25519](#x25519) keypair and mixes the new shared secret into a root key. This derives a completely new chain that an attacker cannot predict, even if they stole the old chain key.
 
 ```
 Alice sends  ──►  DH ratchet  ──►  new tx chain  ──►  symmetric ratchet
@@ -103,7 +148,7 @@ Bob replies  ──►  DH ratchet  ──►  new tx chain  ──►  symmetri
 Alice sends  ──►  DH ratchet  ──►  new tx chain  ──►  symmetric ratchet
 ```
 
-Together, this is the same "Double Ratchet" architecture that Signal uses: forward secrecy (past messages stay safe) plus post-compromise security (future messages recover after key theft).
+Together, this is the same "Double Ratchet" architecture that Signal uses: [forward secrecy](#forward-secrecy) (past messages stay safe) plus [post-compromise security](#post-compromise-security) (future messages recover after key theft).
 
 ### 5. Fixed-size framing
 
@@ -151,17 +196,17 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 
 | Property | How |
 |----------|-----|
-| **Confidentiality** | XChaCha20-Poly1305 authenticated encryption |
-| **Key agreement** | X25519 ephemeral Diffie-Hellman |
-| **Authentication** | Commit-then-reveal SAS verified out-of-band |
-| **Forward secrecy** | Chain-key ratchet; each message key is used once then wiped |
-| **Integrity** | Poly1305 MAC detects any tampering; sequence numbers reject replays |
+| **Confidentiality** | [XChaCha20-Poly1305](#xchacha20-poly1305) [authenticated encryption](#aead) |
+| **Key agreement** | [X25519](#x25519) [ephemeral](#ephemeral) Diffie-Hellman |
+| **Authentication** | [Commit](#commitment-scheme)-then-reveal [SAS](#sas) verified out-of-band |
+| **[Forward secrecy](#forward-secrecy)** | Chain-key [ratchet](#ratchet); each message key is used once then wiped |
+| **Integrity** | Poly1305 [MAC](#mac) detects any tampering; sequence numbers reject replays |
 | **Message-length hiding** | Fixed 512-byte frames prevent length-based analysis |
 | **Terminal safety** | Peer messages are sanitized (non-printable bytes replaced with `.`) |
-| **Post-compromise security** | DH ratchet mixes fresh X25519 entropy on each direction switch |
-| **Frame injection resistance** | MAC failures are tolerated (up to 3); a single forged frame does not kill the session |
-| **Handshake indistinguishability** | Version and commitment bundled in one round; all failure modes have identical timing |
-| **Ephemeral keys** | New keypair every session; nothing stored to disk |
+| **[Post-compromise security](#post-compromise-security)** | DH [ratchet](#ratchet) mixes fresh [X25519](#x25519) entropy on each direction switch |
+| **Frame injection resistance** | [MAC](#mac) failures are tolerated (up to 3); a single forged frame does not kill the session |
+| **Handshake indistinguishability** | Version and [commitment](#commitment-scheme) bundled in one round; all failure modes have identical timing |
+| **[Ephemeral](#ephemeral) keys** | New keypair every session; nothing stored to disk |
 
 ### Key lifecycle
 
@@ -184,7 +229,7 @@ Nothing is stored to disk, ever.
 
 ### Fingerprint verification (optional)
 
-In addition to SAS comparison, peers can exchange fingerprints out-of-band before connecting. A fingerprint is the first 8 bytes of `BLAKE2b_keyed(label="cipher fingerprint v2", pub_key)` formatted as `XXXX-XXXX-XXXX-XXXX`. The domain label ensures the fingerprint hash is distinct from all other hashes in the protocol. Since the fingerprint is derived from the public key (which is exchanged openly during the handshake), it has zero secret value — sharing it on paper, QR code, or any channel carries no risk.
+In addition to [SAS](#sas) comparison, peers can exchange fingerprints out-of-band before connecting. A fingerprint is the first 8 bytes of [BLAKE2b](#blake2b)`_keyed(label="cipher fingerprint v2", pub_key)` formatted as `XXXX-XXXX-XXXX-XXXX`. The domain label ensures the fingerprint hash is distinct from all other hashes in the protocol. Since the fingerprint is derived from the public key (which is exchanged openly during the handshake), it has zero secret value — sharing it on paper, QR code, or any channel carries no risk.
 
 After the commitment and key exchange phases, the native layer compares the received peer public key's fingerprint against the pre-shared value using a constant-time comparison. If they match, the SAS step is skipped. If they don't match, the connection is aborted immediately.
 
