@@ -286,8 +286,30 @@ check "MainActivity suppresses system keyboard on port input" \
     "grep -q 'portInput.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 check "MainActivity suppresses system keyboard on fingerprint input" \
     "grep -q 'fpManualInput.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+check "MainActivity suppresses system keyboard on SOCKS5 input" \
+    "grep -q 'socks5Input.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 check "MainActivity has hideSystemKeyboard helper" \
     "grep -q 'hideSystemKeyboard' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+
+# SOCKS5 proxy support
+check "JNI nativeStart accepts socks5_proxy parameter" \
+    "grep -q 'jstring socks5_proxy' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI calls connect_socket_socks5 for proxy connects" \
+    "grep -q 'connect_socket_socks5' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI frees socks5_host on cleanup" \
+    "grep -q 'free(socks5_host)' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI frees socks5_port on cleanup" \
+    "grep -q 'free(socks5_port)' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "ChatActivity passes socks5_proxy to nativeStart" \
+    "grep -q 'socks5Proxy' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/ChatActivity.java'"
+check "MainActivity validates SOCKS5 host:port format" \
+    "grep -q 'lastIndexOf' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+check "SOCKS5 input has filterTouchesWhenObscured" \
+    "grep -A15 'socks5Input' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'filterTouchesWhenObscured'"
+check "SOCKS5 input has importantForAutofill=no" \
+    "grep -A15 'socks5Input' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml' | grep -q 'importantForAutofill'"
+check "SOCKS5 input wiped on background" \
+    "grep -q 'socks5Input.*setText' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 
 # Clipboard safety: warning on older Android versions
 check "MainActivity warns about clipboard on API < 30" \
