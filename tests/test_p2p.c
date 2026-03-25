@@ -2345,10 +2345,12 @@ static void test_harden_codepath(void) {
     }
   #endif
 
-    /* 3. mlockall should have been called — verify by checking that
-     * MCL_CURRENT pages are locked. We can't directly query mlockall
-     * status, but we can verify that a new allocation is also locked
-     * by checking /proc/self/status VmLck field. */
+    /* 3. mlockall — verify memory locking is active.
+     *
+     * Linux: check /proc/self/status VmLck > 0 (the only reliable way
+     * to distinguish "locked" from "merely resident").
+     * BSD: verify mlock() succeeds on a fresh page (confirms the
+     * process has mlock permission — mlockall uses the same path). */
   #ifdef __linux__
     {
         FILE *f = fopen("/proc/self/status", "r");
@@ -2364,12 +2366,31 @@ static void test_harden_codepath(void) {
             }
             fclose(f);
         }
-        /* If mlockall succeeded, VmLck should be > 0.
-         * If it failed (no permissions), we accept that — the warning was printed. */
         if (found_vmlck && vmlck_kb > 0) {
-            TEST("mlockall active (VmLck > 0)", vmlck_kb > 0);
+            TEST("mlockall active (VmLck > 0)", 1);
         } else {
-            printf("  SKIP: mlockall may not have succeeded (needs root or ulimit -l unlimited)\n");
+            printf("  SKIP: mlockall not effective (VmLck=%lu, needs ulimit -l unlimited)\n", vmlck_kb);
+        }
+    }
+  #elif !defined(_WIN32)
+    {
+        /* BSD: verify mlock permission by locking a single page.
+         * If mlockall(MCL_CURRENT|MCL_FUTURE) succeeded in harden(),
+         * mlock on a fresh page should also succeed. */
+        long page_sz = sysconf(_SC_PAGESIZE);
+        if (page_sz > 0) {
+            void *page = mmap(NULL, (size_t)page_sz, PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            if (page != MAP_FAILED) {
+                memset(page, 0x42, (size_t)page_sz);
+                if (mlock(page, (size_t)page_sz) == 0) {
+                    TEST("mlock succeeds (memory locking available)", 1);
+                    munlock(page, (size_t)page_sz);
+                } else {
+                    printf("  SKIP: mlock failed (errno=%d, needs ulimit -l)\n", errno);
+                }
+                munmap(page, (size_t)page_sz);
+            }
         }
     }
   #endif

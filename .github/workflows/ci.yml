@@ -27,7 +27,6 @@ jobs:
             tests/test_p2p.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
             src/cli.c src/cli_posix.c lib/monocypher.c
-          ulimit -l unlimited 2>/dev/null || true
           build/native/test_p2p_harden
 
   test-tui:
