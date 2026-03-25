@@ -16,6 +16,8 @@
     <string name="chat_hint">Message</string>
     <string name="btn_send">Send</string>
     <string name="btn_send_icon">↑</string>
+    <string name="hint_socks5">Tor proxy, e.g. 127.0.0.1:9050 (optional)</string>
+    <string name="advanced_section_title">Advanced</string>
     <string name="fp_section_title">Fingerprint verification</string>
     <string name="fp_session_label">Session fingerprint</string>
     <string name="fp_scan_btn">Scan peer fingerprint</string>

@@ -175,6 +175,8 @@ The Android app supports SOCKS5 proxies in connect mode. Enter the proxy address
 
 **Limitation:** SOCKS5 is connect-mode only. To accept incoming connections anonymously on Android, you would need to configure a Tor onion service, which requires root or a separate Tor daemon — use the desktop CLI for this.
 
+For a complete guide to high-risk deployment with Tor (including onion services), see [High-Risk Deployment](DEPLOYMENT.md).
+
 ### Android vs desktop security comparison
 
 | Property | Desktop (CLI/TUI) | Android |

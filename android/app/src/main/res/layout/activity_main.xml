@@ -121,22 +121,53 @@
         android:contentDescription="Port number"
         android:layout_marginBottom="12dp" />
 
-    <!-- SOCKS5 proxy (optional, for Tor via Orbot) -->
-    <EditText
-        android:id="@+id/socks5Input"
+    <!-- Advanced section (collapsible, for SOCKS5 proxy) -->
+    <LinearLayout
+        android:id="@+id/advancedSection"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="SOCKS5 proxy (e.g. 127.0.0.1:9050)"
-        android:inputType="textUri"
-        android:importantForAutofill="no"
-        android:maxLength="64"
-        android:textSize="15sp"
-        android:textColor="@color/text_primary"
-        android:textColorHint="@color/text_hint"
-        android:background="@drawable/bg_input"
-        android:contentDescription="SOCKS5 proxy address"
+        android:orientation="vertical"
         android:visibility="gone"
-        android:layout_marginBottom="28dp" />
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:id="@+id/advancedToggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/advanced_section_title"
+            android:textSize="14sp"
+            android:textColor="@color/text_hint"
+            android:paddingTop="4dp"
+            android:paddingBottom="8dp" />
+
+        <LinearLayout
+            android:id="@+id/advancedContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- SOCKS5 proxy (optional, for Tor via Orbot).
+                 Same security treatment as host/port: no autofill,
+                 no suggestions, no IME learning, custom keyboard. -->
+            <EditText
+                android:id="@+id/socks5Input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/hint_socks5"
+                android:inputType="textNoSuggestions|textVisiblePassword"
+                android:importantForAutofill="no"
+                android:privateImeOptions="nm,com.google.android.inputmethod.latin.noMicrophoneKey"
+                android:maxLength="64"
+                android:textSize="15sp"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_hint"
+                android:background="@drawable/bg_input"
+                android:contentDescription="SOCKS5 proxy address"
+                android:filterTouchesWhenObscured="true"
+                android:layout_marginBottom="8dp" />
+        </LinearLayout>
+    </LinearLayout>
 
     <!-- Fingerprint verification (collapsible, collapsed by default) -->
     <LinearLayout

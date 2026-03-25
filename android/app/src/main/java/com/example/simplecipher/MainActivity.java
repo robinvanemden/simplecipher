@@ -42,7 +42,10 @@ public class MainActivity extends Activity {
   private TextView connectLabel;
   private EditText hostInput;
   private EditText portInput;
+  private LinearLayout advancedSection;
+  private LinearLayout advancedContent;
   private EditText socks5Input;
+  private boolean advancedExpanded = false;
   private LinearLayout localIpsContainer;
   private LinearLayout fpContent;
   private ImageView fpQrImage;
@@ -68,7 +71,19 @@ public class MainActivity extends Activity {
     connectLabel = findViewById(R.id.connectLabel);
     hostInput = findViewById(R.id.hostInput);
     portInput = findViewById(R.id.portInput);
+    advancedSection = findViewById(R.id.advancedSection);
+    advancedContent = findViewById(R.id.advancedContent);
     socks5Input = findViewById(R.id.socks5Input);
+
+    /* Collapsible "Advanced" toggle — hidden by default, shows SOCKS5 proxy */
+    TextView advancedToggle = findViewById(R.id.advancedToggle);
+    advancedToggle.setOnClickListener(
+        v -> {
+          advancedExpanded = !advancedExpanded;
+          advancedContent.setVisibility(advancedExpanded ? View.VISIBLE : View.GONE);
+          advancedToggle.setText(
+              advancedExpanded ? "\u25BC Advanced" : getString(R.string.advanced_section_title));
+        });
     localIpsContainer = findViewById(R.id.localIpsContainer);
     Button goButton = findViewById(R.id.goButton);
 
@@ -218,7 +233,7 @@ public class MainActivity extends Activity {
           boolean isConnect = checkedId == R.id.radioConnect;
           connectLabel.setVisibility(isConnect ? View.VISIBLE : View.GONE);
           hostInput.setVisibility(isConnect ? View.VISIBLE : View.GONE);
-          socks5Input.setVisibility(isConnect ? View.VISIBLE : View.GONE);
+          advancedSection.setVisibility(isConnect ? View.VISIBLE : View.GONE);
           localIpsContainer.setVisibility(isConnect ? View.GONE : View.VISIBLE);
         });
 
@@ -248,6 +263,16 @@ public class MainActivity extends Activity {
           }
 
           String socks5 = socks5Input.getText().toString().trim();
+          if (!socks5.isEmpty()) {
+            /* Validate host:port format */
+            int colon = socks5.lastIndexOf(':');
+            if (colon <= 0 || colon == socks5.length() - 1) {
+              Toast.makeText(
+                      this, "Proxy must be host:port (e.g. 127.0.0.1:9050)", Toast.LENGTH_SHORT)
+                  .show();
+              return;
+            }
+          }
 
           Intent intent = new Intent(this, ChatActivity.class);
           intent.putExtra("mode", isConnect ? "connect" : "listen");
@@ -274,6 +299,8 @@ public class MainActivity extends Activity {
     if (fpSelfText != null) fpSelfText.setText("");
     if (fpManualInput != null) fpManualInput.setText("");
     if (socks5Input != null) socks5Input.setText("");
+    advancedExpanded = false;
+    if (advancedContent != null) advancedContent.setVisibility(View.GONE);
     if (fpPeerStatus != null) fpPeerStatus.setText(R.string.fp_peer_none);
     fpExpanded = false;
     if (fpContent != null) fpContent.setVisibility(View.GONE);
