@@ -26,14 +26,33 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+/* _POSIX_C_SOURCE enables POSIX APIs on Linux/glibc (localtime_r, etc.).
+ * On OpenBSD, defining it HIDES BSD extensions (pledge, unveil, getentropy)
+ * and __BSD_VISIBLE does not override it.  So skip it on OpenBSD entirely —
+ * OpenBSD's headers expose POSIX APIs by default. */
+#if !defined(__OpenBSD__)
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
-/* On FreeBSD/OpenBSD, _POSIX_C_SOURCE hides BSD extensions like getentropy().
+#endif
+/* On FreeBSD, _POSIX_C_SOURCE hides BSD extensions like getentropy().
  * __BSD_VISIBLE re-exposes them without removing POSIX declarations. */
-#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 #ifndef __BSD_VISIBLE
 #define __BSD_VISIBLE 1
+#endif
+#endif
+
+/* constexpr is C23.  Clang 16 (OpenBSD 7.7) supports -std=c2x but does not
+ * recognize the constexpr keyword.  Fall back to const on older compilers
+ * so all headers compile cleanly.  The semantic difference (constexpr =
+ * compile-time constant, const = immutable) does not matter here — all
+ * uses are simple integer/byte constants. */
+#ifndef __cplusplus
+#if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 202311L
+  #ifndef constexpr
+  #define constexpr const
+  #endif
 #endif
 #endif
 

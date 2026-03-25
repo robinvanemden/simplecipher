@@ -132,4 +132,5 @@ taskset -c 0 ./test_ct
 | Windows x86_64 | windows-2025, windows-2022 |
 | Windows aarch64 | windows-11-arm |
 | FreeBSD x86_64 | Vultr bare-metal FreeBSD 14.3 (via SSH from GitHub Actions) + Cirrus CI |
+| OpenBSD x86_64 | Vultr bare-metal OpenBSD 7.7 (via SSH from GitHub Actions) |
 | Android APK | ubuntu-24.04 (structural validation + emulator smoke test) |
