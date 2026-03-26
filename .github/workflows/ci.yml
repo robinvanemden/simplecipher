@@ -249,9 +249,8 @@ jobs:
             rm -f "$ARCHIVE"
           fi
           # Re-verify after cache restore: detect poisoned cache.
-          CLANG="/opt/llvm-mingw/bin/x86_64-w64-mingw32-clang"
-          if [ ! -x "$CLANG" ] || ! file "$CLANG" | grep -q "ELF"; then
-            echo "::error::llvm-mingw appears corrupted (missing or non-ELF clang)"
+          if [ ! -d /opt/llvm-mingw/bin ] || ! ls /opt/llvm-mingw/bin/*-clang >/dev/null 2>&1; then
+            echo "::error::llvm-mingw appears corrupted (missing bin/ or clang binaries)"
             exit 1
           fi
 

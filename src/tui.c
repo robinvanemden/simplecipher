@@ -35,6 +35,10 @@ int tui_w = 80, tui_h = 24; /* cached terminal dimensions */
  * Used only for lines that contain plaintext (messages, input).  Border
  * drawing and escape codes still use printf (no sensitive data). */
 static void tui_secure_printf(const char *fmt, ...) {
+    /* Flush any buffered printf output first — TUI_GOTO/TUI_CLEAR_LINE
+     * use printf (buffered), so we must flush before write() to prevent
+     * out-of-order output on the terminal. */
+    fflush(stdout);
     char    buf[1024];
     va_list ap;
     va_start(ap, fmt);
