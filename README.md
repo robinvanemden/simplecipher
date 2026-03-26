@@ -116,7 +116,8 @@ SimpleCipher encrypts your messages, but your IP address is still visible to the
 # Connecting through Tor (easy — just wrap with --socks5):
 simplecipher connect --socks5 127.0.0.1:9050 <onion-address>
 
-# Listening as a Tor onion service (requires onion service setup):
+# Listening as a Tor onion service:
+# 0. Install Tor:  sudo apt install tor
 # 1. Add to /etc/tor/torrc:
 #      HiddenServiceDir /var/lib/tor/simplecipher/
 #      HiddenServicePort 7777 127.0.0.1:7777
@@ -126,7 +127,9 @@ simplecipher connect --socks5 127.0.0.1:9050 <onion-address>
 # Your peer connects to the .onion address via --socks5.
 ```
 
-`--socks5` automatically enables cover traffic (encrypted dummy frames at random intervals to defeat timing correlation). Listeners behind onion services or transparent Tor routing (Whonix, Tails) should add `--cover-traffic` explicitly. See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for onion service setup.
+`--socks5` automatically enables **cover traffic**: the app keeps sending encrypted empty messages at random intervals, even when you're not typing. Without this, someone watching the network can match *when* you type to *when* encrypted data flows through Tor — and figure out who's talking to whom. With cover traffic, the data flows constantly, so your typing pattern disappears into the noise.
+
+Listeners behind onion services should add `--cover-traffic` explicitly (since they don't use `--socks5`). See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for onion service setup.
 
 ### Options
 
