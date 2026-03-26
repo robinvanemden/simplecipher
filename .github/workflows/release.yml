@@ -366,6 +366,76 @@ jobs:
             fi
           done
 
+  test-freebsd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Run tests on FreeBSD (bare-metal via SSH)
+        env:
+          SSH_KEY: ${{ secrets.FREEBSD_SSH_KEY }}
+          HOST: ${{ secrets.FREEBSD_HOST }}
+        run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$HOST" ]; then
+            echo "SKIP: FREEBSD_SSH_KEY or FREEBSD_HOST not set"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/freebsd_key
+          chmod 600 ~/.ssh/freebsd_key
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          SSH="ssh -i ~/.ssh/freebsd_key ci@$HOST"
+          $SSH "
+            set -e
+            if [ -d simplecipher ]; then
+              cd simplecipher && git fetch origin && git reset --hard origin/master
+            else
+              git clone https://github.com/${{ github.repository }}.git simplecipher
+              cd simplecipher
+            fi
+            git checkout ${{ github.sha }}
+            echo '=== FreeBSD' \$(uname -sr) '==='
+            gmake CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG' LDFLAGS='-s' clean simplecipher
+            gmake CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' tests/test_p2p
+            ulimit -l unlimited 2>/dev/null || true
+            ./tests/test_p2p
+          "
+          rm -f ~/.ssh/freebsd_key
+
+  test-openbsd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Run tests on OpenBSD 7.7 (bare-metal via SSH)
+        env:
+          SSH_KEY: ${{ secrets.OPENBSD_SSH_KEY }}
+          HOST: ${{ secrets.OPENBSD_HOST }}
+        run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$HOST" ]; then
+            echo "SKIP: OPENBSD_SSH_KEY or OPENBSD_HOST not set"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/openbsd_key
+          chmod 600 ~/.ssh/openbsd_key
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          SSH="ssh -i ~/.ssh/openbsd_key ci@$HOST"
+          $SSH "
+            set -e
+            if [ -d simplecipher ]; then
+              cd simplecipher && git fetch origin && git reset --hard origin/master
+            else
+              git clone https://github.com/${{ github.repository }}.git simplecipher
+              cd simplecipher
+            fi
+            git checkout ${{ github.sha }}
+            echo '=== OpenBSD' \$(uname -sr) '==='
+            gmake CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG' LDFLAGS='-s' clean simplecipher
+            gmake CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' tests/test_p2p
+            ulimit -l unlimited 2>/dev/null || true
+            ./tests/test_p2p
+          "
+          rm -f ~/.ssh/openbsd_key
+
   test-android-emulator:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -393,19 +463,31 @@ jobs:
             -keystore ~/.android/debug.keystore -storepass android \
             -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
             -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
-      - name: Build APKs with x86_64 for emulator
+      - name: Build release APKs with x86_64 for emulator
         working-directory: android
-        run: ./gradlew assembleDebug -PextraAbi=x86_64
-      - name: Emulator smoke test (full flavor)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease -PextraAbi=x86_64
+      - name: Emulator smoke test (release full flavor)
         uses: reactivecircus/android-emulator-runner@70f4dee990796918b78d040e3278474bdbd348a7 # v2
         with:
           api-level: 28
           arch: x86_64
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: bash tests/test_android_emulator.sh android/app/build/outputs/apk/full/debug/app-full-debug.apk
+          script: |
+            # Find the release APK (signed)
+            APK=$(ls android/app/build/outputs/apk/full/release/app-full-release*.apk 2>/dev/null | head -1)
+            if [ -z "$APK" ]; then
+              echo "::error::Release APK not found for emulator test"
+              exit 1
+            fi
+            bash tests/test_android_emulator.sh "$APK"
 
   release:
-    needs: [test-p2p, test-linux, test-linux-aarch64, test-windows, test-windows-aarch64, build-android, test-asan-ubsan, static-analysis, fuzz, test-android-emulator]
+    needs: [test-p2p, test-linux, test-linux-aarch64, test-windows, test-windows-aarch64, build-android, test-asan-ubsan, static-analysis, fuzz, test-android-emulator, test-freebsd, test-openbsd]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
