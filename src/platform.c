@@ -233,8 +233,6 @@ static int apply_seccomp(struct sock_filter *f, unsigned short len) {
  *   sendto/recvfrom  — some libc TCP implementations use these
  *   poll/ppoll/select — I/O event loop
  *   close/shutdown   — socket cleanup
- *   getpeername/getsockname/getsockopt/setsockopt
- *                    — socket option queries (DNS, TCP_NODELAY)
  *   getrandom        — key generation (fill_random)
  *   mmap/munmap/mprotect/brk
  *                    — memory allocation (glibc/musl)
@@ -252,7 +250,9 @@ static int apply_seccomp(struct sock_filter *f, unsigned short len) {
  *   futex            — glibc internal locking
  *   newfstatat/fstat — glibc internal (stdout detection)
  *   rseq             — restartable sequences (glibc 2.35+)
- *   fcntl            — socket flags (O_NONBLOCK for connect timeout)
+ *
+ *   NOT included (called before sandbox): setsockopt, getsockopt,
+ *   fcntl, socket, connect, bind, listen, accept.
  *
  * Phase 1 is installed AFTER the TCP connection is established.  It does
  * NOT allow socket/connect/bind/listen/accept — those are no longer needed.

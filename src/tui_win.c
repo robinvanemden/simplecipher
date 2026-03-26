@@ -231,7 +231,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                             if (fo_rc != 0) {
                                 crypto_wipe(plain, sizeof plain);
                                 crypto_wipe(in_frame, sizeof in_frame);
-                                in_have = 0;
+                                in_have           = 0;
+                                in_frame_start_ms = 0;
                                 if (fo_rc == -2 || ++auth_fails >= MAX_AUTH_FAILURES) {
                                     tui_msg_add(TUI_SYSTEM, "[session error]");
                                     status = "Session error  |  Ctrl+C to exit";
