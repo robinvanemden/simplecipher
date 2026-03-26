@@ -8,8 +8,10 @@
 
 #include "tui.h"
 
+#include <stdarg.h>
 #ifndef _WIN32
 #    include <sys/ioctl.h>
+#    include <unistd.h> /* write */
 #endif
 
 /* ---- ring buffer state (extern declarations in tui.h) ------------------- */
@@ -20,6 +22,34 @@ int tui_msg_count = 0; /* total messages stored (up to TUI_MSG_MAX) */
 int tui_msg_start = 0; /* index of oldest message in the ring */
 
 int tui_w = 80, tui_h = 24; /* cached terminal dimensions */
+
+/* ---- secure write helper ------------------------------------------------ */
+
+/* Write a formatted string to stdout without passing plaintext through
+ * libc's internal FILE* buffer.  snprintf into a stack buffer, write()
+ * directly to fd 1, then crypto_wipe the buffer.  This prevents a memory
+ * dump from recovering recent chat messages or typed input from libc's
+ * ~4KB stdio buffer (which is never wiped by fflush — it just resets
+ * the position pointer).
+ *
+ * Used only for lines that contain plaintext (messages, input).  Border
+ * drawing and escape codes still use printf (no sensitive data). */
+static void tui_secure_printf(const char *fmt, ...) {
+    char    buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    if (n < 0) n = 0;
+    if (n > (int)sizeof buf) n = (int)sizeof buf;
+#ifdef _WIN32
+    DWORD written;
+    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buf, (DWORD)n, &written, NULL);
+#else
+    (void)write(STDOUT_FILENO, buf, (size_t)n);
+#endif
+    crypto_wipe(buf, sizeof buf);
+}
 
 /* ---- ring buffer operations --------------------------------------------- */
 
@@ -208,14 +238,14 @@ void tui_draw_messages(void) {
             TUI_CLEAR_LINE();
 
             if (first) {
-                printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET,
-                       tui_msgs[idx].ts, color, label, TUI_COLOR_RESET, max_text, chunk, text + offset, TUI_COLOR_DIM,
-                       TUI_COLOR_RESET);
+                tui_secure_printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM,
+                                  TUI_COLOR_RESET, tui_msgs[idx].ts, color, label, TUI_COLOR_RESET, max_text, chunk,
+                                  text + offset, TUI_COLOR_DIM, TUI_COLOR_RESET);
                 first = 0;
             } else {
                 /* 18 = strlen(" [HH:MM:SS] label: ") — matches the prefix width */
-                printf("%s\xe2\x94\x82%s %*s%-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET, 18, "", max_text,
-                       chunk, text + offset, TUI_COLOR_DIM, TUI_COLOR_RESET);
+                tui_secure_printf("%s\xe2\x94\x82%s %*s%-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET, 18, "",
+                                  max_text, chunk, text + offset, TUI_COLOR_DIM, TUI_COLOR_RESET);
             }
             offset += chunk;
             row++;
@@ -224,8 +254,9 @@ void tui_draw_messages(void) {
         if (text_len == 0 && first) {
             TUI_GOTO(row, 1);
             TUI_CLEAR_LINE();
-            printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET,
-                   tui_msgs[idx].ts, color, label, TUI_COLOR_RESET, max_text, "", TUI_COLOR_DIM, TUI_COLOR_RESET);
+            tui_secure_printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET,
+                              tui_msgs[idx].ts, color, label, TUI_COLOR_RESET, max_text, "", TUI_COLOR_DIM,
+                              TUI_COLOR_RESET);
             row++;
         }
     }
@@ -251,8 +282,8 @@ void tui_draw_input(const char *line, size_t len) {
     if (pad < 0) pad = 0;
     TUI_GOTO(tui_h, 1);
     TUI_CLEAR_LINE();
-    printf("%s\xe2\x94\x94%s > %.*s%*s%s\xe2\x94\x98%s", TUI_COLOR_DIM, TUI_COLOR_RESET, visible_len, line + show_start,
-           pad, "", TUI_COLOR_DIM, TUI_COLOR_RESET);
+    tui_secure_printf("%s\xe2\x94\x94%s > %.*s%*s%s\xe2\x94\x98%s", TUI_COLOR_DIM, TUI_COLOR_RESET, visible_len,
+                      line + show_start, pad, "", TUI_COLOR_DIM, TUI_COLOR_RESET);
     printf("\033[?25h"); /* show cursor */
     printf("\033[1 q");  /* block cursor (more visible than line) */
     TUI_GOTO(tui_h, 5 + visible_len);
