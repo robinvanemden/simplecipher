@@ -12,9 +12,24 @@
  *   1. main.c        (this file)   — session lifecycle, arg parsing
  *   2. protocol.h    — wire format, frame layout, session key derivation
  *   3. crypto.h      — cryptographic building blocks (KDF, ratchet, SAS)
- *   4. network.h     — TCP socket I/O
- *   5. tui.h / cli.h — user interface event loops
- *   6. platform.h    — OS abstraction (sockets, RNG, signals)
+ *   4. ratchet.h     — DH ratchet for post-compromise security
+ *   5. network.h     — TCP socket I/O
+ *   6. tui.h / cli.h — user interface event loops
+ *   7. platform.h    — OS abstraction (sockets, RNG, signals)
+ *
+ * READING PATHS BY AUDIENCE
+ * =========================
+ *   Undergrad (C + crypto):
+ *     main.c → protocol.h → crypto.h/c → ratchet.h/c → network.h
+ *     Skip: platform.c hardening, event loop internals, cover traffic
+ *
+ *   Crypto student (Double Ratchet):
+ *     ratchet.h/c → crypto.h/c → protocol.c frame_build/frame_open
+ *     These ~500 lines contain the complete Double Ratchet implementation
+ *
+ *   Security auditor:
+ *     platform.h/c (seccomp/Capsicum/pledge) → network.c (deadline I/O)
+ *     → main.c sandbox phases → jni_bridge.c (Android lifecycle)
  *
  * SESSION LIFECYCLE
  * =================
@@ -117,8 +132,8 @@ int main(int argc, char *argv[]) {
     const char *port = "7777";
     uint8_t     self_priv[KEY], self_pub[KEY], peer_pub[KEY];
     uint8_t     commit_self[KEY], commit_peer[KEY];
-    uint8_t     sas_key[KEY];
-    char        sas[20];
+    uint8_t     sas_key[KEY];        /* SAS = Short Authentication String */
+    char        sas[20];             /* formatted as "XXXX-XXXX" (32 bits, human-verifiable) */
     char        typed_sas[16] = {0}; /* user types the full SAS code to confirm */
     int         rc            = 1;
     /* Windows console handle (h_in) and Winsock event (net_ev) are now
@@ -442,12 +457,14 @@ int main(int argc, char *argv[]) {
     g_interrupt_sock = g_fd;
 #endif
 
-    /* Phase 1 sandbox: now that the TCP connection is established, restrict
-     * syscalls to those needed for the handshake.  Blocks socket(), connect(),
-     * bind(), listen(), accept(), getifaddrs(), getaddrinfo(), and DNS resolution.
-     * A compromised process can no longer open new connections.  On OpenBSD,
-     * this drops to pledge("stdio") + unveil(NULL, NULL).  On FreeBSD,
-     * cap_enter() + per-fd Capsicum rights on the socket and terminal. */
+    /* Phase 1 sandbox: restrict syscalls to those needed for the handshake.
+     * Blocks socket(), connect(), bind(), listen(), accept(), and DNS.
+     * A compromised process can no longer open new connections.
+     *   Linux:   seccomp-BPF filter (kernel kills process on violation)
+     *   FreeBSD: Capsicum cap_enter() + per-fd capability rights
+     *   OpenBSD: pledge("stdio") + unveil(NULL, NULL)
+     *   Windows: no equivalent (no sandbox on this platform)
+     * Skip this on first reading — the protocol works without it. */
     /* Set socket timeouts BEFORE the sandbox — setsockopt is blocked by
      * OpenBSD pledge("stdio") and FreeBSD Capsicum phase 2.  The handshake
      * uses deadline-aware I/O (15s per exchange round) on top of this

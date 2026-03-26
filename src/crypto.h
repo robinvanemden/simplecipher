@@ -18,6 +18,23 @@
  * All cryptographic primitives (X25519, XChaCha20-Poly1305, BLAKE2b,
  * crypto_wipe) come from Monocypher, which is vendored in lib/.
  *
+ * KEY DERIVATION TREE
+ * ====================
+ *
+ *   X25519(self_priv, peer_pub) → dh_secret
+ *                                    |
+ *   IKM = dh_secret || init_pub || resp_pub   (96 bytes, canonical order)
+ *                                    |
+ *   PRK = domain_hash("cipher x25519 sas root v1", IKM)
+ *          |            |              |
+ *       expand       expand         expand
+ *       ("sas")     ("root")    ("init->resp" / "resp->init")
+ *          |            |              |
+ *        SAS key    root key      bootstrap tx/rx chains
+ *      (32 bits     (persists     (per-message forward secrecy;
+ *       for human    across DH     each message derives a one-time
+ *       verify)      ratchets)     key then advances the chain)
+ *
  * Read next: protocol.h (session key derivation and frame encryption)
  */
 
