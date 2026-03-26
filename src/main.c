@@ -643,7 +643,7 @@ int main(int argc, char *argv[]) {
                 if (c >= 'a' && c <= 'z') c -= 32;
                 ns[si++] = c;
             }
-            int mismatch = (ti != si || memcmp(nt, ns, (size_t)ti) != 0);
+            int mismatch = (ti != si || ct_compare((const uint8_t *)nt, (const uint8_t *)ns, (size_t)ti) != 0);
             crypto_wipe(nt, sizeof nt);
             crypto_wipe(ns, sizeof ns);
             if (mismatch) {

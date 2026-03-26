@@ -143,12 +143,12 @@ static _Atomic int g_session_gen = 0;
 
 /* ---- Pre-generated key (set by MainActivity before nativeStart) --------- */
 
-static uint8_t  g_prekey_priv[KEY];
-static uint8_t  g_prekey_pub[KEY];
-static int      g_prekey_valid = 0;
+static uint8_t     g_prekey_priv[KEY];
+static uint8_t     g_prekey_pub[KEY];
+static _Atomic int g_prekey_valid = 0;
 
-static uint8_t  g_peer_fp[8];
-static int      g_peer_fp_valid = 0;
+static uint8_t     g_peer_fp[8];
+static _Atomic int g_peer_fp_valid = 0;
 
 /* ---- Thread argument struct --------------------------------------------- */
 
@@ -1009,10 +1009,11 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     plat_init();
 
     /* Close any stale pipe write fd — even if g_session_active is already 0.
-     * Without this, a finished session leaves g_pipe_wr open (fd leak). */
+     * Without this, a finished session leaves g_pipe_wr open (fd leak).
+     * atomic_exchange prevents TOCTOU: nativePostCommand() reading the old
+     * fd while we close it and the kernel reuses the number. */
     {
-        int wr = g_pipe_wr;
-        g_pipe_wr = -1;
+        int wr = atomic_exchange(&g_pipe_wr, -1);
         if (wr >= 0) close(wr);
     }
 
@@ -1353,8 +1354,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStop(
     /* 1. Close pipe write end → POLLHUP on read end (connect/chat poll)
      *    or EOF from pipe_read_exact (SAS wait, event loop reads) */
     {
-        int wr = g_pipe_wr;
-        g_pipe_wr = -1;
+        int wr = atomic_exchange(&g_pipe_wr, -1);
         if (wr >= 0) close(wr);
     }
 
@@ -1390,7 +1390,11 @@ Java_com_example_simplecipher_MainActivity_nativeGenerateKey(
     format_fingerprint(fp, g_prekey_pub);
     jstring result = (*env)->NewStringUTF(env, fp);
     crypto_wipe(fp, sizeof fp);
-    return result;
+    if (!result) {
+        LOGE("NewStringUTF(fingerprint) failed (OOM)");
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
+    return result; /* NULL on OOM — Java side handles gracefully */
 }
 
 JNIEXPORT void JNICALL
