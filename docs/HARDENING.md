@@ -133,6 +133,6 @@ taskset -c 0 ./test_ct
 | Linux aarch64 | ubuntu-24.04-arm, ubuntu-22.04-arm |
 | Windows x86_64 | windows-2025, windows-2022 |
 | Windows aarch64 | windows-11-arm |
-| FreeBSD x86_64 | Vultr bare-metal FreeBSD 14.3 (via SSH from GitHub Actions) |
-| OpenBSD x86_64 | Vultr bare-metal OpenBSD 7.7 (via SSH from GitHub Actions) |
+| FreeBSD x86_64 | Vultr bare-metal FreeBSD 14.3 (via SSH from GitHub Actions; when bare-metal hosts are configured) |
+| OpenBSD x86_64 | Vultr bare-metal OpenBSD 7.7 (via SSH from GitHub Actions; when bare-metal hosts are configured) |
 | Android APK | ubuntu-24.04 (structural validation + emulator smoke test) |

@@ -663,10 +663,15 @@ int main(int argc, char *argv[]) {
         int sas_ok = tui_sas_screen(sas);
         crypto_wipe(sas_key, sizeof sas_key);
         crypto_wipe(sas, sizeof sas);
-        if (!sas_ok) {
+        if (sas_ok <= 0) {
             printf("\033[2J\033[H");
-            printf("Aborted.\n");
-            rc = EXIT_ABORT;
+            if (sas_ok < 0) {
+                printf("Code mismatch -- aborted.\n");
+                rc = EXIT_MITM;
+            } else {
+                printf("Aborted.\n");
+                rc = EXIT_ABORT;
+            }
             goto out;
         }
 

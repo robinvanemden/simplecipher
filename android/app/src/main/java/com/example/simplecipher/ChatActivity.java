@@ -168,6 +168,10 @@ public class ChatActivity extends Activity implements NativeCallback {
     int port = getIntent().getIntExtra("port", 7777);
     String socks5Proxy = getIntent().getStringExtra("socks5_proxy");
 
+    /* Scrub connection metadata from the Intent so it does not linger
+     * in the Activity's state.  The values have been copied to locals. */
+    getIntent().replaceExtras((android.os.Bundle) null);
+
     boolean isConnect = "connect".equals(mode);
 
     if (isConnect) {

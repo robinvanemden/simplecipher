@@ -721,23 +721,16 @@ void purge_terminal(void) {
     if (h == INVALID_HANDLE_VALUE) return;
     DWORD mode;
     if (!GetConsoleMode(h, &mode)) return; /* not a console */
-    /* Windows 10+ supports ANSI sequences via ENABLE_VIRTUAL_TERMINAL_PROCESSING */
-    if (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) {
-        const char seq[] = "\033[2J\033[3J\033[H";
-        DWORD      written;
-        WriteConsoleA(h, seq, sizeof seq - 1, &written, NULL);
-    } else {
-        /* Fallback: clear screen via Console API (no scrollback clear) */
-        CONSOLE_SCREEN_BUFFER_INFO csbi;
-        if (GetConsoleScreenBufferInfo(h, &csbi)) {
-            DWORD cells  = csbi.dwSize.X * csbi.dwSize.Y;
-            COORD origin = {0, 0};
-            DWORD written;
-            FillConsoleOutputCharacterA(h, ' ', cells, origin, &written);
-            FillConsoleOutputAttribute(h, csbi.wAttributes, cells, origin, &written);
-            SetConsoleCursorPosition(h, origin);
-        }
-    }
+    /* Temporarily enable VT processing if not already set, so we can
+     * use \033[3J to clear scrollback.  Restore the original mode after. */
+    int had_vt = (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0;
+    if (!had_vt) SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+
+    const char seq[] = "\033[2J\033[3J\033[H";
+    DWORD      written;
+    WriteConsoleA(h, seq, sizeof seq - 1, &written, NULL);
+
+    if (!had_vt) SetConsoleMode(h, mode); /* restore original mode */
 }
 #else  /* POSIX */
 void purge_terminal(void) {

@@ -510,7 +510,7 @@ int tui_sas_screen(const char *sas) {
             printf("\033[31mCode mismatch!\033[0m");
             fflush(stdout);
             crypto_wipe(typed, sizeof typed);
-            return 0;
+            return -1;
         }
     }
     crypto_wipe(typed, sizeof typed);
