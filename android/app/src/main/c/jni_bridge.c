@@ -522,8 +522,8 @@ static void *session_thread(void *arg) {
             if (FD_ISSET(pipe_rd, &rfds)) {
                 /* nativeStop() closed pipe (or CMD_QUIT fallback) — abort */
                 LOGI("quit received during listen");
-                close_sock(srv);
-                g_listen_sock = INVALID_SOCK;
+                socket_t old = atomic_exchange(&g_listen_sock, INVALID_SOCK);
+                if (old != INVALID_SOCK) close_sock(old);
                 jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_listen");
                 goto cleanup;
             }
@@ -532,8 +532,8 @@ static void *session_thread(void *arg) {
                 fd = accept(srv, NULL, NULL);
             }
         }
-        close_sock(srv);
-        g_listen_sock = INVALID_SOCK;
+        socket_t old = atomic_exchange(&g_listen_sock, INVALID_SOCK);
+        if (old != INVALID_SOCK) close_sock(old);
         we_init = 0;
     }
 
@@ -929,7 +929,7 @@ cleanup:
     crypto_wipe(prekey_pub,  sizeof prekey_pub);
     /* Close socket — clear the global first so nativeStop() won't
      * try to shutdown() a closed fd. */
-    g_session_sock = INVALID_SOCK;
+    atomic_exchange(&g_session_sock, INVALID_SOCK);
     if (fd != INVALID_SOCK) {
         sock_shutdown_both(fd);
         close_sock(fd);
@@ -1012,14 +1012,13 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     if (g_session_active) {
         /* Shutdown session socket to unblock read_exact/write_exact */
         {
-            socket_t s = g_session_sock;
+            socket_t s = atomic_exchange(&g_session_sock, INVALID_SOCK);
             if (s != INVALID_SOCK) sock_shutdown_both(s);
         }
         /* Close the listen socket to unblock accept() if still waiting */
-        socket_t ls = g_listen_sock;
-        if (ls != INVALID_SOCK) {
-            g_listen_sock = INVALID_SOCK;
-            close_sock(ls);
+        {
+            socket_t ls = atomic_exchange(&g_listen_sock, INVALID_SOCK);
+            if (ls != INVALID_SOCK) close_sock(ls);
         }
         /* Wait for thread to exit.  Poll g_session_active with short
          * sleeps rather than pthread_timedjoin_np (not available on Bionic). */
@@ -1351,7 +1350,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStop(
 
     /* 2. Shutdown session socket → unblock read_exact/write_exact */
     {
-        socket_t s = g_session_sock;
+        socket_t s = atomic_exchange(&g_session_sock, INVALID_SOCK);
         if (s != INVALID_SOCK) {
             /* shutdown() signals the thread without closing the fd.
              * The thread still owns the fd for close() in cleanup. */
@@ -1361,8 +1360,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStop(
 
     /* 3. Close listen socket → unblock select/accept */
     {
-        socket_t ls = g_listen_sock;
-        g_listen_sock = INVALID_SOCK;
+        socket_t ls = atomic_exchange(&g_listen_sock, INVALID_SOCK);
         if (ls != INVALID_SOCK) close_sock(ls);
     }
 }
