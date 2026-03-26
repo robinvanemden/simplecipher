@@ -450,7 +450,8 @@ public class ChatActivity extends Activity implements NativeCallback {
      *
      * nativeStop() is out-of-band: it directly closes/shuts down the
      * pipe, socket, and listen socket, unblocking the session thread
-     * regardless of pipe backpressure or network conditions.
+     * for most phases.  The SOCKS5 handshake path uses deadline-aware
+     * I/O and may take up to 30 seconds to abort if the proxy stalls.
      *
      * Rationale: a backgrounded app with live crypto state in memory
      * is a target for memory-dumping attacks.  Ending the session on

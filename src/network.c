@@ -91,13 +91,21 @@ void set_sock_opts(socket_t fd) {
     return 0;
 }
 
-/* Deadline-aware read: same as read_exact but returns -1 if the
- * monotonic clock exceeds deadline_ms between partial recv() calls.
- * Pass deadline_ms=0 to disable the check (behaves like read_exact). */
+/* Deadline-aware read: returns -1 if the monotonic clock exceeds
+ * deadline_ms.  Tightens SO_RCVTIMEO to the remaining time before
+ * each blocking recv(), so a single long syscall cannot overshoot
+ * the deadline.  Pass deadline_ms=0 to disable (behaves like read_exact). */
 [[nodiscard]] int read_exact_dl(socket_t fd, void *buf, size_t n, uint64_t deadline_ms) {
     size_t done = 0;
     while (done < n) {
-        if (deadline_ms && monotonic_ms() > deadline_ms) return -1;
+        if (deadline_ms) {
+            uint64_t now = monotonic_ms();
+            if (now >= deadline_ms) return -1;
+            /* Cap per-syscall timeout to remaining time (seconds, min 1). */
+            uint64_t remain = deadline_ms - now;
+            int      secs   = (remain >= 1000) ? (int)(remain / 1000) : 1;
+            set_sock_timeout(fd, secs);
+        }
 #ifdef _WIN32
         int r = recv(fd, (char *)buf + done, (int)(n - done), 0);
         if (r <= 0) return -1;
@@ -114,11 +122,17 @@ void set_sock_opts(socket_t fd) {
     return 0;
 }
 
-/* Deadline-aware write: same as write_exact but checks deadline. */
+/* Deadline-aware write: same approach — tightens SO_SNDTIMEO per iteration. */
 [[nodiscard]] int write_exact_dl(socket_t fd, const void *buf, size_t n, uint64_t deadline_ms) {
     size_t done = 0;
     while (done < n) {
-        if (deadline_ms && monotonic_ms() > deadline_ms) return -1;
+        if (deadline_ms) {
+            uint64_t now = monotonic_ms();
+            if (now >= deadline_ms) return -1;
+            uint64_t remain = deadline_ms - now;
+            int      secs   = (remain >= 1000) ? (int)(remain / 1000) : 1;
+            set_sock_timeout(fd, secs);
+        }
 #ifdef _WIN32
         int r = send(fd, (const char *)buf + done, (int)(n - done), 0);
         if (r <= 0) return -1;

@@ -526,59 +526,52 @@ static int install_seccomp_phase2(void) {
 #        include <termios.h>    /* struct termios (needed by TIOCGETA/TIOCSETA macros) */
 #        include <sys/ttycom.h> /* TIOCGETA, TIOCSETA, TIOCGWINSZ */
 
-static void capsicum_phase1(int sock_fd) {
-    /* Enter capability mode — no new fds from this point on.
-     * Idempotent: calling twice is a harmless no-op.
-     * Best-effort: on some FreeBSD VMs/jails, cap_enter() returns 0
-     * but enforcement is disabled at the kernel level.  The runtime
-     * still works (just without the sandbox), and the test SKIPs. */
+static int capsicum_phase1(int sock_fd) {
     if (cap_enter() != 0) {
         fprintf(stderr, "warning: Capsicum cap_enter() failed — running unsandboxed\n");
-        if (g_require_sandbox) return -1;
-        return 0;
+        return g_require_sandbox ? -1 : 0;
     }
 
-    /* Socket fd: read, write, poll, shutdown, get/setsockopt.
-     * get/setsockopt is needed during handshake (TCP_NODELAY, SO_KEEPALIVE,
-     * timeouts).  Phase 2 will drop these. */
+    int ok = 1;
     {
         cap_rights_t rights;
         cap_rights_init(&rights, CAP_READ, CAP_WRITE, CAP_EVENT, CAP_SHUTDOWN, CAP_SETSOCKOPT, CAP_GETSOCKOPT);
-        cap_rights_limit(sock_fd, &rights);
+        if (cap_rights_limit(sock_fd, &rights) != 0) ok = 0;
     }
-
-    /* stdin: read + poll + ioctl (terminal mode: TIOCGETA/TIOCSETA/TIOCGWINSZ) */
     {
         cap_rights_t rights;
         cap_rights_init(&rights, CAP_READ, CAP_EVENT, CAP_IOCTL);
-        cap_rights_limit(STDIN_FILENO, &rights);
+        if (cap_rights_limit(STDIN_FILENO, &rights) != 0) ok = 0;
         unsigned long ioctls[] = {TIOCGETA, TIOCSETA, TIOCGWINSZ};
-        cap_ioctls_limit(STDIN_FILENO, ioctls, 3);
+        if (cap_ioctls_limit(STDIN_FILENO, ioctls, 3) != 0) ok = 0;
     }
-
-    /* stdout: write + ioctl (terminal mode queries, window size) */
     {
         cap_rights_t rights;
         cap_rights_init(&rights, CAP_WRITE, CAP_EVENT, CAP_IOCTL);
-        cap_rights_limit(STDOUT_FILENO, &rights);
+        if (cap_rights_limit(STDOUT_FILENO, &rights) != 0) ok = 0;
         unsigned long ioctls[] = {TIOCGETA, TIOCSETA, TIOCGWINSZ};
-        cap_ioctls_limit(STDOUT_FILENO, ioctls, 3);
+        if (cap_ioctls_limit(STDOUT_FILENO, ioctls, 3) != 0) ok = 0;
     }
-
-    /* stderr: write only (error messages) */
     {
         cap_rights_t rights;
         cap_rights_init(&rights, CAP_WRITE);
-        cap_rights_limit(STDERR_FILENO, &rights);
+        if (cap_rights_limit(STDERR_FILENO, &rights) != 0) ok = 0;
     }
+    if (!ok && g_require_sandbox) {
+        fprintf(stderr, "warning: Capsicum cap_rights_limit failed\n");
+        return -1;
+    }
+    return 0;
 }
 
-static void capsicum_phase2(int sock_fd) {
-    /* Tighten socket rights: drop setsockopt/getsockopt — no longer needed
-     * after handshake.  cap_rights_limit() only narrows, never widens. */
+static int capsicum_phase2(int sock_fd) {
     cap_rights_t rights;
     cap_rights_init(&rights, CAP_READ, CAP_WRITE, CAP_EVENT, CAP_SHUTDOWN);
-    cap_rights_limit(sock_fd, &rights);
+    if (cap_rights_limit(sock_fd, &rights) != 0 && g_require_sandbox) {
+        fprintf(stderr, "warning: Capsicum phase2 cap_rights_limit failed\n");
+        return -1;
+    }
+    return 0;
 }
 #    endif /* __FreeBSD__ */
 
@@ -591,7 +584,7 @@ int sandbox_phase1(int sock_fd) {
     if (install_seccomp_phase1() != 0) failed = 1;
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
-    capsicum_phase1(sock_fd);
+    if (capsicum_phase1(sock_fd) != 0) failed = 1;
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
     (void)sock_fd;
@@ -615,7 +608,7 @@ int sandbox_phase2(int sock_fd) {
     if (install_seccomp_phase2() != 0) failed = 1;
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
-    capsicum_phase2(sock_fd);
+    if (capsicum_phase2(sock_fd) != 0) failed = 1;
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
     (void)sock_fd;

@@ -256,7 +256,27 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             prompt_host[rn] = '\0';
-            if (rn > 0 && prompt_host[rn - 1] == '\n') prompt_host[rn - 1] = '\0';
+            /* Drain leftover bytes if input was truncated (no newline in buffer).
+             * Without this, the tail spills into the port prompt. */
+            {
+                int had_newline = 0;
+                for (int i = 0; i < rn; i++)
+                    if (prompt_host[i] == '\n') {
+                        had_newline = 1;
+                        break;
+                    }
+                if (rn > 0 && prompt_host[rn - 1] == '\n') prompt_host[rn - 1] = '\0';
+                if (!had_newline) {
+                    char drain;
+#if defined(_WIN32) || defined(_WIN64)
+                    int dr;
+                    do { dr = _read(0, &drain, 1); } while (dr == 1 && drain != '\n');
+#else
+                    ssize_t dr;
+                    do { dr = read(STDIN_FILENO, &drain, 1); } while (dr == 1 && drain != '\n');
+#endif
+                }
+            }
         }
         if (!prompt_host[0]) {
             fprintf(stderr, "  No host provided.\n");
@@ -274,6 +294,17 @@ int main(int argc, char *argv[]) {
 #endif
             if (rn > 0) {
                 prompt_port[rn] = '\0';
+                /* Drain oversized input */
+                if (!memchr(prompt_port, '\n', (size_t)rn)) {
+                    char drain;
+#if defined(_WIN32) || defined(_WIN64)
+                    int dr;
+                    do { dr = _read(0, &drain, 1); } while (dr == 1 && drain != '\n');
+#else
+                    ssize_t dr;
+                    do { dr = read(STDIN_FILENO, &drain, 1); } while (dr == 1 && drain != '\n');
+#endif
+                }
                 if (rn > 0 && prompt_port[rn - 1] == '\n') prompt_port[rn - 1] = '\0';
                 if (prompt_port[0]) port = prompt_port;
             }
