@@ -6,6 +6,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -40,6 +42,9 @@ public class SimpleKeyboard extends LinearLayout {
   /** Mode for text input (chat messages) */
   public static final int MODE_TEXT = 1;
 
+  /** Mode for numeric input (port numbers) */
+  public static final int MODE_NUMERIC = 2;
+
   /* Colors — match the app's dark theme from colors.xml */
   private static final int COLOR_BG = 0xFF1A1A1A; // bg_surface
   private static final int COLOR_KEY = 0xFF252525; // bg_input
@@ -59,7 +64,7 @@ public class SimpleKeyboard extends LinearLayout {
   /* Number/symbol rows */
   private static final String[] SYM_ROW_1 = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
   private static final String[] SYM_ROW_2 = {"@", "#", "$", "%", "&", "-", "+", "(", ")"};
-  private static final String[] SYM_ROW_3 = {"=", "*", "!", "?", "'", ":", ";", "/"};
+  private static final String[] SYM_ROW_3 = {".", ",", "=", "*", "!", "?", "'", ":", ";", "/"};
 
   /* Hex rows */
   private static final String[] HEX_ROW_1 = {"0", "1", "2", "3", "4", "5", "6", "7"};
@@ -122,11 +127,30 @@ public class SimpleKeyboard extends LinearLayout {
 
     if (mode == MODE_HEX) {
       buildHexLayout();
+    } else if (mode == MODE_NUMERIC) {
+      buildNumericLayout();
     } else if (symbolLayer) {
       buildSymbolLayout();
     } else {
       buildLetterLayout();
     }
+  }
+
+  private void buildNumericLayout() {
+    /* Row 1: 1 2 3 4 5 */
+    String[] numRow1 = {"1", "2", "3", "4", "5"};
+    addRow(numRow1, 0, 0);
+
+    /* Row 2: 6 7 8 9 0 */
+    String[] numRow2 = {"6", "7", "8", "9", "0"};
+    addRow(numRow2, 0, 0);
+
+    /* Row 3: backspace */
+    LinearLayout row3 = newRow();
+    addSpacer(row3, 2f);
+    addSpecialKey(row3, "\u232B", 1.5f, this::doBackspace); // ⌫
+    addSpacer(row3, 2f);
+    keysContainer.addView(row3);
   }
 
   private void buildHexLayout() {
@@ -174,13 +198,12 @@ public class SimpleKeyboard extends LinearLayout {
     /* Row 2: @ # $ % & - + ( ) */
     addRow(SYM_ROW_2, 0.5f, 0.5f);
 
-    /* Row 3: = * ! ? ' : ; / Backspace */
+    /* Row 3: . , = * ! ? ' : ; / Backspace */
     LinearLayout row3 = newRow();
-    addSpecialKey(row3, " ", 1f, null); // empty spacer styled as invisible
     for (String ch : SYM_ROW_3) {
       addCharKey(row3, ch, 1f, false);
     }
-    addSpecialKey(row3, "\u232B", 1f, this::doBackspace); // ⌫
+    addSpecialKey(row3, "\u232B", 1.5f, this::doBackspace); // ⌫
     keysContainer.addView(row3);
 
     /* Row 4: abc / space / Send */
@@ -253,6 +276,24 @@ public class SimpleKeyboard extends LinearLayout {
 
     if (action != null && isVisible) {
       btn.setOnClickListener(v -> action.run());
+
+      /* Auto-repeat backspace on long press */
+      if ("\u232B".equals(label)) {
+        btn.setOnLongClickListener(v -> {
+          final Handler handler = new Handler(Looper.getMainLooper());
+          final Runnable repeater = new Runnable() {
+            @Override
+            public void run() {
+              if (v.isPressed()) {
+                doBackspace();
+                handler.postDelayed(this, 50);
+              }
+            }
+          };
+          handler.postDelayed(repeater, 300);
+          return true;
+        });
+      }
     }
     row.addView(btn);
   }
@@ -280,9 +321,13 @@ public class SimpleKeyboard extends LinearLayout {
     btn.setGravity(Gravity.CENTER);
     btn.setStateListAnimator(null); // remove Material elevation animation
 
+    /* Accessibility: contentDescription for TalkBack screen reader */
+    btn.setContentDescription(String.valueOf(label));
+
     /* Display shifted label if shift is active */
     if (shifted && label.length() == 1 && Character.isLetter(label.charAt(0))) {
       btn.setText(label.toUpperCase());
+      btn.setContentDescription(label.toUpperCase());
     }
 
     /* Rounded background with pressed state */

@@ -4,7 +4,10 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Spannable;
+import android.text.SpannableString;
 import android.text.method.ScrollingMovementMethod;
+import android.text.style.ForegroundColorSpan;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
@@ -387,7 +390,18 @@ public class ChatActivity extends Activity implements NativeCallback {
     if (paused) return;
     String ts = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
     String line = "[" + ts + "] " + who + ": " + msg + "\n";
-    chatLog.append(line);
+    SpannableString spannable = new SpannableString(line);
+    int color;
+    if ("me".equals(who)) {
+      color = getColor(R.color.accent);
+    } else if ("peer".equals(who)) {
+      color = getColor(R.color.text_primary);
+    } else {
+      color = getColor(R.color.text_secondary);
+    }
+    spannable.setSpan(new ForegroundColorSpan(color), 0, spannable.length(),
+        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+    chatLog.append(spannable);
     /* Auto-scroll to bottom — layout may be null before the first
      * measure pass or after onPause() clears the text. */
     android.text.Layout layout = chatLog.getLayout();

@@ -22,6 +22,6 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
 # -fuse-ld=mold   mold linker
-# -static          fully static binary
+# -static-pie      fully static PIE binary (ASLR)
 # -s               strip all symbols
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=mold -static -s")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=mold -static-pie -s")

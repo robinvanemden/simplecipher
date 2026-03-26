@@ -222,15 +222,13 @@ static int apply_seccomp(struct sock_filter *f, unsigned short len) {
     return 0;
 }
 
-/* Phase 1 filter — handshake phase.
+/* Phase 1 filter — post-connection handshake phase.
  *
- * Allows everything needed for the handshake: TCP socket setup, DNS
- * resolution, key generation, signal setup, and memory management.
- * Blocks exec, fork, open, and all other unneeded syscalls.
+ * Installed AFTER the TCP connection is established.  Allows I/O,
+ * crypto, signal setup, and memory management needed for the handshake.
+ * Blocks exec, fork, open, socket, connect, and all other unneeded syscalls.
  *
  * Allowed syscalls:
- *   socket/connect/bind/listen/accept/accept4
- *                    — TCP connection setup
  *   read/write/writev — socket and terminal I/O
  *   sendto/recvfrom  — some libc TCP implementations use these
  *   poll/ppoll/select — I/O event loop

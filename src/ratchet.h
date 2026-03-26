@@ -68,9 +68,10 @@
  * The responder starts with need_send_ratchet=1, expecting the initiator's
  * ratchet key in the first frame.
  *
- * self_priv/self_pub are the HANDSHAKE keypair — used only to compute the
- * initial peer_dh and the initiator's first DH.  A fresh ratchet keypair
- * is generated immediately; the handshake private key is NOT retained. */
+ * self_priv/self_pub are the HANDSHAKE keypair — copied into s->dh_priv
+ * and s->dh_pub for use in the first ratchet step.  The handshake private
+ * key is retained until the first ratchet_send overwrites it with a fresh
+ * keypair.  The caller's copy of self_priv should be wiped after this call. */
 void ratchet_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
                   const uint8_t peer_pub[KEY]);
 

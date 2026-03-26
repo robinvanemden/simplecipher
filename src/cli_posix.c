@@ -314,8 +314,14 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
 
         /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
         if (cover && g_running && monotonic_ms() >= next_cover) {
-            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) break;
-            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) break;
+            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) {
+                secure_chat_print("system", "cover traffic error -- session ended");
+                break;
+            }
+            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                secure_chat_print("system", "cover traffic error -- session ended");
+                break;
+            }
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
             crypto_wipe(frame, sizeof frame);
@@ -452,8 +458,14 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
 
         /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
         if (cover && g_running && monotonic_ms() >= next_cover) {
-            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) break;
-            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) break;
+            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) {
+                secure_chat_print("system", "cover traffic error -- session ended");
+                break;
+            }
+            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                secure_chat_print("system", "cover traffic error -- session ended");
+                break;
+            }
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
             crypto_wipe(frame, sizeof frame);

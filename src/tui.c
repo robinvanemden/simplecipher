@@ -137,22 +137,48 @@ void tui_draw_status(const char *status) {
  * Colour-codes by sender: cyan for peer, yellow for system, default for self.
  * Unfilled rows below the last message are drawn as empty bordered lines. */
 void tui_draw_messages(void) {
-    int msg_rows  = tui_h - 5;
+    int max_row   = tui_h - 2;
     int total     = tui_msg_count < TUI_MSG_MAX ? tui_msg_count : TUI_MSG_MAX;
-    int start_msg = total > msg_rows ? total - msg_rows : 0;
-    int row       = 4;
+    int max_text  = tui_w - 21;
     int i;
-    int max_text = tui_w - 21;
 
     if (max_text < 1) max_text = 1;
 
-    for (i = start_msg; i < total && row <= tui_h - 2; i++, row++) {
+    /* First pass: count how many screen rows all messages need so we can
+     * figure out which message to start from (bottom-aligned). */
+    int total_rows = 0;
+    for (i = 0; i < total; i++) {
+        int idx      = (tui_msg_start + i) % TUI_MSG_MAX;
+        int text_len = (int)strlen(tui_msgs[idx].text);
+        int lines    = (text_len + max_text - 1) / max_text;
+        if (lines < 1) lines = 1;
+        total_rows += lines;
+    }
+
+    int msg_rows  = max_row - 4 + 1; /* available screen rows for messages */
+    int start_msg = 0;
+    /* Find the first message to display so that the last messages fit */
+    {
+        int acc = 0;
+        for (i = total - 1; i >= 0; i--) {
+            int idx      = (tui_msg_start + i) % TUI_MSG_MAX;
+            int text_len = (int)strlen(tui_msgs[idx].text);
+            int lines    = (text_len + max_text - 1) / max_text;
+            if (lines < 1) lines = 1;
+            if (acc + lines > msg_rows) {
+                start_msg = i + 1;
+                break;
+            }
+            acc += lines;
+        }
+    }
+
+    int row = 4;
+
+    for (i = start_msg; i < total && row <= max_row; i++) {
         int         idx   = (tui_msg_start + i) % TUI_MSG_MAX;
         const char *color = "";
         const char *label = "";
-
-        TUI_GOTO(row, 1);
-        TUI_CLEAR_LINE();
 
         switch (tui_msgs[idx].who) {
         case TUI_ME:
@@ -169,11 +195,49 @@ void tui_draw_messages(void) {
             break;
         }
 
-        printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET,
-               tui_msgs[idx].ts, color, label, TUI_COLOR_RESET, max_text, max_text, tui_msgs[idx].text, TUI_COLOR_DIM,
-               TUI_COLOR_RESET);
+        const char *text     = tui_msgs[idx].text;
+        int         text_len = (int)strlen(text);
+        int         offset   = 0;
+        int         first    = 1;
+
+        while (offset < text_len && row <= max_row) {
+            int chunk = text_len - offset;
+            if (chunk > max_text) chunk = max_text;
+
+            TUI_GOTO(row, 1);
+            TUI_CLEAR_LINE();
+
+            if (first) {
+                printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*.*s %s\xe2\x94\x82%s",
+                       TUI_COLOR_DIM, TUI_COLOR_RESET,
+                       tui_msgs[idx].ts, color, label, TUI_COLOR_RESET,
+                       max_text, chunk, text + offset,
+                       TUI_COLOR_DIM, TUI_COLOR_RESET);
+                first = 0;
+            } else {
+                /* 18 = strlen(" [HH:MM:SS] label: ") — matches the prefix width */
+                printf("%s\xe2\x94\x82%s %*s%-*.*s %s\xe2\x94\x82%s",
+                       TUI_COLOR_DIM, TUI_COLOR_RESET,
+                       18, "",
+                       max_text, chunk, text + offset,
+                       TUI_COLOR_DIM, TUI_COLOR_RESET);
+            }
+            offset += chunk;
+            row++;
+        }
+        /* Handle empty messages (no text at all) */
+        if (text_len == 0 && first) {
+            TUI_GOTO(row, 1);
+            TUI_CLEAR_LINE();
+            printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*s %s\xe2\x94\x82%s",
+                   TUI_COLOR_DIM, TUI_COLOR_RESET,
+                   tui_msgs[idx].ts, color, label, TUI_COLOR_RESET,
+                   max_text, "",
+                   TUI_COLOR_DIM, TUI_COLOR_RESET);
+            row++;
+        }
     }
-    for (; row <= tui_h - 2; row++) {
+    for (; row <= max_row; row++) {
         TUI_GOTO(row, 1);
         TUI_CLEAR_LINE();
         printf("%s\xe2\x94\x82%s%*s%s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET, tui_w - 2, "", TUI_COLOR_DIM,
@@ -230,6 +294,11 @@ void tui_draw_screen(const char *status, const char *line, size_t line_len) {
 void tui_status_screen(const char *line1, const char *line2) {
     int cy;
     tui_get_size(&tui_w, &tui_h);
+    if (tui_w < 40 || tui_h < 10) {
+        printf("\033[2J\033[H");
+        printf("Terminal too small (need 40x10)\n");
+        return;
+    }
     printf("\033[2J");
     tui_draw_title();
     cy = tui_h / 2 - 1;
@@ -248,6 +317,11 @@ void tui_status_screen(const char *line1, const char *line2) {
 void tui_listen_screen(const char *port, const char *ips) {
     int cy;
     tui_get_size(&tui_w, &tui_h);
+    if (tui_w < 40 || tui_h < 10) {
+        printf("\033[2J\033[H");
+        printf("Terminal too small (need 40x10)\n");
+        return;
+    }
     printf("\033[2J");
     tui_draw_title();
 
@@ -325,6 +399,11 @@ int tui_sas_screen(const char *sas) {
     int  cy;
 
     tui_get_size(&tui_w, &tui_h);
+    if (tui_w < 40 || tui_h < 10) {
+        printf("\033[2J\033[H");
+        printf("Terminal too small (need 40x10)\n");
+        return 0;
+    }
     cy = tui_h / 2 - 4;
     if (cy < 3) cy = 3;
 
@@ -425,7 +504,7 @@ int tui_sas_screen(const char *sas) {
             if (c >= 'a' && c <= 'z') c -= 32;
             norm_sas[si++] = c;
         }
-        int ok = (ti == si && memcmp(norm_typed, norm_sas, (size_t)ti) == 0);
+        int ok = (ti == si && ct_compare((const uint8_t *)norm_typed, (const uint8_t *)norm_sas, (size_t)ti) == 0);
         crypto_wipe(norm_typed, sizeof norm_typed);
         crypto_wipe(norm_sas, sizeof norm_sas);
         if (!ok) {

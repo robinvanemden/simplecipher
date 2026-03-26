@@ -117,7 +117,7 @@ public class MainActivity extends Activity {
         (v, hasFocus) -> {
           if (hasFocus) {
             hideSystemKeyboard(portInput);
-            inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
+            inAppKeyboard.setMode(SimpleKeyboard.MODE_NUMERIC);
             inAppKeyboard.setTarget(portInput);
             inAppKeyboard.setVisibility(View.VISIBLE);
           }

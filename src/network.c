@@ -392,12 +392,14 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     /* Phase 1: SOCKS5 greeting — offer "no authentication" (method 0x00). */
     uint8_t greeting[3] = {0x05, 0x01, 0x00};
     if (write_exact_dl(fd, greeting, 3, dl) != 0) {
+        fprintf(stderr, "  SOCKS5: failed to send greeting to proxy\n");
         close_sock(fd);
         return INVALID_SOCK;
     }
 
     uint8_t greet_reply[2];
     if (read_exact_dl(fd, greet_reply, 2, dl) != 0 || greet_reply[0] != 0x05 || greet_reply[1] != 0x00) {
+        fprintf(stderr, "  SOCKS5: proxy rejected authentication method\n");
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -406,10 +408,12 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     uint8_t req[4 + 1 + 255 + 2];
     int     req_len = socks5_build_request(req, sizeof req, target_host, target_port);
     if (req_len <= 0) {
+        fprintf(stderr, "  SOCKS5: invalid target address\n");
         close_sock(fd);
         return INVALID_SOCK;
     }
     if (write_exact_dl(fd, req, (size_t)req_len, dl) != 0) {
+        fprintf(stderr, "  SOCKS5: failed to send connect request\n");
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -417,7 +421,23 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     /* Phase 3: Read and parse CONNECT reply.
      * Validate version (0x05), status (0x00 = success), and reserved (0x00). */
     uint8_t reply[4];
-    if (read_exact_dl(fd, reply, 4, dl) != 0 || reply[0] != 0x05 || reply[1] != 0x00 || reply[2] != 0x00) {
+    if (read_exact_dl(fd, reply, 4, dl) != 0) {
+        fprintf(stderr, "  SOCKS5: no reply from proxy\n");
+        close_sock(fd);
+        return INVALID_SOCK;
+    }
+    if (reply[0] != 0x05 || reply[1] != 0x00 || reply[2] != 0x00) {
+        const char *reason = "unknown error";
+        if (reply[1] == 0x01) reason = "general server failure";
+        else if (reply[1] == 0x02) reason = "connection not allowed";
+        else if (reply[1] == 0x03) reason = "network unreachable";
+        else if (reply[1] == 0x04) reason = "host unreachable";
+        else if (reply[1] == 0x05) reason = "connection refused by target";
+        else if (reply[1] == 0x06) reason = "TTL expired";
+        else if (reply[1] == 0x07) reason = "command not supported";
+        else if (reply[1] == 0x08) reason = "address type not supported";
+        else if (reply[0] != 0x05) reason = "invalid SOCKS version in reply";
+        fprintf(stderr, "  SOCKS5: proxy connect failed (%s)\n", reason);
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -435,6 +455,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
         skip = socks5_reply_skip(reply[3], 0);
     }
     if (skip < 0) {
+        fprintf(stderr, "  SOCKS5: malformed reply from proxy\n");
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -442,6 +463,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     /* Drain the bound-address bytes. */
     uint8_t drain[256 + 2];
     if ((size_t)skip > sizeof drain || read_exact_dl(fd, drain, (size_t)skip, dl) != 0) {
+        fprintf(stderr, "  SOCKS5: malformed reply from proxy\n");
         close_sock(fd);
         return INVALID_SOCK;
     }

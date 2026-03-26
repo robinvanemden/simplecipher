@@ -78,6 +78,7 @@
 #include <poll.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
 #include <stdatomic.h>
 
 /* ---- Logging ------------------------------------------------------------ */
@@ -1087,6 +1088,11 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
             (void)setrlimit(RLIMIT_CORE, &rl);
         }
     }
+
+    /* Lock all current and future memory pages to prevent key material
+     * from being swapped to disk.  Best-effort: may fail on Android
+     * due to per-process mlock limits (RLIMIT_MEMLOCK). */
+    (void)mlockall(MCL_CURRENT | MCL_FUTURE);
 
     return JNI_VERSION_1_6;
 }

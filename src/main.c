@@ -163,6 +163,9 @@ int main(int argc, char *argv[]) {
                 cover_traffic = 1;
             } else if (strcmp(argv[i], "--require-sandbox") == 0) {
                 g_require_sandbox = 1;
+            } else if (strcmp(argv[i], "--version") == 0) {
+                printf("SimpleCipher v%d\n", PROTOCOL_VERSION);
+                return 0;
             } else if (strcmp(argv[i], "--socks5") == 0 && i + 1 < argc) {
                 const char *arg   = argv[++i];
                 const char *colon = strrchr(arg, ':');
@@ -180,6 +183,10 @@ int main(int argc, char *argv[]) {
                 snprintf(s5port, sizeof s5port, "%s", colon + 1);
                 socks5_host = s5host;
                 socks5_port = s5port;
+                if (!validate_port(s5port)) {
+                    fprintf(stderr, "  --socks5 port invalid: %s\n", s5port);
+                    return 1;
+                }
             } else if (strcmp(argv[i], "--peer-fingerprint") == 0 && i + 1 < argc) {
                 peer_fp_expected = argv[++i];
             } else {
@@ -246,7 +253,15 @@ int main(int argc, char *argv[]) {
 #endif
 
     we_init = (strcmp(argv[1], "connect") == 0);
-    if (!we_init && strcmp(argv[1], "listen") != 0) usage(prog);
+    if (!we_init && strcmp(argv[1], "listen") != 0) {
+        fprintf(stderr, "  Unknown command: %s\n", argv[1]);
+        usage(prog);
+    }
+    if (!we_init && socks5_host) {
+        fprintf(stderr, "  Note: --socks5 has no effect in listen mode.\n");
+        socks5_host = nullptr;
+        socks5_port = nullptr;
+    }
 
     /* Interactive connect prompt: if "connect" is given without a host,
      * prompt on stdin.  This keeps the target address out of argv, shell
@@ -327,6 +342,10 @@ int main(int argc, char *argv[]) {
         }
     } else if (we_init) {
         host = argv[2];
+        if (!host[0]) {
+            fprintf(stderr, "  Host cannot be empty.\n");
+            goto out;
+        }
         if (argc >= 4) port = argv[3];
     } else {
         if (argc >= 3) port = argv[2];
@@ -639,6 +658,9 @@ int main(int argc, char *argv[]) {
         printf("  |  Mismatch? Press Ctrl+C -- you're being      |\n");
         printf("  |            intercepted.                      |\n");
         printf("  |                                              |\n");
+        printf("  |  Fingerprint = identity (pre-shared).        |\n");
+        printf("  |  Safety code = this session (compare now).   |\n");
+        printf("  |                                              |\n");
         printf("  +----------------------------------------------+\n");
         printf("\n");
 
@@ -654,6 +676,9 @@ int main(int argc, char *argv[]) {
          * canonical mode, read() returns a complete line from the kernel.
          * On Windows, _read() serves the same purpose. */
         {
+#ifndef _WIN32
+            alarm(300); /* 5-minute SAS verification timeout */
+#endif
 #if defined(_WIN32) || defined(_WIN64)
             int rn = _read(0, typed_sas, (unsigned)(sizeof typed_sas - 1));
 #else
@@ -664,6 +689,9 @@ int main(int argc, char *argv[]) {
                 goto out;
             }
             typed_sas[rn] = '\0';
+#ifndef _WIN32
+            alarm(0); /* cancel timeout */
+#endif
         }
         /* Drain any leftover characters in the kernel's line buffer (e.g.
          * user pasted a long string).  Without this, the extra bytes end

@@ -169,72 +169,82 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             crypto_wipe(frame, sizeof frame);
         }
 
-        /* ----- Keyboard input ----- */
+        /* ----- Keyboard input (batch: read multiple bytes for paste) ----- */
         if (g_running && (fds[1].revents & POLLIN)) {
-            unsigned char ch = 0;
-            if (read(STDIN_FILENO, &ch, 1) != 1) continue;
+            unsigned char inbuf[256];
+            ssize_t sr = read(STDIN_FILENO, inbuf, sizeof inbuf);
+            if (sr <= 0) continue;
 
-            if (ch == 0x03 || ch == 0x04) {
-                g_running = 0;
-                break;
-            }
-            if (ch == 0x7F || ch == 0x08) {
-                if (line_len > 0) {
-                    line[--line_len] = '\0';
-                    tui_draw_input(line, line_len);
+            for (ssize_t bi = 0; bi < sr; bi++) {
+                unsigned char ch = inbuf[bi];
+
+                if (ch == 0x03 || ch == 0x04) {
+                    g_running = 0;
+                    break;
                 }
-                continue;
-            }
-            if (ch == '\r' || ch == '\n') {
-                if (line_len == 0) continue;
-                if (line_len > (size_t)MAX_MSG_RATCHET) {
-                    tui_msg_add(TUI_SYSTEM, "[message too long]");
-                    tui_draw_messages();
-                    tui_draw_input(line, line_len);
+                if (ch == 0x7F || ch == 0x08) {
+                    if (line_len > 0)
+                        line[--line_len] = '\0';
                     continue;
                 }
+                if (ch == '\r' || ch == '\n') {
+                    if (line_len == 0) continue;
+                    if (line_len > (size_t)MAX_MSG_RATCHET) {
+                        tui_msg_add(TUI_SYSTEM, "[message too long]");
+                        tui_draw_messages();
+                        continue;
+                    }
 
-                if (frame_build(sess, (const uint8_t *)line, (uint16_t)line_len, frame, next_tx) != 0) {
+                    if (frame_build(sess, (const uint8_t *)line, (uint16_t)line_len, frame, next_tx) != 0) {
+                        crypto_wipe(line, sizeof line);
+                        crypto_wipe(frame, sizeof frame);
+                        crypto_wipe(next_tx, sizeof next_tx);
+                        break;
+                    }
+                    if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                        tui_msg_add(TUI_SYSTEM, "[send error]");
+                        tui_draw_messages();
+                        crypto_wipe(line, sizeof line);
+                        crypto_wipe(frame, sizeof frame);
+                        crypto_wipe(next_tx, sizeof next_tx);
+                        break;
+                    }
+
+                    memcpy(sess->tx, next_tx, KEY);
+                    sess->tx_seq++;
+                    /* Cover timer NOT reset on real sends — schedule runs independently
+                     * so real messages blend into the cover traffic pattern. */
+
+                    tui_msg_add(TUI_ME, line);
                     crypto_wipe(line, sizeof line);
-                    crypto_wipe(frame, sizeof frame);
-                    crypto_wipe(next_tx, sizeof next_tx);
-                    break;
-                }
-                if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
-                    tui_msg_add(TUI_SYSTEM, "[send error]");
+                    line_len = 0;
                     tui_draw_messages();
-                    crypto_wipe(line, sizeof line);
+
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(next_tx, sizeof next_tx);
-                    break;
+                    continue;
                 }
-
-                memcpy(sess->tx, next_tx, KEY);
-                sess->tx_seq++;
-                /* Cover timer NOT reset on real sends — schedule runs independently
-                 * so real messages blend into the cover traffic pattern. */
-
-                tui_msg_add(TUI_ME, line);
-                crypto_wipe(line, sizeof line);
-                line_len = 0;
-                tui_draw_messages();
-                tui_draw_input(line, line_len);
-
-                crypto_wipe(frame, sizeof frame);
-                crypto_wipe(next_tx, sizeof next_tx);
-                continue;
+                if (ch >= 0x20 && ch <= 0x7E && line_len < (size_t)MAX_MSG_RATCHET) {
+                    line[line_len++] = (char)ch;
+                    line[line_len]   = '\0';
+                }
             }
-            if (ch >= 0x20 && ch <= 0x7E && line_len < (size_t)MAX_MSG_RATCHET) {
-                line[line_len++] = (char)ch;
-                line[line_len]   = '\0';
-                tui_draw_input(line, line_len);
-            }
+            /* Single redraw after processing all buffered bytes */
+            tui_draw_input(line, line_len);
         }
 
         /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
         if (cover && g_running && monotonic_ms() >= next_cover) {
-            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) break;
-            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) break;
+            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) {
+                tui_msg_add(TUI_SYSTEM, "cover traffic error -- session ended");
+                tui_draw_screen(status, line, line_len);
+                break;
+            }
+            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                tui_msg_add(TUI_SYSTEM, "cover traffic error -- session ended");
+                tui_draw_screen(status, line, line_len);
+                break;
+            }
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
             crypto_wipe(frame, sizeof frame);

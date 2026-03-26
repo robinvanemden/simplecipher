@@ -219,6 +219,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                 /* Cover traffic: send encrypted dummy frame on schedule. */
                 if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
                     if (frame_build(sess, NULL, 0, out_frame, out_next_tx) != 0) {
+                        win_print_status("[cover traffic error -- session ended]", line, line_len);
                         loop_error = 1;
                         break;
                     }
@@ -229,6 +230,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                     {
                         int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
                         if (send_rc < 0) {
+                            win_print_status("[cover traffic error -- session ended]", line, line_len);
                             loop_error = 1;
                             break;
                         }
