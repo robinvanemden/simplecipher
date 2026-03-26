@@ -521,7 +521,7 @@ jobs:
         run: |
           # Skip if secrets are not configured (forks, PRs from forks)
           if [ -z "$SSH_KEY" ] || [ -z "$HOST" ] || [ -z "$HOST_KEY" ]; then
-            echo "SKIP: FREEBSD_SSH_KEY or FREEBSD_HOST or FREEBSD_HOST_KEY not set"
+            echo "::warning::SKIP: FreeBSD bare-metal test not run — FREEBSD_SSH_KEY, FREEBSD_HOST, or FREEBSD_HOST_KEY not configured"
             exit 0
           fi
 
@@ -573,7 +573,7 @@ jobs:
         run: |
           # Skip if secrets are not configured (forks, PRs from forks)
           if [ -z "$SSH_KEY" ] || [ -z "$HOST" ] || [ -z "$HOST_KEY" ]; then
-            echo "SKIP: OPENBSD_SSH_KEY or OPENBSD_HOST or OPENBSD_HOST_KEY not set"
+            echo "::warning::SKIP: OpenBSD bare-metal test not run — OPENBSD_SSH_KEY, OPENBSD_HOST, or OPENBSD_HOST_KEY not configured"
             exit 0
           fi
 
@@ -626,7 +626,7 @@ jobs:
           HOST_KEY: ${{ secrets.ARM64_HOST_KEY }}
         run: |
           if [ -z "$SSH_KEY" ] || [ -z "$HOST" ] || [ -z "$HOST_KEY" ]; then
-            echo "SKIP: ARM64_SSH_KEY or ARM64_HOST or ARM64_HOST_KEY not set"
+            echo "::warning::SKIP: ARM64 bare-metal test not run — ARM64_SSH_KEY, ARM64_HOST, or ARM64_HOST_KEY not configured"
             exit 0
           fi
           mkdir -p ~/.ssh

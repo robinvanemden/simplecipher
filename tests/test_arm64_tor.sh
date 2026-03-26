@@ -9,7 +9,11 @@
 #   3. Valgrind memory check on test_socks5_proxy
 #   4. Cross-platform interop: listen on ARM64, verify handshake format
 
-set -euo pipefail
+# NOTE: do NOT use set -e here.  This script intentionally runs commands
+# that return nonzero (wait on failed processes, valgrind with error-exitcode,
+# grep on output that may not match) and classifies exit codes itself.
+# set -e would abort the script before the classification logic runs.
+set -uo pipefail
 
 # --require-tools: SKIPs become FAILs.  Use in release workflows where
 # missing prerequisites (Tor, valgrind) mean the gate is meaningless.
