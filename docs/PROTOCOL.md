@@ -65,7 +65,7 @@ If you're new to cryptography, start here. Every term used in this document is e
 <a id="aead"></a>**AEAD** (Authenticated Encryption with Associated Data) — Encryption that also authenticates. [XChaCha20-Poly1305](#xchacha20-poly1305) is an AEAD cipher. The "associated data" is authenticated but not encrypted — in SimpleCipher, the sequence number is AD (visible but tamper-proof).
 > *Analogy:* A transparent envelope with a tamper seal. Everyone can see the address, but only the recipient can read the letter, and any tampering breaks the seal.
 
-<a id="seccomp"></a>**Seccomp / Capsicum / pledge** — OS-level syscall sandboxes. After the handshake, the process restricts itself to only the syscalls it needs (read, write, poll, close). Code execution cannot open files, spawn processes, or make new connections.
+<a id="seccomp"></a>**Seccomp / Capsicum / pledge** — OS-level syscall sandboxes. After the handshake, the process restricts itself to a minimal syscall set: I/O (read, write, poll, close, shutdown), memory management (mmap, brk), signals, clock, and getrandom. Blocked: open, connect, socket, execve, ptrace, and all filesystem access. The exact allow-list is in `platform.c` (phase 2 filter). Code execution cannot open files, spawn processes, or make new connections.
 > *Analogy:* A room where the only tools left are a pen and paper. Even if someone breaks in, they can't use power tools — the tools aren't in the room.
 
 ## How it works
