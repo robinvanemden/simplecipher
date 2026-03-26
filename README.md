@@ -280,6 +280,19 @@ cosign verify-blob simplecipher-linux-x86_64 \
 
 SHA256 checksums are also provided in `SHA256SUMS.txt` (and signed) for quick integrity checks.
 
+### Maintainer signatures (optional second layer)
+
+CI signatures prove the artifact came from this repository's workflow.
+Maintainer signatures prove the release was reviewed by a project maintainer.
+Both together defend against a compromised CI pipeline.
+
+When available, `.minisig` files are attached to the release:
+
+```bash
+# Verify with minisign (maintainer pubkey published separately):
+minisign -Vm simplecipher-linux-x86_64 -p <pubkey>
+```
+
 ## License
 
 [MIT](LICENSE) — Monocypher is [BSD-2-Clause / CC0](lib/monocypher.h).
