@@ -37,6 +37,8 @@ void fill_random(uint8_t *b, size_t n) {
 
 void sock_shutdown_both(socket_t s) { shutdown(s, SD_BOTH); }
 
+uint64_t monotonic_ms(void) { return GetTickCount64(); }
+
 #else /* POSIX */
 
 int  plat_init(void) { return 0; }
@@ -75,6 +77,12 @@ void fill_random(uint8_t *b, size_t n) {
 }
 
 void sock_shutdown_both(socket_t s) { shutdown(s, SHUT_RDWR); }
+
+uint64_t monotonic_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000 + (uint64_t)t.tv_nsec / 1000000;
+}
 
 #endif /* platform */
 

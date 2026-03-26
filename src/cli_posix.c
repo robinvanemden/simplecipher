@@ -119,7 +119,7 @@ static void cli_redraw_input(const char *line, size_t line_len) {
  * This is the POSIX equivalent of the Windows raw key-event loop in
  * cli_win.c, adapted to use termios + poll() instead of
  * ReadConsoleInputA + WaitForMultipleObjects. */
-static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
+static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
     char     line[MAX_MSG + 1];
     size_t   line_len = 0;
     uint8_t  frame[FRAME_SZ];
@@ -127,6 +127,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
     uint8_t  plain[MAX_MSG + 1];
     uint16_t plen;
     int      auth_fails = 0;
+    uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
 
     memset(line, 0, sizeof line);
 
@@ -142,14 +143,18 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
         fds[1].fd     = STDIN_FILENO;
         fds[1].events = POLLIN;
 
-        /* 250 ms timeout keeps the loop responsive to g_running changes
-         * (e.g. if a signal handler sets it to 0 externally). */
-        ready = poll(fds, 2, 250);
+        int timeout = 250;
+        if (cover) {
+            int64_t remain = (int64_t)(next_cover - monotonic_ms());
+            if (remain <= 0) timeout = 0;
+            else if (remain < timeout) timeout = (int)remain;
+        }
+
+        ready = poll(fds, 2, timeout);
         if (ready < 0) {
             if (errno == EINTR) continue;
             break;
         }
-        if (ready == 0) continue;
 
         /* ----- Incoming encrypted frame from peer -----
          *
@@ -181,15 +186,14 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
                 }
                 continue;
             }
-            auth_fails  = 0;
-            plain[plen] = '\0';
-            sanitize_peer_text(plain, plen);
-
-            /* Clear input line -> print peer message -> redraw input. */
-            cli_clear_input_line(line_len);
-            secure_chat_print("peer", (char *)plain);
-            cli_redraw_input(line, line_len);
-
+            auth_fails = 0;
+            if (plen > 0) { /* len==0 is a cover-traffic dummy — silently discard */
+                plain[plen] = '\0';
+                sanitize_peer_text(plain, plen);
+                cli_clear_input_line(line_len);
+                secure_chat_print("peer", (char *)plain);
+                cli_redraw_input(line, line_len);
+            }
             crypto_wipe(plain, sizeof plain);
             crypto_wipe(frame, sizeof frame);
         }
@@ -276,6 +280,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
                 /* Write succeeded -- commit the chain advance. */
                 memcpy(sess->tx, next_tx, KEY);
                 sess->tx_seq++;
+                if (cover) next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
 
                 /* Print our own message, then redraw prompt for next input. */
                 secure_chat_print(" me", line);
@@ -304,6 +309,17 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
              * is silently ignored.  This keeps things simple and avoids
              * rendering issues with multi-byte sequences in the line buffer. */
         }
+
+        /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+        if (cover && g_running && monotonic_ms() >= next_cover) {
+            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) break;
+            if (write_exact(fd, frame, FRAME_SZ) != 0) break;
+            memcpy(sess->tx, next_tx, KEY);
+            sess->tx_seq++;
+            crypto_wipe(frame, sizeof frame);
+            crypto_wipe(next_tx, sizeof next_tx);
+            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+        }
     }
 
     /* Wipe all sensitive data from the stack before returning. */
@@ -318,13 +334,14 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess) {
  * When stdin is not a TTY (piped input, redirected file), we cannot use
  * raw termios.  Fall back to the original cooked-mode loop: the OS
  * handles line editing internally and delivers complete lines. */
-static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
+static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
     uint8_t  frame[FRAME_SZ];
     uint8_t  next_tx[KEY];
     uint8_t  plain[MAX_MSG + 1];
     char     line[MAX_MSG + 2];
     uint16_t plen;
     int      auth_fails = 0;
+    uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
 
     memset(frame, 0, sizeof frame);
     memset(line, 0, sizeof line);
@@ -338,9 +355,14 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
         fds[1].fd     = STDIN_FILENO;
         fds[1].events = POLLIN;
 
-        /* Block until socket or stdin has data.
-         * EINTR means a signal fired -- recheck g_running and loop. */
-        ready = poll(fds, 2, -1);
+        int timeout = cover ? 250 : -1;
+        if (cover) {
+            int64_t remain = (int64_t)(next_cover - monotonic_ms());
+            if (remain <= 0) timeout = 0;
+            else if (remain < timeout) timeout = (int)remain;
+        }
+
+        ready = poll(fds, 2, timeout);
         if (ready < 0) {
             if (errno == EINTR) continue;
             break;
@@ -362,10 +384,12 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
                 }
                 continue;
             }
-            auth_fails  = 0;
-            plain[plen] = '\0';
-            sanitize_peer_text(plain, plen); /* strip terminal escape bytes */
-            secure_chat_print("peer", (char *)plain);
+            auth_fails = 0;
+            if (plen > 0) { /* len==0 is a cover-traffic dummy — silently discard */
+                plain[plen] = '\0';
+                sanitize_peer_text(plain, plen);
+                secure_chat_print("peer", (char *)plain);
+            }
             crypto_wipe(plain, sizeof plain);
             crypto_wipe(frame, sizeof frame);
         }
@@ -413,12 +437,24 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
             /* Write succeeded -- now commit the chain advance. */
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
+            if (cover) next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
 
             secure_chat_print(" me", line);
 
             crypto_wipe(line, sizeof line);
             crypto_wipe(frame, sizeof frame);
             crypto_wipe(next_tx, sizeof next_tx);
+        }
+
+        /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+        if (cover && g_running && monotonic_ms() >= next_cover) {
+            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) break;
+            if (write_exact(fd, frame, FRAME_SZ) != 0) break;
+            memcpy(sess->tx, next_tx, KEY);
+            sess->tx_seq++;
+            crypto_wipe(frame, sizeof frame);
+            crypto_wipe(next_tx, sizeof next_tx);
+            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
         }
     }
 
@@ -434,9 +470,9 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess) {
  * Try to enter raw mode.  If stdin is a TTY and raw mode succeeds, use
  * the raw-mode loop with prompt and per-keystroke handling.  Otherwise,
  * fall back to the cooked-mode loop for piped/redirected input. */
-void cli_chat_loop(socket_t fd, session_t *sess) {
-    if (cli_init_raw_mode()) cli_chat_loop_raw(fd, sess);
-    else cli_chat_loop_cooked(fd, sess);
+void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
+    if (cli_init_raw_mode()) cli_chat_loop_raw(fd, sess, cover);
+    else cli_chat_loop_cooked(fd, sess, cover);
 }
 
 #endif /* !_WIN32 */

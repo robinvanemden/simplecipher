@@ -25,6 +25,16 @@
     return *end == '\0' && n >= 1 && n <= 65535;
 }
 
+/* ---- cover traffic ------------------------------------------------------ */
+
+int cover_delay_ms(void) {
+    uint8_t r[2];
+    fill_random(r, 2);
+    int d = 500 + ((r[0] | (r[1] << 8)) % 2001);
+    crypto_wipe(r, sizeof r);
+    return d;
+}
+
 /* ---- peer output sanitisation ------------------------------------------- */
 
 /* Replace non-printable bytes in a peer message with '.' before printing.

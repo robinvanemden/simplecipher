@@ -66,7 +66,7 @@ void tui_init_term(void) {
  *
  * The TUI drawing code is shared between platforms -- only the event
  * dispatch differs. */
-void tui_chat_loop(socket_t fd, session_t *sess) {
+void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     HANDLE      h_in;
     DWORD       h_in_mode;
     char        line[MAX_MSG + 1];
@@ -82,6 +82,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
     WSAEVENT    net_ev;
     const char *status     = "Secure session active  |  Ctrl+C to quit";
     int         auth_fails = 0;
+    uint64_t    next_cover = cover ? GetTickCount64() + (uint64_t)cover_delay_ms() : 0;
 
     if (!win_console_open(&h_in, &h_in_mode)) return;
     win_console_prepare(h_in, h_in_mode);
@@ -107,9 +108,14 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
 
     while (g_running) {
         HANDLE waits[2] = {h_in, net_ev};
-        DWORD  wr       = WaitForMultipleObjects(2, waits, FALSE, 250);
+        DWORD  wait_ms  = 250;
+        if (cover) {
+            int64_t remain = (int64_t)(next_cover - GetTickCount64());
+            if (remain <= 0) wait_ms = 0;
+            else if ((uint64_t)remain < wait_ms) wait_ms = (DWORD)remain;
+        }
+        DWORD  wr       = WaitForMultipleObjects(2, waits, FALSE, wait_ms);
         if (!g_running) break;
-        if (wr == WAIT_TIMEOUT) continue;
         if (wr == WAIT_FAILED) break;
 
         /* ----- Console input ----- */
@@ -158,6 +164,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                         if (send_rc == 0) {
                             memcpy(sess->tx, out_next_tx, KEY);
                             sess->tx_seq++;
+                            if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                             out_active = 0;
                             tui_msg_add(TUI_ME, out_text);
                             crypto_wipe(out_frame, sizeof out_frame);
@@ -206,12 +213,14 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                                 }
                                 break; /* back to WaitForMultipleObjects */
                             }
-                            auth_fails  = 0;
-                            plain[plen] = '\0';
-                            sanitize_peer_text(plain, plen);
-                            tui_msg_add(TUI_PEER, (char *)plain);
-                            tui_draw_messages();
-                            tui_draw_input(line, line_len);
+                            auth_fails = 0;
+                            if (plen > 0) { /* len==0 is cover-traffic dummy */
+                                plain[plen] = '\0';
+                                sanitize_peer_text(plain, plen);
+                                tui_msg_add(TUI_PEER, (char *)plain);
+                                tui_draw_messages();
+                                tui_draw_input(line, line_len);
+                            }
                             crypto_wipe(plain, sizeof plain);
                             crypto_wipe(in_frame, sizeof in_frame);
                             in_have           = 0;
@@ -238,10 +247,14 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                 if (send_rc == 0) {
                     memcpy(sess->tx, out_next_tx, KEY);
                     sess->tx_seq++;
+                    if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                     out_active = 0;
-                    tui_msg_add(TUI_ME, out_text);
-                    tui_draw_messages();
-                    tui_draw_input(line, line_len);
+                    /* out_text[0]==0 means this was a cover frame — no UI update */
+                    if (out_text[0]) {
+                        tui_msg_add(TUI_ME, out_text);
+                        tui_draw_messages();
+                        tui_draw_input(line, line_len);
+                    }
                     crypto_wipe(out_frame, sizeof out_frame);
                     crypto_wipe(out_next_tx, sizeof out_next_tx);
                     crypto_wipe(out_text, sizeof out_text);
@@ -252,6 +265,27 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                 status = "Peer disconnected  |  Ctrl+C to exit";
                 tui_draw_screen(status, line, line_len);
                 break;
+            }
+        }
+
+        /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+        if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
+            if (frame_build(sess, NULL, 0, out_frame, out_next_tx) != 0) break;
+            out_off    = 0;
+            out_active = 1;
+            out_text[0] = '\0'; /* mark as cover frame */
+            {
+                int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
+                if (send_rc < 0) break;
+                if (send_rc == 0) {
+                    memcpy(sess->tx, out_next_tx, KEY);
+                    sess->tx_seq++;
+                    out_active = 0;
+                    crypto_wipe(out_frame, sizeof out_frame);
+                    crypto_wipe(out_next_tx, sizeof out_next_tx);
+                    next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
+                }
+                /* send_rc == 1: partial send; FD_WRITE will complete it */
             }
         }
     }

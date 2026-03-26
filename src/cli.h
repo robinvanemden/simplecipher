@@ -23,8 +23,10 @@
 void secure_chat_print(const char *label, const char *msg);
 
 /* CLI chat event loop.  Blocks until the session ends.
- * fd: the connected socket.  sess: the active crypto session. */
-void cli_chat_loop(socket_t fd, session_t *sess);
+ * fd: the connected socket.  sess: the active crypto session.
+ * cover: if non-zero, send encrypted dummy frames at random intervals
+ *        to defeat Tor timing correlation attacks. */
+void cli_chat_loop(socket_t fd, session_t *sess, int cover);
 
 #if defined(_WIN32) || defined(_WIN64)
 /* ---- Windows console / socket event helpers ----------------------------- */

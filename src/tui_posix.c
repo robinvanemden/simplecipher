@@ -91,7 +91,7 @@ void tui_init_term(void) {
  *     periodically (SIGWINCH sets the flag but doesn't redraw directly).
  *   - Every incoming message triggers a message-area redraw to keep
  *     the ring buffer display in sync. */
-void tui_chat_loop(socket_t fd, session_t *sess) {
+void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     char        line[MAX_MSG + 1];
     size_t      line_len = 0;
     uint8_t     frame[FRAME_SZ];
@@ -100,6 +100,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
     uint16_t    plen;
     const char *status     = "Secure session active  |  Ctrl+C to quit";
     int         auth_fails = 0;
+    uint64_t    next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
 
     memset(line, 0, sizeof line);
     tui_draw_screen(status, line, line_len);
@@ -118,12 +119,18 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
         fds[1].fd     = STDIN_FILENO;
         fds[1].events = POLLIN;
 
-        ready = poll(fds, 2, 250);
+        int timeout = 250;
+        if (cover) {
+            int64_t remain = (int64_t)(next_cover - monotonic_ms());
+            if (remain <= 0) timeout = 0;
+            else if (remain < timeout) timeout = (int)remain;
+        }
+
+        ready = poll(fds, 2, timeout);
         if (ready < 0) {
             if (errno == EINTR) continue;
             break;
         }
-        if (ready == 0) continue;
 
         /* ----- Incoming frame from peer ----- */
         if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
@@ -145,12 +152,14 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                 }
                 continue;
             }
-            auth_fails  = 0;
-            plain[plen] = '\0';
-            sanitize_peer_text(plain, plen);
-            tui_msg_add(TUI_PEER, (char *)plain);
-            tui_draw_messages();
-            tui_draw_input(line, line_len);
+            auth_fails = 0;
+            if (plen > 0) { /* len==0 is a cover-traffic dummy — silently discard */
+                plain[plen] = '\0';
+                sanitize_peer_text(plain, plen);
+                tui_msg_add(TUI_PEER, (char *)plain);
+                tui_draw_messages();
+                tui_draw_input(line, line_len);
+            }
             crypto_wipe(plain, sizeof plain);
             crypto_wipe(frame, sizeof frame);
         }
@@ -197,6 +206,7 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
 
                 memcpy(sess->tx, next_tx, KEY);
                 sess->tx_seq++;
+                if (cover) next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
 
                 tui_msg_add(TUI_ME, line);
                 crypto_wipe(line, sizeof line);
@@ -213,6 +223,17 @@ void tui_chat_loop(socket_t fd, session_t *sess) {
                 line[line_len]   = '\0';
                 tui_draw_input(line, line_len);
             }
+        }
+
+        /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+        if (cover && g_running && monotonic_ms() >= next_cover) {
+            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) break;
+            if (write_exact(fd, frame, FRAME_SZ) != 0) break;
+            memcpy(sess->tx, next_tx, KEY);
+            sess->tx_seq++;
+            crypto_wipe(frame, sizeof frame);
+            crypto_wipe(next_tx, sizeof next_tx);
+            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
         }
     }
 

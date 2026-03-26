@@ -164,7 +164,9 @@ void tui_init_term(void);
 void tui_restore_term(void);
 
 /* TUI chat event loop.  Blocks until the session ends.
- * fd: the connected socket.  sess: the active crypto session. */
-void tui_chat_loop(socket_t fd, session_t *sess);
+ * fd: the connected socket.  sess: the active crypto session.
+ * cover: if non-zero, send encrypted dummy frames at random intervals
+ *        to defeat Tor timing correlation attacks. */
+void tui_chat_loop(socket_t fd, session_t *sess, int cover);
 
 #endif /* SIMPLECIPHER_TUI_H */

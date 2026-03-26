@@ -122,4 +122,11 @@ void session_wipe(session_t *s);
  * All other bytes -- including ESC (0x1B) and tab (0x09) -- become '.'. */
 void sanitize_peer_text(uint8_t *buf, uint16_t len);
 
+/* Random delay in [500, 2500] ms for cover traffic scheduling.
+ * Uses the OS CSPRNG to prevent the interval itself from becoming a
+ * fingerprint.  The range provides ~0.4-2 frames/sec average throughput
+ * — enough to mask real message timing over Tor without excessive
+ * bandwidth (~170-500 bytes/sec overhead). */
+int cover_delay_ms(void);
+
 #endif /* SIMPLECIPHER_PROTOCOL_H */

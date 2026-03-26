@@ -132,7 +132,7 @@ int win_try_send(socket_t fd, const uint8_t *buf, size_t len, size_t *done) {
  * Incoming bytes are accumulated until a full 512-byte frame is ready;
  * outgoing frames are resumed on FD_WRITE if send() could not accept the
  * full frame in one go. */
-void cli_chat_loop(socket_t fd, session_t *sess) {
+void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
     HANDLE   h_in      = nullptr;
     DWORD    h_in_mode = 0;
     WSAEVENT net_ev    = WSA_INVALID_EVENT;
@@ -171,6 +171,7 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
         size_t   line_len   = 0;
         int      loop_error = 0;
         int      auth_fails = 0;
+        uint64_t next_cover = cover ? GetTickCount64() + (uint64_t)cover_delay_ms() : 0;
 
         memset(in_frame, 0, sizeof in_frame);
         memset(out_frame, 0, sizeof out_frame);
@@ -189,13 +190,45 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
 
             /* 250 ms timeout keeps Ctrl+C responsive even though Win32 wait
              * APIs are not interrupted like poll()/select() on POSIX. */
-            wr = WaitForMultipleObjects(2, waits, FALSE, 250);
+            {
+                DWORD wait_ms = 250;
+                if (cover) {
+                    int64_t remain = (int64_t)(next_cover - GetTickCount64());
+                    if (remain <= 0) wait_ms = 0;
+                    else if ((uint64_t)remain < wait_ms) wait_ms = (DWORD)remain;
+                }
+                wr = WaitForMultipleObjects(2, waits, FALSE, wait_ms);
+            }
             if (!g_running) break;
-
-            if (wr == WAIT_TIMEOUT) continue;
             if (wr == WAIT_FAILED) {
                 loop_error = 1;
                 break;
+            }
+
+            if (wr == WAIT_TIMEOUT) {
+                /* Cover traffic: send encrypted dummy frame on schedule. */
+                if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
+                    if (frame_build(sess, NULL, 0, out_frame, out_next_tx) != 0) {
+                        loop_error = 1;
+                        break;
+                    }
+                    out_off     = 0;
+                    out_active  = 1;
+                    out_text[0] = '\0'; /* mark as cover frame */
+                    {
+                        int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
+                        if (send_rc < 0) { loop_error = 1; break; }
+                        if (send_rc == 0) {
+                            memcpy(sess->tx, out_next_tx, KEY);
+                            sess->tx_seq++;
+                            out_active = 0;
+                            crypto_wipe(out_frame, sizeof out_frame);
+                            crypto_wipe(out_next_tx, sizeof out_next_tx);
+                            next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
+                        }
+                    }
+                }
+                continue;
             }
 
             /* ----- Local keyboard input ----- */
@@ -264,6 +297,7 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
                         if (send_rc == 0) {
                             memcpy(sess->tx, out_next_tx, KEY);
                             sess->tx_seq++;
+                            if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                             out_active = 0;
                             win_print_chat(" me", out_text, line, line_len);
                             crypto_wipe(out_frame, sizeof out_frame);
@@ -343,10 +377,12 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
                                     }
                                     continue;
                                 }
-                                auth_fails  = 0;
-                                plain[plen] = '\0';
-                                sanitize_peer_text(plain, plen);
-                                win_print_chat("peer", (char *)plain, line, line_len);
+                                auth_fails = 0;
+                                if (plen > 0) { /* len==0 is cover-traffic dummy */
+                                    plain[plen] = '\0';
+                                    sanitize_peer_text(plain, plen);
+                                    win_print_chat("peer", (char *)plain, line, line_len);
+                                }
                                 crypto_wipe(plain, sizeof plain);
                                 crypto_wipe(in_frame, sizeof in_frame);
                                 in_have           = 0;
@@ -378,8 +414,10 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
                     if (send_rc == 0) {
                         memcpy(sess->tx, out_next_tx, KEY);
                         sess->tx_seq++;
+                        if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                         out_active = 0;
-                        win_print_chat(" me", out_text, line, line_len);
+                        /* out_text[0]==0 means this was a cover frame — no UI update */
+                        if (out_text[0]) win_print_chat(" me", out_text, line, line_len);
                         crypto_wipe(out_frame, sizeof out_frame);
                         crypto_wipe(out_next_tx, sizeof out_next_tx);
                         crypto_wipe(out_text, sizeof out_text);

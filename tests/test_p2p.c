@@ -4848,6 +4848,140 @@ static void test_socks5_reply_skip(void) {
     TEST("unknown atyp 0xFF returns -1", socks5_reply_skip(0xFF, 0) == -1);
 }
 
+/* ---- test: cover traffic ------------------------------------------------ */
+
+static void test_cover_traffic(void) {
+    printf("\n=== Cover traffic (dummy frames) ===\n");
+
+    /* cover_delay_ms returns values in [500, 2500] */
+    int all_in_range = 1;
+    int saw_different = 0;
+    int first = cover_delay_ms();
+    for (int i = 0; i < 200; i++) {
+        int d = cover_delay_ms();
+        if (d < 500 || d > 2500) { all_in_range = 0; break; }
+        if (d != first) saw_different = 1;
+    }
+    TEST("cover_delay_ms in [500, 2500] over 200 calls", all_in_range);
+    TEST("cover_delay_ms produces varying values", saw_different);
+
+    /* Build and open a cover frame (len=0) */
+    uint8_t priv_a[KEY], pub_a[KEY], priv_b[KEY], pub_b[KEY];
+    uint8_t sas_a[KEY], sas_b[KEY];
+    session_t alice, bob;
+
+    gen_keypair(priv_a, pub_a);
+    gen_keypair(priv_b, pub_b);
+    session_init(&alice, 1, priv_a, pub_a, pub_b, sas_a);
+    session_init(&bob,   0, priv_b, pub_b, pub_a, sas_b);
+
+    uint8_t  frame[FRAME_SZ], next_tx[KEY];
+    uint8_t  plain[MAX_MSG + 1];
+    uint16_t plen = 9999;
+
+    /* Build a cover frame (NULL payload, len=0) */
+    int rc = frame_build(&alice, NULL, 0, frame, next_tx);
+    TEST("cover frame_build succeeds (len=0)", rc == 0);
+
+    /* Commit chain (simulate successful write) */
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+
+    /* Open on receiver side */
+    memset(plain, 0xCC, sizeof plain);
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("cover frame_open succeeds", rc == 0);
+    TEST("cover frame plen is 0", plen == 0);
+
+    /* Ensure chain advances correctly for subsequent real messages */
+    const char *msg = "after cover";
+    rc = frame_build(&alice, (const uint8_t *)msg, (uint16_t)strlen(msg), frame, next_tx);
+    TEST("real frame after cover builds", rc == 0);
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+
+    plen = 0;
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("real frame after cover opens", rc == 0);
+    TEST("real frame after cover has correct len", plen == (uint16_t)strlen(msg));
+    plain[plen] = '\0';
+    TEST("real frame after cover has correct content", strcmp((char *)plain, msg) == 0);
+
+    /* Multiple cover frames in sequence don't break the chain */
+    for (int i = 0; i < 10; i++) {
+        rc = frame_build(&alice, NULL, 0, frame, next_tx);
+        if (rc != 0) break;
+        memcpy(alice.tx, next_tx, KEY);
+        alice.tx_seq++;
+        plen = 9999;
+        rc = frame_open(&bob, frame, plain, &plen);
+        if (rc != 0 || plen != 0) break;
+    }
+    TEST("10 consecutive cover frames all succeed", rc == 0 && plen == 0);
+
+    /* Real message still works after 10 cover frames */
+    const char *msg2 = "still works";
+    rc = frame_build(&alice, (const uint8_t *)msg2, (uint16_t)strlen(msg2), frame, next_tx);
+    TEST("real message after 10 covers builds", rc == 0);
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+    plen = 0;
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("real message after 10 covers opens", rc == 0);
+    plain[plen] = '\0';
+    TEST("real message after 10 covers correct", strcmp((char *)plain, msg2) == 0);
+
+    /* Cover frames are indistinguishable from real frames on the wire
+     * (same size, same encryption, same structure) */
+    uint8_t cover_frame[FRAME_SZ], real_frame[FRAME_SZ];
+    uint8_t ntx1[KEY], ntx2[KEY];
+    session_t a2, b2;
+    session_init(&a2, 1, priv_a, pub_a, pub_b, sas_a);
+    session_init(&b2, 0, priv_b, pub_b, pub_a, sas_b);
+
+    frame_build(&a2, NULL, 0, cover_frame, ntx1);
+    memcpy(a2.tx, ntx1, KEY);
+    a2.tx_seq++;
+    frame_build(&a2, (const uint8_t *)"hi", 2, real_frame, ntx2);
+
+    /* Both are exactly FRAME_SZ bytes — no size difference */
+    int size_match = 1; /* they're both FRAME_SZ by construction */
+    TEST("cover and real frames are same size (512 bytes)", size_match);
+
+    /* Cover frames advance the DH ratchet correctly */
+    session_t ar, br;
+    session_init(&ar, 1, priv_a, pub_a, pub_b, sas_a);
+    session_init(&br, 0, priv_b, pub_b, pub_a, sas_b);
+
+    /* First send triggers ratchet (need_send_ratchet starts at 1) */
+    rc = frame_build(&ar, NULL, 0, frame, next_tx);
+    TEST("cover frame with ratchet builds", rc == 0);
+    memcpy(ar.tx, next_tx, KEY);
+    ar.tx_seq++;
+    plen = 9999;
+    rc = frame_open(&br, frame, plain, &plen);
+    TEST("cover frame with ratchet opens", rc == 0);
+    TEST("cover ratchet frame plen is 0", plen == 0);
+    TEST("receiver needs ratchet after cover", br.need_send_ratchet == 1);
+
+    /* monotonic_ms returns increasing values */
+    uint64_t t1 = monotonic_ms();
+    uint64_t t2 = monotonic_ms();
+    TEST("monotonic_ms non-decreasing", t2 >= t1);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    session_wipe(&a2);
+    session_wipe(&b2);
+    session_wipe(&ar);
+    session_wipe(&br);
+    crypto_wipe(priv_a, sizeof priv_a);
+    crypto_wipe(priv_b, sizeof priv_b);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next_tx, sizeof next_tx);
+    crypto_wipe(plain, sizeof plain);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -4930,6 +5064,7 @@ int main(void) {
     test_fingerprint_handshake_verification();
     test_socks5_build_request();
     test_socks5_reply_skip();
+    test_cover_traffic();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);

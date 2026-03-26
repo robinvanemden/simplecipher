@@ -211,6 +211,10 @@ void le64_store(uint8_t out[8], uint64_t v);
 /* Decode a little-endian 64-bit integer from bytes. */
 uint64_t le64_load(const uint8_t in[8]);
 
+/* Monotonic millisecond clock for timing decisions (not for crypto).
+ * Uses CLOCK_MONOTONIC on POSIX, GetTickCount64 on Windows. */
+uint64_t monotonic_ms(void);
+
 /* Best-effort terminal scrollback purge.  Emits ANSI escape sequences
  * to clear the visible screen and scrollback buffer.  Only effective
  * when stdout is a terminal — silently skipped when piping or redirecting.

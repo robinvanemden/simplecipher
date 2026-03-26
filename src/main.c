@@ -554,7 +554,7 @@ int main(int argc, char *argv[]) {
         }
 
         sandbox_phase2((int)g_fd); /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
-        tui_chat_loop(g_fd, &g_sess);
+        tui_chat_loop(g_fd, &g_sess, socks5_host != nullptr);
     } else {
         printf("\n");
         printf("  +----------------------------------------------+\n");
@@ -661,7 +661,7 @@ int main(int argc, char *argv[]) {
         printf("\n");
 
         sandbox_phase2((int)g_fd); /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
-        cli_chat_loop(g_fd, &g_sess);
+        cli_chat_loop(g_fd, &g_sess, socks5_host != nullptr);
     } /* end else (CLI mode) */
 
     g_running = 0;
