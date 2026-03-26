@@ -305,9 +305,18 @@ if [ -f "$PROXY_BIN" ] && [ -f "$PEER_BIN" ]; then
     if tap_by_id "${PKG}:id/radioConnect"; then
         sleep 1
 
+        # Focus host input before typing — the custom keyboard suppresses
+        # system IME, but adb input text still works on focused EditText.
+        tap_by_id "${PKG}:id/hostInput"
+        sleep 1
+
         # Use "localhost" (domain, ATYP 0x03) instead of numeric IP to test
         # proxy-side hostname resolution — the key SOCKS5 security property
         adb shell input text "localhost"
+        sleep 1
+
+        # Expand "Advanced" section to reveal SOCKS5 input
+        tap_by_id "${PKG}:id/advancedToggle"
         sleep 1
 
         # Enter SOCKS5 proxy
