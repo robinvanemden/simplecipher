@@ -233,6 +233,29 @@ sleep 3
 check_no_crash "Cold start: no crash"
 
 # ------------------------------------------------------------------
+# 7. Native SOCKS5 proxy loopback test (if binary available)
+#    Cross-compiled test_socks5_proxy exercises the full
+#    connect_socket_socks5 → handshake → frame exchange path
+#    natively on the Android runtime.
+# ------------------------------------------------------------------
+SOCKS5_BIN="$(dirname "$0")/test_socks5_proxy_android"
+if [ -f "$SOCKS5_BIN" ]; then
+    echo ""
+    echo "=== Native SOCKS5 proxy loopback test ==="
+    adb push "$SOCKS5_BIN" /data/local/tmp/test_socks5_proxy
+    adb shell chmod 755 /data/local/tmp/test_socks5_proxy
+    if adb shell /data/local/tmp/test_socks5_proxy; then
+        pass "Native SOCKS5 proxy loopback: all assertions passed"
+    else
+        fail "Native SOCKS5 proxy loopback: test failed"
+    fi
+    adb shell rm -f /data/local/tmp/test_socks5_proxy
+else
+    echo ""
+    echo "=== Skipping native SOCKS5 test (binary not found) ==="
+fi
+
+# ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 echo ""

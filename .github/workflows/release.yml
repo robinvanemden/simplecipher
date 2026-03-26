@@ -465,6 +465,15 @@ jobs:
             -keystore ~/.android/debug.keystore -storepass android \
             -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
             -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
+      - name: Cross-compile SOCKS5 proxy test for emulator (x86_64)
+        run: |
+          NDK=$ANDROID_HOME/ndk/28.0.13004108
+          CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android28-clang"
+          $CC -std=c23 -Os -Isrc -Ilib -DNDEBUG -DCIPHER_HARDEN -static \
+            -o tests/test_socks5_proxy_android \
+            tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
+            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/cli.c src/cli_posix.c lib/monocypher.c -lm
       - name: Build release APKs with x86_64 for emulator
         working-directory: android
         env:
