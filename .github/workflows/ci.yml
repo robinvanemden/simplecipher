@@ -512,9 +512,11 @@ jobs:
             git checkout ${{ github.sha }}
             echo '=== FreeBSD' \$(uname -sr) '==='
             gmake CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG' LDFLAGS='-s' clean simplecipher
-            gmake CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' tests/test_p2p
+            gmake CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
+            echo '=== SOCKS5 proxy test ==='
+            ./tests/test_socks5_proxy
             echo '=== Smoke test ==='
             ./simplecipher listen 19799 &
             PID=\$!
@@ -563,9 +565,11 @@ jobs:
             git checkout ${{ github.sha }}
             echo '=== OpenBSD' \$(uname -sr) '==='
             gmake CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG' LDFLAGS='-s' clean simplecipher
-            gmake CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' tests/test_p2p
+            gmake CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
+            echo '=== SOCKS5 proxy test ==='
+            ./tests/test_socks5_proxy
             echo '=== Smoke test ==='
             ./simplecipher listen 19799 &
             PID=\$!

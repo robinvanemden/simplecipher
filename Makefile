@@ -55,11 +55,17 @@ lib/monocypher.o: lib/monocypher.c
 test: tests/test_p2p
 	./tests/test_p2p
 
+test-socks5: tests/test_socks5_proxy
+	./tests/test_socks5_proxy
+
 LIB_OBJ = $(filter-out src/main.o,$(OBJ))
 tests/test_p2p: tests/test_p2p.c $(LIB_OBJ)
 	$(CC) $(CFLAGS) -pthread -o $@ $^
 
+tests/test_socks5_proxy: tests/test_socks5_proxy.c $(LIB_OBJ)
+	$(CC) $(CFLAGS) -pthread -o $@ $^
+
 clean:
-	rm -f $(OBJ) simplecipher tests/test_p2p
+	rm -f $(OBJ) simplecipher tests/test_p2p tests/test_socks5_proxy
 
 .PHONY: test clean
