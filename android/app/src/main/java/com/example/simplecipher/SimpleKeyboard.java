@@ -4,10 +4,10 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
-import android.util.TypedValue;
-import android.view.Gravity;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -279,20 +279,22 @@ public class SimpleKeyboard extends LinearLayout {
 
       /* Auto-repeat backspace on long press */
       if ("\u232B".equals(label)) {
-        btn.setOnLongClickListener(v -> {
-          final Handler handler = new Handler(Looper.getMainLooper());
-          final Runnable repeater = new Runnable() {
-            @Override
-            public void run() {
-              if (v.isPressed()) {
-                doBackspace();
-                handler.postDelayed(this, 50);
-              }
-            }
-          };
-          handler.postDelayed(repeater, 300);
-          return true;
-        });
+        btn.setOnLongClickListener(
+            v -> {
+              final Handler handler = new Handler(Looper.getMainLooper());
+              final Runnable repeater =
+                  new Runnable() {
+                    @Override
+                    public void run() {
+                      if (v.isPressed()) {
+                        doBackspace();
+                        handler.postDelayed(this, 50);
+                      }
+                    }
+                  };
+              handler.postDelayed(repeater, 300);
+              return true;
+            });
       }
     }
     row.addView(btn);

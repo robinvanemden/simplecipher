@@ -241,10 +241,11 @@ public class ChatActivity extends Activity implements NativeCallback {
 
   @Override
   public void onConnected() {
-    uiHandler.post(() -> {
-      statusText.setText("Connected. Performing handshake...");
-      sessionLive = true;
-    });
+    uiHandler.post(
+        () -> {
+          statusText.setText("Connected. Performing handshake...");
+          sessionLive = true;
+        });
   }
 
   @Override
@@ -355,17 +356,18 @@ public class ChatActivity extends Activity implements NativeCallback {
 
   @Override
   public void onSendResult(boolean ok) {
-    uiHandler.post(() -> {
-      if (ok && pendingSendMsg != null) {
-        appendChat("me", pendingSendMsg);
-      } else if (!ok) {
-        appendChat("system", "[send failed]");
-      }
-      pendingSendMsg = null;
-      /* Re-enable input — one message confirmed, user can send the next. */
-      sendBtn.setEnabled(true);
-      chatInput.setEnabled(true);
-    });
+    uiHandler.post(
+        () -> {
+          if (ok && pendingSendMsg != null) {
+            appendChat("me", pendingSendMsg);
+          } else if (!ok) {
+            appendChat("system", "[send failed]");
+          }
+          pendingSendMsg = null;
+          /* Re-enable input — one message confirmed, user can send the next. */
+          sendBtn.setEnabled(true);
+          chatInput.setEnabled(true);
+        });
   }
 
   @Override
@@ -399,8 +401,8 @@ public class ChatActivity extends Activity implements NativeCallback {
     } else {
       color = getColor(R.color.text_secondary);
     }
-    spannable.setSpan(new ForegroundColorSpan(color), 0, spannable.length(),
-        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+    spannable.setSpan(
+        new ForegroundColorSpan(color), 0, spannable.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
     chatLog.append(spannable);
     /* Auto-scroll to bottom — layout may be null before the first
      * measure pass or after onPause() clears the text. */
