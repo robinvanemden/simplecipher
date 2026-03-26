@@ -285,6 +285,7 @@ static int jni_call_str(JNIEnv *env, jobject cb, jmethodID mid,
     jstring jstr = (*env)->NewStringUTF(env, str);
     if (!jstr) {
         LOGE("NewStringUTF(%s) failed", label);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
         return -1;
     }
     (*env)->CallVoidMethod(env, cb, mid, jstr);
@@ -512,9 +513,14 @@ static void *session_thread(void *arg) {
          * When nativeStop() closes the pipe write end, select() marks
          * pipe_rd readable; read() then returns EOF.  nativeStop() also
          * closes g_listen_sock, making select() return on srv too. */
-        /* Publish only if our generation still matches — a stale thread
-         * must not overwrite a newer session's listen socket. */
-        if (g_session_gen == my_gen) g_listen_sock = srv;
+        /* Publish only if our generation still matches — atomic CAS prevents
+         * a stale detached thread from overwriting a newer session's socket
+         * if g_session_gen changes between the check and the store. */
+        {
+            socket_t expected = INVALID_SOCK;
+            if (g_session_gen == my_gen)
+                atomic_compare_exchange_strong(&g_listen_sock, &expected, srv);
+        }
         while (fd == INVALID_SOCK) {
             fd_set rfds;
             FD_ZERO(&rfds);
@@ -559,10 +565,14 @@ static void *session_thread(void *arg) {
     }
 
     LOGI("connected (we_init=%d)", we_init);
-    /* Publish socket only if our generation still matches — a stale thread
-     * from a previous session must not overwrite a newer session's socket. */
-    if (g_session_gen != my_gen) goto cleanup;
-    g_session_sock = fd;
+    /* Publish socket only if our generation still matches — atomic CAS
+     * prevents a TOCTOU race with a concurrent nativeStart(). */
+    {
+        int gen = my_gen;
+        if (!atomic_compare_exchange_strong(&g_session_gen, &gen, my_gen)) goto cleanup;
+        socket_t expected = INVALID_SOCK;
+        atomic_compare_exchange_strong(&g_session_sock, &expected, fd);
+    }
     (*env)->CallVoidMethod(env, cb, mid_onConnected);
     if (jni_callback_ok(env) != 0) {
         LOGE("onConnected callback failed — aborting session");
@@ -667,7 +677,13 @@ static void *session_thread(void *arg) {
             }
 
             jstring fp_jstr = (*env)->NewStringUTF(env, peer_fp_str);
-            if (!fp_jstr) { LOGE("NewStringUTF(fp) failed"); crypto_wipe(peer_hash, sizeof peer_hash); crypto_wipe(peer_fp_str, sizeof peer_fp_str); goto cleanup_keys; }
+            if (!fp_jstr) {
+                LOGE("NewStringUTF(fp) failed");
+                if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+                crypto_wipe(peer_hash, sizeof peer_hash);
+                crypto_wipe(peer_fp_str, sizeof peer_fp_str);
+                goto cleanup_keys;
+            }
             jboolean verified = fp_matched ? JNI_TRUE : JNI_FALSE;
             (*env)->CallVoidMethod(env, cb, mid_onPeerFingerprintReady, fp_jstr, verified);
             (*env)->DeleteLocalRef(env, fp_jstr);
@@ -699,7 +715,11 @@ static void *session_thread(void *arg) {
         /* Callback: SAS ready for user verification */
         jstring sas_jstr = (*env)->NewStringUTF(env, sas);
         crypto_wipe(sas, sizeof sas);
-        if (!sas_jstr) { LOGE("NewStringUTF(sas) failed"); goto cleanup_session; }
+        if (!sas_jstr) {
+            LOGE("NewStringUTF(sas) failed");
+            if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            goto cleanup_session;
+        }
         (*env)->CallVoidMethod(env, cb, mid_onSasReady, sas_jstr);
         (*env)->DeleteLocalRef(env, sas_jstr);
         if (jni_callback_ok(env) != 0) goto cleanup_session;
@@ -824,6 +844,7 @@ static void *session_thread(void *arg) {
                     jstring text = (*env)->NewStringUTF(env, (char *)plain);
                     if (!text) {
                         LOGE("NewStringUTF(message) failed");
+                        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
                         crypto_wipe(frame, sizeof frame);
                         crypto_wipe(plain, sizeof plain);
                         break;
@@ -995,10 +1016,12 @@ cleanup:
     crypto_wipe(prekey_priv, sizeof prekey_priv);
     crypto_wipe(prekey_pub,  sizeof prekey_pub);
     /* Close socket — clear the global first so nativeStop() won't
-     * try to shutdown() a closed fd.  Only clear if we still own it
-     * (generation matches); a newer session may have taken over. */
-    if (g_session_gen == my_gen)
-        atomic_exchange(&g_session_sock, INVALID_SOCK);
+     * try to shutdown() a closed fd.  CAS ensures we only clear if
+     * our fd is still the published value (not a newer session's). */
+    {
+        socket_t expected = fd;
+        atomic_compare_exchange_strong(&g_session_sock, &expected, INVALID_SOCK);
+    }
     if (fd != INVALID_SOCK) {
         sock_shutdown_both(fd);
         close_sock(fd);
@@ -1017,10 +1040,13 @@ cleanup:
     (*g_jvm)->DetachCurrentThread(g_jvm);
 
     /* Only clear g_session_active if our generation still matches.
-     * If nativeStart() already spawned a newer session (incremented
-     * g_session_gen), we must not clobber the newer session's active bit. */
-    if (g_session_gen == my_gen)
-        g_session_active = 0;
+     * CAS on g_session_gen: if it still equals my_gen, no newer session
+     * was spawned and we can safely clear the active bit. */
+    {
+        int gen = my_gen;
+        if (atomic_compare_exchange_strong(&g_session_gen, &gen, my_gen))
+            g_session_active = 0;
+    }
     LOGI("session thread exiting (gen=%d)", my_gen);
     return NULL;
 }

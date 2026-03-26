@@ -59,7 +59,7 @@ If you're new to cryptography, start here. Every term used in this document is e
 <a id="ratchet"></a>**Ratchet** — A mechanism that only moves forward. Derives new keys from old ones, then wipes the old. SimpleCipher has two: the *chain ratchet* ([forward secrecy](#forward-secrecy) per message) and the *DH ratchet* ([post-compromise security](#post-compromise-security) per direction switch). Together: a "Double Ratchet" — the same architecture Signal uses.
 > *Analogy:* A turnstile. You can walk through, but you can't walk back.
 
-<a id="ephemeral"></a>**Ephemeral** — Temporary, not stored. Keys are generated fresh each session, held only in RAM, wiped on exit. Nothing written to disk. Device seized after session = nothing to find.
+<a id="ephemeral"></a>**Ephemeral** — Temporary, not stored. Keys are generated fresh each session, held only in RAM, wiped on exit. Nothing written to disk. Device seized after session = nothing to find *in the application* (OS-level artifacts like swap, terminal scrollback, and Android heap residue are outside SimpleCipher's control — see [What it does NOT provide](#what-it-does-not-provide)).
 > *Analogy:* A sandcastle. It exists while you're building it, then the tide takes it.
 
 <a id="aead"></a>**AEAD** (Authenticated Encryption with Associated Data) — Encryption that also authenticates. [XChaCha20-Poly1305](#xchacha20-poly1305) is an AEAD cipher. The "associated data" is authenticated but not encrypted — in SimpleCipher, the sequence number is AD (visible but tamper-proof).
@@ -175,7 +175,7 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 - Eavesdropping — XChaCha20-Poly1305 encryption with ephemeral keys
 - Active MITM — commitment scheme + SAS verification prevents key substitution
 - Harvest-now-decrypt-later — forward secrecy (chain ratchet wipes old keys)
-- Post-session device seizure — no keys on disk, nothing to find
+- Post-session device seizure — no keys on disk; OS-level traces (swap, scrollback, Android heap) are best-effort mitigated but not guaranteed (see limitations below)
 - Mid-session RAM compromise — DH ratchet recovers after the next direction switch
 - Frame injection during idle — MAC failure tolerance (3 consecutive failures before teardown) prevents a single forged frame from killing the session
 

@@ -557,9 +557,9 @@ static int capsicum_phase1(int sock_fd) {
         cap_rights_init(&rights, CAP_WRITE);
         if (cap_rights_limit(STDERR_FILENO, &rights) != 0) ok = 0;
     }
-    if (!ok && g_require_sandbox) {
+    if (!ok) {
         fprintf(stderr, "warning: Capsicum cap_rights_limit failed\n");
-        return -1;
+        if (g_require_sandbox) return -1;
     }
     return 0;
 }
@@ -567,9 +567,9 @@ static int capsicum_phase1(int sock_fd) {
 static int capsicum_phase2(int sock_fd) {
     cap_rights_t rights;
     cap_rights_init(&rights, CAP_READ, CAP_WRITE, CAP_EVENT, CAP_SHUTDOWN);
-    if (cap_rights_limit(sock_fd, &rights) != 0 && g_require_sandbox) {
+    if (cap_rights_limit(sock_fd, &rights) != 0) {
         fprintf(stderr, "warning: Capsicum phase2 cap_rights_limit failed\n");
-        return -1;
+        if (g_require_sandbox) return -1;
     }
     return 0;
 }
