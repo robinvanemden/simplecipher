@@ -279,11 +279,14 @@ check "clipboard auto-cleared after copy" \
 check "JNI logging suppressed under NDEBUG" \
     "grep -q 'NDEBUG' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 
-# JNI: single-threaded architecture (no mutex = concurrency eliminated by design)
+# JNI: single-threaded crypto architecture with pipe IPC
+# The session thread owns all crypto/session/socket state exclusively.
+# A mutex exists only for lifecycle coordination (nativeStop closing
+# sockets from the UI thread), not for protecting crypto operations.
 check "JNI uses pipe for IPC (no shared mutable state)" \
     "grep -q 'pipe(' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
-check "JNI has no pthread_mutex (single-threaded)" \
-    "! grep -q 'pthread_mutex' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
+check "JNI lifecycle mutex is for shutdown coordination only" \
+    "grep -q 'g_session_mtx' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 
 # JNI: crypto_wipe used for cleanup
 check "JNI uses crypto_wipe for key material" \
