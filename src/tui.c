@@ -391,12 +391,12 @@ int tui_sas_screen(const char *sas) {
     int  cy;
 
     tui_get_size(&tui_w, &tui_h);
-    if (tui_w < 40 || tui_h < 10) {
+    if (tui_w < 40 || tui_h < 14) {
         printf("\033[2J\033[H");
-        printf("Terminal too small (need 40x10)\n");
+        printf("Terminal too small (need 40x14)\n");
         return 0;
     }
-    cy = tui_h / 2 - 4;
+    cy = tui_h / 2 - 6;
     if (cy < 3) cy = 3;
 
     printf("\033[2J");
@@ -421,11 +421,17 @@ int tui_sas_screen(const char *sas) {
         printf("%s%s%s", TUI_COLOR_DIM, l2, TUI_COLOR_RESET);
         TUI_GOTO(cy + 6, (tui_w - (int)strlen(l3)) / 2);
         printf("%s%s%s", TUI_COLOR_DIM, l3, TUI_COLOR_RESET);
+        const char *l4 = "Fingerprint = identity (pre-shared).";
+        const char *l5 = "Safety code = this session (compare now).";
+        TUI_GOTO(cy + 8, (tui_w - (int)strlen(l4)) / 2);
+        printf("%s%s%s", TUI_COLOR_DIM, l4, TUI_COLOR_RESET);
+        TUI_GOTO(cy + 9, (tui_w - (int)strlen(l5)) / 2);
+        printf("%s%s%s", TUI_COLOR_DIM, l5, TUI_COLOR_RESET);
     }
 
     {
         const char *prompt = "Confirm: ";
-        TUI_GOTO(cy + 8, (tui_w - (int)strlen(prompt) - sas_len) / 2);
+        TUI_GOTO(cy + 11, (tui_w - (int)strlen(prompt) - sas_len) / 2);
         printf("%s", prompt);
     }
     printf("\033[?25h");

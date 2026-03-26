@@ -4213,6 +4213,176 @@ static void test_ct_compare_correctness(void) {
     TEST("single byte mismatch", test_ct_cmp(&x, &w, 1) != 0);
 }
 
+/* ---- dudect statistical constant-time tests (x86/x86_64 only) ---------- */
+#if defined(__x86_64__) || defined(__i386__)
+
+/*
+ * Lightweight dudect-style statistical timing test.
+ *
+ * Inspired by the dudect framework (tests/dudect.h) but self-contained:
+ * uses rdtsc for cycle-accurate timing and an online Welch's t-test to
+ * detect timing differences between two input classes.
+ *
+ * We compare t^2 against threshold^2 (avoiding sqrt/libm) and use a
+ * small number of measurements for a quick CI smoke test.
+ */
+
+#include <emmintrin.h>
+#include <x86intrin.h>
+
+typedef struct { double mean, m2, n; } dudect_accum_t;
+
+static void dudect_accum_push(dudect_accum_t *a, double x) {
+    a->n += 1.0;
+    double d = x - a->mean;
+    a->mean += d / a->n;
+    a->m2  += d * (x - a->mean);
+}
+
+/* Returns t^2.  Caller compares against threshold^2 to avoid sqrt(). */
+static double dudect_t_squared(dudect_accum_t *a, dudect_accum_t *b) {
+    if (a->n < 2.0 || b->n < 2.0) return 0.0;
+    double va = a->m2 / (a->n - 1.0);
+    double vb = b->m2 / (b->n - 1.0);
+    double den = va / a->n + vb / b->n;
+    if (den <= 0.0) return 0.0;
+    double diff = a->mean - b->mean;
+    return (diff * diff) / den;
+}
+
+/* t_threshold_bananas^2 = 500^2 = 250000 — overwhelming evidence of leak */
+#define DUDECT_T2_BANANAS (250000.0)
+/* Minimum measurements before drawing any conclusion */
+#define DUDECT_MIN_MEAS 500
+
+typedef struct { size_t chunk_size; size_t number_measurements; } dudect_test_config_t;
+
+/*
+ * Run a dudect-style timing test.
+ *   prepare_fn  — fills input_data + classes (0 = baseline, 1 = variant)
+ *   compute_fn  — the operation under test
+ *   chunk_size  — bytes per input sample
+ *   n_meas      — measurements per round
+ *   rounds      — number of measure-then-analyse rounds
+ *
+ * Returns 1 if no obvious leak detected, 0 if timing leak found.
+ */
+static int dudect_quick_test(
+    void (*prepare_fn)(dudect_test_config_t *, uint8_t *, uint8_t *),
+    uint8_t (*compute_fn)(uint8_t *),
+    size_t chunk_size,
+    size_t n_meas,
+    int rounds)
+{
+    int64_t *ticks      = (int64_t *)calloc(n_meas, sizeof(int64_t));
+    int64_t *exec_times = (int64_t *)calloc(n_meas, sizeof(int64_t));
+    uint8_t *input_data = (uint8_t *)calloc(n_meas * chunk_size, 1);
+    uint8_t *classes    = (uint8_t *)calloc(n_meas, 1);
+
+    dudect_test_config_t conf = { .chunk_size = chunk_size, .number_measurements = n_meas };
+    dudect_accum_t class0 = {0}, class1 = {0};
+    int leak = 0;
+
+    for (int r = 0; r < rounds && !leak; r++) {
+        prepare_fn(&conf, input_data, classes);
+
+        /* Measure: time each computation via rdtsc */
+        _mm_mfence();
+        for (size_t i = 0; i < n_meas; i++) {
+            _mm_mfence();
+            ticks[i] = (int64_t)__rdtsc();
+            compute_fn(input_data + i * chunk_size);
+        }
+        _mm_mfence();
+        int64_t final_tick = (int64_t)__rdtsc();
+
+        /* Compute per-sample execution times */
+        for (size_t i = 0; i < n_meas - 1; i++)
+            exec_times[i] = ticks[i + 1] - ticks[i];
+        exec_times[n_meas - 1] = final_tick - ticks[n_meas - 1];
+
+        /* Skip first 10 (warm-up), accumulate into two classes */
+        for (size_t i = 10; i < n_meas; i++) {
+            if (exec_times[i] < 0) continue;       /* rdtsc overflow */
+            double t = (double)exec_times[i];
+            if (classes[i] == 0) dudect_accum_push(&class0, t);
+            else                 dudect_accum_push(&class1, t);
+        }
+
+        /* Check after accumulating enough */
+        if (class0.n >= DUDECT_MIN_MEAS && class1.n >= DUDECT_MIN_MEAS) {
+            double t2 = dudect_t_squared(&class0, &class1);
+            if (t2 > DUDECT_T2_BANANAS) leak = 1;
+        }
+    }
+
+    double total = class0.n + class1.n;
+    double t2 = dudect_t_squared(&class0, &class1);
+    printf("  meas: %.0f, t^2: %.2f (threshold: %.0f)\n", total, t2, DUDECT_T2_BANANAS);
+
+    free(ticks);
+    free(exec_times);
+    free(input_data);
+    free(classes);
+    return !leak;
+}
+
+/* ---------- ct_compare dudect harness ---------- */
+/* chunk layout: 32 bytes (a) + 32 bytes (b) = 64 bytes */
+
+static void ct_cmp_prepare(dudect_test_config_t *c, uint8_t *input_data, uint8_t *classes) {
+    for (size_t i = 0; i < c->number_measurements; i++) {
+        uint8_t *ptr = input_data + i * c->chunk_size;
+        uint8_t rb; fill_random(&rb, 1); classes[i] = rb & 1;
+        fill_random(ptr, 32);                /* a = random */
+        if (classes[i] == 0) {
+            memcpy(ptr + 32, ptr, 32);       /* b = a (identical) */
+        } else {
+            fill_random(ptr + 32, 32);       /* b = different random */
+        }
+    }
+}
+
+static uint8_t ct_cmp_compute(uint8_t *data) {
+    return (uint8_t)ct_compare(data, data + 32, 32);
+}
+
+static void test_dudect_ct_compare(void) {
+    printf("\n=== dudect: ct_compare timing ===\n");
+    int ok = dudect_quick_test(ct_cmp_prepare, ct_cmp_compute,
+                               64, 1000, 5);
+    TEST("ct_compare: no obvious timing leak (dudect)", ok);
+}
+
+/* ---------- is_zero32 dudect harness ---------- */
+/* chunk layout: 32 bytes */
+
+static void is_zero_prepare(dudect_test_config_t *c, uint8_t *input_data, uint8_t *classes) {
+    for (size_t i = 0; i < c->number_measurements; i++) {
+        uint8_t *ptr = input_data + i * c->chunk_size;
+        uint8_t rb; fill_random(&rb, 1); classes[i] = rb & 1;
+        if (classes[i] == 0) {
+            memset(ptr, 0, 32);              /* all-zero buffer */
+        } else {
+            fill_random(ptr, 32);            /* non-zero buffer */
+            ptr[0] |= 0x01;                 /* guarantee non-zero */
+        }
+    }
+}
+
+static uint8_t is_zero_compute(uint8_t *data) {
+    return (uint8_t)is_zero32(data);
+}
+
+static void test_dudect_is_zero32(void) {
+    printf("\n=== dudect: is_zero32 timing ===\n");
+    int ok = dudect_quick_test(is_zero_prepare, is_zero_compute,
+                               32, 1000, 5);
+    TEST("is_zero32: no obvious timing leak (dudect)", ok);
+}
+
+#endif /* __x86_64__ || __i386__ */
+
 /* ---- test: fingerprint verification in TCP handshake -------------------- */
 
 typedef struct {
@@ -5662,6 +5832,10 @@ int main(void) {
     test_frame_open_ratchet_dh_fatal();
     test_mac_failure_exact_boundary();
     test_cover_ratchet_interleave();
+#if defined(__x86_64__) || defined(__i386__)
+    test_dudect_ct_compare();
+    test_dudect_is_zero32();
+#endif
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);

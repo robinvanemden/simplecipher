@@ -377,8 +377,8 @@ jobs:
           HOST_KEY: ${{ secrets.FREEBSD_HOST_KEY }}
         run: |
           if [ -z "$SSH_KEY" ] || [ -z "$HOST" ] || [ -z "$HOST_KEY" ]; then
-            echo "SKIP: FREEBSD_SSH_KEY or FREEBSD_HOST or FREEBSD_HOST_KEY not set"
-            exit 0
+            echo "FAIL: release requires bare-metal verification — configure SSH_KEY, HOST, and HOST_KEY secrets"
+            exit 1
           fi
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/freebsd_key
@@ -414,8 +414,8 @@ jobs:
           HOST_KEY: ${{ secrets.OPENBSD_HOST_KEY }}
         run: |
           if [ -z "$SSH_KEY" ] || [ -z "$HOST" ] || [ -z "$HOST_KEY" ]; then
-            echo "SKIP: OPENBSD_SSH_KEY or OPENBSD_HOST or OPENBSD_HOST_KEY not set"
-            exit 0
+            echo "FAIL: release requires bare-metal verification — configure SSH_KEY, HOST, and HOST_KEY secrets"
+            exit 1
           fi
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/openbsd_key
@@ -451,8 +451,8 @@ jobs:
           HOST_KEY: ${{ secrets.ARM64_HOST_KEY }}
         run: |
           if [ -z "$SSH_KEY" ] || [ -z "$HOST" ] || [ -z "$HOST_KEY" ]; then
-            echo "SKIP: ARM64_SSH_KEY or ARM64_HOST or ARM64_HOST_KEY not set"
-            exit 0
+            echo "FAIL: release requires bare-metal verification — configure SSH_KEY, HOST, and HOST_KEY secrets"
+            exit 1
           fi
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/arm64_key
@@ -474,6 +474,12 @@ jobs:
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
             ./tests/test_socks5_proxy
+            echo '=== Valgrind memory check (SOCKS5) ==='
+            valgrind --leak-check=full --error-exitcode=42 ./tests/test_socks5_proxy
+            echo '=== Valgrind memory check (core) ==='
+            timeout 300 valgrind --error-exitcode=42 ./tests/test_p2p
+            echo '=== Real Tor SOCKS5 test ==='
+            bash tests/test_arm64_tor.sh
           "
           rm -f ~/.ssh/arm64_key
 

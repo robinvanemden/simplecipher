@@ -63,6 +63,17 @@
 #    include <io.h> /* _read — bypass libc FILE* buffer for SAS input */
 #endif
 
+/* Exit codes — distinct values let scripts distinguish failure types. */
+enum {
+    EXIT_OK        = 0,
+    EXIT_USAGE     = 1, /* bad arguments or --help */
+    EXIT_NET       = 2, /* connection/listen failed */
+    EXIT_HANDSHAKE = 3, /* handshake or commitment failed */
+    EXIT_MITM      = 4, /* fingerprint mismatch or SAS mismatch */
+    EXIT_SANDBOX   = 5, /* sandbox installation failed */
+    EXIT_INTERNAL  = 6, /* platform init, key agreement, etc. */
+};
+
 /* g_fd and g_sess are file-scope statics, passed as parameters to the
  * event loops.  They are static here so the cleanup code at the bottom
  * of main() can always reach them. */
@@ -116,9 +127,13 @@ static void usage(const char *prog) {
             "  Hardening (active in this build):\n"
             "    Memory locked, core dumps disabled, ptrace blocked.\n"
 #endif
+            "\n"
+            "  Exit codes:\n"
+            "    0  success      1  usage error    2  connection failed\n"
+            "    3  handshake    4  MITM detected  5  sandbox failed\n"
             "\n",
             prog, prog);
-    exit(1);
+    exit(EXIT_USAGE);
 }
 
 /* Program entry point.
@@ -135,7 +150,7 @@ int main(int argc, char *argv[]) {
     uint8_t     sas_key[KEY];        /* SAS = Short Authentication String */
     char        sas[20];             /* formatted as "XXXX-XXXX" (32 bits, human-verifiable) */
     char        typed_sas[16] = {0}; /* user types the full SAS code to confirm */
-    int         rc            = 1;
+    int         rc            = EXIT_INTERNAL;
     /* Windows console handle (h_in) and Winsock event (net_ev) are now
      * managed internally by cli_chat_loop() and tui_chat_loop(). */
 
@@ -171,12 +186,12 @@ int main(int argc, char *argv[]) {
                 const char *colon = strrchr(arg, ':');
                 if (!colon || colon == arg || !colon[1]) {
                     fprintf(stderr, "  --socks5 requires host:port format\n");
-                    return 1;
+                    return EXIT_USAGE;
                 }
                 size_t hlen = (size_t)(colon - arg);
                 if (hlen >= sizeof s5host) {
                     fprintf(stderr, "  socks5 host too long\n");
-                    return 1;
+                    return EXIT_USAGE;
                 }
                 memcpy(s5host, arg, hlen);
                 s5host[hlen] = '\0';
@@ -185,7 +200,7 @@ int main(int argc, char *argv[]) {
                 socks5_port = s5port;
                 if (!validate_port(s5port)) {
                     fprintf(stderr, "  --socks5 port invalid: %s\n", s5port);
-                    return 1;
+                    return EXIT_USAGE;
                 }
             } else if (strcmp(argv[i], "--peer-fingerprint") == 0 && i + 1 < argc) {
                 peer_fp_expected = argv[++i];
@@ -207,7 +222,7 @@ int main(int argc, char *argv[]) {
                * any key material exists.  Closes the pre-harden ptrace window. */
     if (plat_init() != 0) {
         fprintf(stderr, "platform init failed\n");
-        return 1;
+        return EXIT_INTERNAL;
     }
 
     /* Install signal handlers.
@@ -284,7 +299,7 @@ int main(int argc, char *argv[]) {
 #endif
             if (rn <= 0 || prompt_host[0] == '\n') {
                 fprintf(stderr, "  No host provided.\n");
-                return 1;
+                return EXIT_USAGE;
             }
             prompt_host[rn] = '\0';
             /* Drain leftover bytes if input was truncated (no newline in buffer).
@@ -311,7 +326,7 @@ int main(int argc, char *argv[]) {
         }
         if (!prompt_host[0]) {
             fprintf(stderr, "  No host provided.\n");
-            return 1;
+            return EXIT_USAGE;
         }
         host = prompt_host;
 
@@ -344,6 +359,7 @@ int main(int argc, char *argv[]) {
         host = argv[2];
         if (!host[0]) {
             fprintf(stderr, "  Host cannot be empty.\n");
+            rc = EXIT_USAGE;
             goto out;
         }
         if (argc >= 4) port = argv[3];
@@ -352,6 +368,7 @@ int main(int argc, char *argv[]) {
     }
     if (!validate_port(port)) {
         fprintf(stderr, "invalid port: %s\n", port);
+        rc = EXIT_USAGE;
         goto out;
     }
 
@@ -429,6 +446,7 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "\n  Direct connect requires a numeric IP address, not a hostname.\n"
                                 "  Hostnames cause DNS lookups that leak your destination.\n"
                                 "  Use --socks5 for hostnames (e.g. .onion addresses).\n");
+                rc = EXIT_USAGE;
                 goto out;
             }
             g_fd = connect_socket_numeric(host, port);
@@ -438,6 +456,7 @@ int main(int argc, char *argv[]) {
                     "\n  Connection failed. Check the address and make sure\n"
                     "  the peer is listening on %s:%s.\n",
                     host, port);
+            rc = EXIT_NET;
             goto out;
         }
         if (!tui_mode) printf(" ok\n");
@@ -462,6 +481,7 @@ int main(int argc, char *argv[]) {
         if (g_fd == INVALID_SOCK) {
             if (tui_mode) tui_status_screen("Connection failed", "");
             else fprintf(stderr, "\n  Listen failed. Is port %s already in use?\n", port);
+            rc = EXIT_NET;
             goto out;
         }
         if (tui_mode) tui_status_screen("Peer connected", "Performing handshake...");
@@ -492,6 +512,7 @@ int main(int argc, char *argv[]) {
 
     if (sandbox_phase1((int)g_fd) != 0) {
         fprintf(stderr, "sandbox installation failed (--require-sandbox)\n");
+        rc = EXIT_SANDBOX;
         goto out;
     }
 
@@ -527,6 +548,7 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "handshake error (round 1: version + commitment)\n");
             crypto_wipe(out1, sizeof out1);
             crypto_wipe(in1, sizeof in1);
+            rc = EXIT_HANDSHAKE;
             goto out;
         }
         uint8_t peer_ver = in1[0];
@@ -536,11 +558,13 @@ int main(int argc, char *argv[]) {
 
         if (exchange(g_fd, we_init, self_pub, KEY, peer_pub, KEY) != 0) {
             fprintf(stderr, "handshake error (round 2: keys)\n");
+            rc = EXIT_HANDSHAKE;
             goto out;
         }
 
         if (peer_ver != PROTOCOL_VERSION) {
             fprintf(stderr, "version mismatch: we are v%d, peer is v%d\n", PROTOCOL_VERSION, (int)peer_ver);
+            rc = EXIT_HANDSHAKE;
             goto out;
         }
     }
@@ -552,6 +576,7 @@ int main(int argc, char *argv[]) {
 
     if (!verify_commit(commit_peer, peer_pub)) {
         fprintf(stderr, "[!] commitment mismatch -- possible MITM attack\n");
+        rc = EXIT_MITM;
         goto out;
     }
     crypto_wipe(commit_self, sizeof commit_self);
@@ -563,6 +588,7 @@ int main(int argc, char *argv[]) {
 
     if (session_init(&g_sess, we_init, self_priv, self_pub, peer_pub, sas_key) != 0) {
         fprintf(stderr, "key agreement failed (bad peer key)\n");
+        rc = EXIT_HANDSHAKE;
         goto out;
     }
     crypto_wipe(self_priv, sizeof self_priv); /* private key no longer needed */
@@ -606,6 +632,7 @@ int main(int argc, char *argv[]) {
                         "  Aborting -- possible MITM attack.\n",
                         peer_fp_expected, peer_fp);
                 crypto_wipe(peer_fp, sizeof peer_fp);
+                rc = EXIT_MITM;
                 goto out;
             }
             if (!tui_mode) printf("  Peer fingerprint verified: %s\n", peer_fp);
@@ -636,11 +663,13 @@ int main(int argc, char *argv[]) {
         if (!sas_ok) {
             printf("\033[2J\033[H");
             printf("Aborted.\n");
+            rc = EXIT_MITM;
             goto out;
         }
 
         if (sandbox_phase2((int)g_fd) != 0) { /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
             fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
+            rc = EXIT_SANDBOX;
             goto out;
         }
         tui_chat_loop(g_fd, &g_sess, cover_traffic);
@@ -686,6 +715,7 @@ int main(int argc, char *argv[]) {
 #endif
             if (rn <= 0) {
                 printf("Aborted.\n");
+                rc = EXIT_MITM;
                 goto out;
             }
             typed_sas[rn] = '\0';
@@ -734,6 +764,7 @@ int main(int argc, char *argv[]) {
             crypto_wipe(ns, sizeof ns);
             if (mismatch) {
                 printf("\n  Code mismatch -- aborted.\n");
+                rc = EXIT_MITM;
                 goto out;
             }
         }
@@ -760,6 +791,7 @@ int main(int argc, char *argv[]) {
 
         if (sandbox_phase2((int)g_fd) != 0) { /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
             fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
+            rc = EXIT_SANDBOX;
             goto out;
         }
         cli_chat_loop(g_fd, &g_sess, cover_traffic);
@@ -769,7 +801,7 @@ int main(int argc, char *argv[]) {
     sock_shutdown_both(g_fd);
     close_sock(g_fd);
     g_fd = INVALID_SOCK;
-    rc   = 0;
+    rc   = EXIT_OK;
 
 out:
     /* Always reached.  Wiping uninitialised or already-zero variables is safe. */
@@ -799,7 +831,7 @@ out:
     /* Tell the user the session is gone.  This is the last thing they see.
      * Factual, not overstated: keys are wiped, nothing was written to disk,
      * but OS-level traces (swap, scrollback) are outside our control. */
-    if (rc == 0) printf("\n  Session ended. Keys wiped. Nothing was stored to disk.\n\n");
+    if (rc == EXIT_OK) printf("\n  Session ended. Keys wiped. Nothing was stored to disk.\n\n");
 
     plat_quit();
     return rc;
