@@ -259,6 +259,7 @@ int main(int argc, char *argv[]) {
         sigaction(SIGTERM, &sa, nullptr);
         sigaction(SIGHUP, &sa, nullptr);  /* terminal closed / SSH dropped */
         sigaction(SIGQUIT, &sa, nullptr); /* Ctrl+\ -- suppress core dump with keys */
+        sigaction(SIGALRM, &sa, nullptr); /* SAS verification timeout (alarm) */
         sa.sa_handler = SIG_IGN;
         sigaction(SIGPIPE, &sa, nullptr); /* handle dropped peers via write errors */
     }
