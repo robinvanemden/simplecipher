@@ -512,7 +512,9 @@ static void *session_thread(void *arg) {
          * When nativeStop() closes the pipe write end, select() marks
          * pipe_rd readable; read() then returns EOF.  nativeStop() also
          * closes g_listen_sock, making select() return on srv too. */
-        g_listen_sock = srv;
+        /* Publish only if our generation still matches — a stale thread
+         * must not overwrite a newer session's listen socket. */
+        if (g_session_gen == my_gen) g_listen_sock = srv;
         while (fd == INVALID_SOCK) {
             fd_set rfds;
             FD_ZERO(&rfds);
@@ -905,7 +907,7 @@ static void *session_thread(void *arg) {
                         continue;
                     }
 
-                    if (write_exact(fd, frame, FRAME_SZ) != 0) {
+                    if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                         LOGE("write_exact failed");
                         crypto_wipe(frame, sizeof frame);
                         crypto_wipe(next_tx, sizeof next_tx);
@@ -953,7 +955,7 @@ static void *session_thread(void *arg) {
                     jni_call_str(env, cb, mid_onDisconnected, "Internal error", "cover_build");
                     break;
                 }
-                if (write_exact(fd, frame, FRAME_SZ) != 0) {
+                if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(next_tx, sizeof next_tx);
                     jni_call_str(env, cb, mid_onDisconnected, "Connection lost", "cover_send");

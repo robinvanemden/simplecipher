@@ -5,7 +5,7 @@
 ## Security notes
 
 - **Keys are ephemeral.** If your device is seized after a session, past messages cannot be decrypted because the private key is already gone.
-- **The handshake has a 30-second deadline.** Handshake exchanges and SOCKS5 negotiation use deadline-aware I/O that tightens SO_RCVTIMEO/SO_SNDTIMEO to the remaining time before each syscall, bounding total wall-clock time. A single blocking recv/send can overshoot by up to 1 second (the minimum socket timeout granularity). A peer or proxy that stalls is disconnected.
+- **Deadline-aware I/O.** Handshake exchanges, SOCKS5 negotiation, and chat-phase frame reads/writes all use deadline-aware I/O that checks a monotonic clock between syscalls. SO_RCVTIMEO/SO_SNDTIMEO is set *before* the sandbox and never modified after — the deadline functions do not call setsockopt (which is blocked by seccomp phase 2). Maximum overshoot past a deadline is one SO_RCVTIMEO period (~30 seconds for chat frames, ~5 seconds for SOCKS5).
 - **Runtime hardening** is enabled in all release builds (`-DCIPHER_HARDEN`). If seccomp or Capsicum sandbox installation fails at runtime, a warning is printed to stderr (the session continues without that layer). Use `--require-sandbox` to make sandbox failure fatal.
 
 ## Platform hardening

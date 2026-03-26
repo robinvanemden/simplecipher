@@ -200,7 +200,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                     crypto_wipe(next_tx, sizeof next_tx);
                     break;
                 }
-                if (write_exact(fd, frame, FRAME_SZ) != 0) {
+                if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                     tui_msg_add(TUI_SYSTEM, "[send error]");
                     tui_draw_messages();
                     crypto_wipe(line, sizeof line);
@@ -234,7 +234,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
         /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
         if (cover && g_running && monotonic_ms() >= next_cover) {
             if (frame_build(sess, NULL, 0, frame, next_tx) != 0) break;
-            if (write_exact(fd, frame, FRAME_SZ) != 0) break;
+            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) break;
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
             crypto_wipe(frame, sizeof frame);
