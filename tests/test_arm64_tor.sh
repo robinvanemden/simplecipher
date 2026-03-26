@@ -46,13 +46,18 @@ if ss -tln | grep -q ':9050'; then
     CONNECT_PID=$!
     sleep 10
 
-    # Check for SOCKS5-specific output proving negotiation happened
+    # Check for SOCKS5-specific output proving negotiation happened.
+    # NOTE: this is a non-crash / SOCKS5-exercised test, not a positive
+    # Tor-success assertion.  Tor cannot route loopback traffic, so the
+    # best we can prove is that the SOCKS5 code path ran without crashing
+    # and produced SOCKS5-related output.  A true Tor-success test would
+    # require a reachable .onion endpoint.
     if kill -0 $CONNECT_PID 2>/dev/null; then
-        # Still running — check if SOCKS5 negotiation started
+        # Still running — require SOCKS5 evidence to pass
         if grep -qi "SOCKS5\|Connecting.*9050\|proxy" "$CONNECT_LOG"; then
             pass "Tor SOCKS5 connect: SOCKS5 negotiation in progress"
         else
-            pass "Tor SOCKS5 connect: process alive (awaiting SOCKS5)"
+            fail "Tor SOCKS5 connect: process alive but no SOCKS5 evidence in stderr"
         fi
     else
         wait $CONNECT_PID 2>/dev/null
@@ -90,8 +95,8 @@ if command -v valgrind &>/dev/null && [ -x "$TEST_SOCKS5" ]; then
         fail "Valgrind: memory errors detected"
         echo "$VALGRIND_OUT" | grep -A3 "ERROR SUMMARY"
     else
-        # Test itself failed (not valgrind)
-        pass "Valgrind: ran (test exit $VG_RC, not a memory error)"
+        # Test itself failed (not a valgrind memory error, but still a failure)
+        fail "Valgrind: test exited $VG_RC (test failure, not memory error)"
     fi
 
     # Check for leaks
@@ -124,7 +129,7 @@ if command -v valgrind &>/dev/null && [ -x "$TEST_P2P" ]; then
         fail "Valgrind: memory errors in core test suite"
         echo "$VALGRIND_OUT" | grep -A3 "ERROR SUMMARY"
     else
-        pass "Valgrind: core tests completed (exit $VG_RC)"
+        fail "Valgrind: core tests exited $VG_RC (test failure, not memory error)"
     fi
 else
     echo "  SKIP: valgrind or test binary not available"
