@@ -35,8 +35,8 @@ static void tui_sigwinch(int sig) {
  * Also re-enables the cursor and resets text colours so the user's shell
  * is not left with invisible text or dim colours after exit. */
 void tui_restore_term(void) {
-    printf("\033[?25h"); /* show cursor */
-    printf("\033[0 q");  /* restore default cursor shape */
+    printf("\033[?25h");   /* show cursor */
+    printf("\033[0 q");    /* restore default cursor shape */
     printf("\033[0m");     /* reset colors */
     printf("\033[?1049l"); /* leave alternate screen buffer — erases all
                            * chat content and restores the original screen */
