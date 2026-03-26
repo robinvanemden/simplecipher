@@ -113,8 +113,9 @@ SimpleCipher encrypts your messages, but your IP address is still visible to the
 **If you need anonymity** — not just encryption — use Tor:
 
 ```bash
-# Connecting through Tor (easy — just wrap with --socks5):
-simplecipher connect --socks5 127.0.0.1:9050 <onion-address>
+# Connecting through Tor (interactive — keeps .onion address out of shell history):
+simplecipher connect --socks5 127.0.0.1:9050
+#   Host: <paste .onion address>
 
 # Listening as a Tor onion service:
 # 0. Install Tor:  sudo apt install tor
@@ -143,15 +144,17 @@ simplecipher --tui listen
 simplecipher --tui connect 100.x.y.z
 
 # Connect through a SOCKS5 proxy (e.g. Tor on 127.0.0.1:9050)
-simplecipher connect --socks5 127.0.0.1:9050 <onion-address>
+simplecipher connect --socks5 127.0.0.1:9050
+#   Host: <onion-address>
 
-# Interactive mode: omit host to avoid leaking it to shell history
+# Interactive mode (default) — host stays out of shell history and argv
 simplecipher connect
 #   Host: 100.70.179.3
 #   Port [7777]:
 
-# Verify peer identity with a pre-shared fingerprint
-simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678 100.x.y.z
+# Verify peer identity with a pre-shared fingerprint (interactive)
+simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678
+#   Host: 100.x.y.z
 ```
 
 TUI mode works on Linux, macOS, and Windows 10+. No dependencies — pure ANSI escape sequences.
@@ -184,7 +187,7 @@ Type the full code to confirm:
 
 | Method | Why |
 |--------|-----|
-| **Paper with fingerprint** (best) | Exchange `--peer-fingerprint` codes on paper when you meet. Paper can't be hacked — no network, no device, no interception. Verify automatically on every future session. |
+| **Paper with fingerprint** (best) | Exchange `--peer-fingerprint` codes on paper when you meet. Paper can't be hacked — no network, no device, no interception. **Note:** fingerprints are ephemeral — they change every session. Exchange new ones each time you meet. |
 | **Video call** | You see and hear the person — very hard to fake in real time |
 | **Voice call** | You recognize their voice — good if you know them well |
 | **Pre-shared fingerprint via Signal/secure chat** | Shared digitally in advance — only as secure as that channel |
@@ -286,8 +289,7 @@ SHA256 checksums are also provided in `SHA256SUMS.txt` (and signed) for quick in
 ### Maintainer signatures (optional second layer)
 
 CI signatures prove the artifact came from this repository's workflow.
-Maintainer signatures prove the release was reviewed by a project maintainer.
-Both together defend against a compromised CI pipeline.
+Maintainer signatures add a second check — but only if the maintainer independently verifies or rebuilds the artifacts before signing. The provided `scripts/sign-release.sh` downloads CI artifacts and signs them in place; by itself, that does not defeat a compromised workflow. For stronger assurance, the maintainer should rebuild from source and compare checksums before signing.
 
 When available, `.minisig` files are attached to the release:
 

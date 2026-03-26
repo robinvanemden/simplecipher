@@ -296,11 +296,20 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
 }
 
 /* Connect through a SOCKS5 proxy.  See socks5_build_request and
- * socks5_reply_skip above for the pure logic; this function handles I/O. */
+ * socks5_reply_skip above for the pure logic; this function handles I/O.
+ *
+ * A 30-second timeout is applied during the SOCKS5 handshake and removed
+ * before returning the connected socket.  Without this, a broken or
+ * malicious proxy can wedge the caller indefinitely — read_exact and
+ * write_exact retry EINTR, so there is no other interrupt path. */
 [[nodiscard]] socket_t connect_socket_socks5(const char *proxy_host, const char *proxy_port, const char *target_host,
                                              const char *target_port) {
     socket_t fd = connect_socket(proxy_host, proxy_port);
     if (fd == INVALID_SOCK) return INVALID_SOCK;
+
+    /* Temporary timeout so a stuck proxy doesn't block forever.
+     * 30 seconds matches the handshake timeout in protocol.h. */
+    set_sock_timeout(fd, 30);
 
     /* Phase 1: SOCKS5 greeting — offer "no authentication" (method 0x00). */
     uint8_t greeting[3] = {0x05, 0x01, 0x00};
@@ -359,6 +368,8 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
         return INVALID_SOCK;
     }
 
+    /* Clear the temporary timeout — the caller sets its own. */
+    set_sock_timeout(fd, 0);
     return fd;
 }
 

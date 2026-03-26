@@ -32,7 +32,8 @@
  *   through the thread_arg_t struct (globals wiped before thread spawn).
  *   After the key exchange, the peer's public key is hashed and compared
  *   against the expected fingerprint using ct_compare() (constant-time).
- *   On match, onPeerFingerprintReady(fp, true) fires and SAS is skipped.
+ *   On match, onPeerFingerprintReady(fp, true) fires.  The SAS screen is
+ *   still shown for confirmation (defence in depth).
  *   On mismatch, onHandshakeFailed() fires and the connection is torn down.
  *
  * Command protocol (pipe):
@@ -740,6 +741,12 @@ static void *session_thread(void *arg) {
      * arriving but never completes.  Idle sessions are fine. */
     set_sock_timeout(fd, FRAME_TIMEOUT_S);
 
+    /* Cover traffic: when connecting through SOCKS5 (Tor), send encrypted
+     * dummy frames at random intervals to defeat timing correlation.
+     * Same mechanism as the desktop --socks5 / --cover-traffic flag. */
+    int      cover      = (socks5_host != NULL);
+    uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
+
     {
         struct pollfd fds[2];
         fds[0].fd     = (int)fd;
@@ -750,7 +757,13 @@ static void *session_thread(void *arg) {
         int running    = 1;
         int auth_fails = 0;
         while (running) {
-            int ret = poll(fds, 2, -1);  /* block until activity */
+            int timeout_ms = 250;
+            if (cover) {
+                int64_t remain = (int64_t)(next_cover - monotonic_ms());
+                if (remain <= 0) timeout_ms = 0;
+                else if (remain < timeout_ms) timeout_ms = (int)remain;
+            }
+            int ret = poll(fds, 2, timeout_ms);
             if (ret < 0) {
                 if (errno == EINTR) continue;
                 LOGE("poll error: %s", strerror(errno));
@@ -789,22 +802,24 @@ static void *session_thread(void *arg) {
                 }
                 auth_fails = 0;
 
-                plain[plen] = '\0';
-                sanitize_peer_text(plain, plen);
+                if (plen > 0) { /* len==0 is a cover-traffic dummy — silently discard */
+                    plain[plen] = '\0';
+                    sanitize_peer_text(plain, plen);
 
-                jstring text = (*env)->NewStringUTF(env, (char *)plain);
-                if (!text) {
-                    LOGE("NewStringUTF(message) failed");
-                    crypto_wipe(frame, sizeof frame);
-                    crypto_wipe(plain, sizeof plain);
-                    break;
-                }
-                (*env)->CallVoidMethod(env, cb, mid_onMessageReceived, text);
-                (*env)->DeleteLocalRef(env, text);
-                if (jni_callback_ok(env) != 0) {
-                    crypto_wipe(frame, sizeof frame);
-                    crypto_wipe(plain, sizeof plain);
-                    break;
+                    jstring text = (*env)->NewStringUTF(env, (char *)plain);
+                    if (!text) {
+                        LOGE("NewStringUTF(message) failed");
+                        crypto_wipe(frame, sizeof frame);
+                        crypto_wipe(plain, sizeof plain);
+                        break;
+                    }
+                    (*env)->CallVoidMethod(env, cb, mid_onMessageReceived, text);
+                    (*env)->DeleteLocalRef(env, text);
+                    if (jni_callback_ok(env) != 0) {
+                        crypto_wipe(frame, sizeof frame);
+                        crypto_wipe(plain, sizeof plain);
+                        break;
+                    }
                 }
 
                 crypto_wipe(frame, sizeof frame);
@@ -892,6 +907,7 @@ static void *session_thread(void *arg) {
                     /* Commit chain advance after successful send */
                     memcpy(sess.tx, next_tx, KEY);
                     sess.tx_seq++;
+                    if (cover) next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
 
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(next_tx, sizeof next_tx);
@@ -909,6 +925,26 @@ static void *session_thread(void *arg) {
                         plen -= (uint16_t)chunk;
                     }
                 }
+            }
+
+            /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+            if (cover && running && monotonic_ms() >= next_cover) {
+                uint8_t frame[FRAME_SZ], next_tx[KEY];
+                if (frame_build(&sess, NULL, 0, frame, next_tx) != 0) {
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(next_tx, sizeof next_tx);
+                    break;
+                }
+                if (write_exact(fd, frame, FRAME_SZ) != 0) {
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(next_tx, sizeof next_tx);
+                    break;
+                }
+                memcpy(sess.tx, next_tx, KEY);
+                sess.tx_seq++;
+                crypto_wipe(frame, sizeof frame);
+                crypto_wipe(next_tx, sizeof next_tx);
+                next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
             }
         }
     }

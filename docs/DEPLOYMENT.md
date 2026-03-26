@@ -76,7 +76,7 @@ simplecipher listen
 simplecipher connect --peer-fingerprint XXXX-XXXX-XXXX-XXXX <address>
 ```
 
-If the fingerprint matches, the connection proceeds without a safety code prompt. If it doesn't match, the connection is aborted — someone is intercepting.
+If the fingerprint matches, the connection proceeds to the safety code screen (defence in depth — both layers verify). If it doesn't match, the connection is aborted — someone is intercepting.
 
 **Important:** Fingerprints are [ephemeral](PROTOCOL.md#ephemeral). They change every session. A printed fingerprint works exactly once. Exchange new ones when you meet again, or fall back to the safety code (voice/video call) for sessions where you don't have a current fingerprint.
 
@@ -110,7 +110,7 @@ Even with the setup above, these risks remain:
 - **Physical observation** — someone looking at your screen sees the conversation. Position yourself accordingly.
 - **Endpoint compromise during the session** — if an attacker has code execution on your machine while SimpleCipher is running, they can read memory. `mlockall` + seccomp reduce the attack surface but cannot prevent a kernel-level compromise.
 - **The peer** — SimpleCipher protects the channel, not the endpoints. If your peer is compromised or is the adversary, encryption doesn't help.
-- **Metadata** — even with Tor, the timing and frequency of your connections may be observable. Tor hides IP addresses, not usage patterns. Desktop cover traffic (`--cover-traffic`) mitigates this; [Android does not yet have cover traffic](ANDROID.md#socks5--tor-support).
+- **Metadata** — even with Tor, the timing and frequency of your connections may be observable. Tor hides IP addresses, not usage patterns. Cover traffic (`--cover-traffic` on desktop, automatic with SOCKS5 on Android) mitigates timing correlation.
 - **Traffic fingerprinting** — the handshake (33 + 32 bytes each way) and uniform 512-byte frames are a distinctive pattern that deep packet inspection (DPI) can identify. Without Tor, a network observer can detect SimpleCipher usage from packet sizes alone. Tor wraps everything in TLS cells, hiding the pattern.
 - **Connection racing** — the listener accepts the first TCP connection unconditionally. A local attacker (or any host that can reach the port) could connect before the real peer. The [SAS](PROTOCOL.md#sas) verification catches this, but only if the user actually verifies carefully. On untrusted networks, always use Tor onion services instead of direct listen.
 - **Safety code verification call** — comparing the [SAS](PROTOCOL.md#sas) by phone creates a metadata trail: call records link two people at the exact time of the session. Use pre-shared paper fingerprints instead to eliminate this call entirely. If a call is unavoidable, use a burner phone or introduce a time gap between the handshake and the call.

@@ -92,7 +92,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 |-----|-----|------------------|
 | Android JVM memory hygiene | Java Strings can't be wiped deterministically | `ANDROID.md:What the app cannot guarantee` |
 | Android SOCKS5 is connect-mode only | Listen mode requires Tor onion service (root/daemon), not practical on Android | `ANDROID.md:SOCKS5 / Tor support` |
-| Android has no cover traffic | JNI event loop lacks the dummy-frame scheduler; Tor timing correlation is unmitigated on Android | `ANDROID.md:SOCKS5 / Tor support` |
+| Android cover traffic is connect-mode only | Listener mode has no SOCKS5, so no auto-enable; desktop uses `--cover-traffic` flag | `ANDROID.md:SOCKS5 / Tor support` |
 | Clipboard on API 28-29 | Background apps can read clipboard on older Android | `ANDROID.md:Security measures`, app warns user |
 | Terminal scrollback may retain messages | OS-level, outside app control | `PROTOCOL.md:What it does NOT provide` |
 | Syscall sandbox is Linux/FreeBSD/OpenBSD only | Seccomp (Linux), Capsicum (FreeBSD), pledge (OpenBSD). No equivalent on Windows/macOS | `HARDENING.md` platform table |
