@@ -535,8 +535,11 @@ static void *session_thread(void *arg) {
             if (FD_ISSET(pipe_rd, &rfds)) {
                 /* nativeStop() closed pipe (or CMD_QUIT fallback) — abort */
                 LOGI("quit received during listen");
-                socket_t old = atomic_exchange(&g_listen_sock, INVALID_SOCK);
-                if (old != INVALID_SOCK) close_sock(old);
+                {   /* CAS: only clear if OUR listener is still published */
+                    socket_t expected = srv;
+                    atomic_compare_exchange_strong(&g_listen_sock, &expected, INVALID_SOCK);
+                }
+                close_sock(srv);
                 jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_listen");
                 goto cleanup;
             }
@@ -545,8 +548,11 @@ static void *session_thread(void *arg) {
                 fd = accept(srv, NULL, NULL);
             }
         }
-        socket_t old = atomic_exchange(&g_listen_sock, INVALID_SOCK);
-        if (old != INVALID_SOCK) close_sock(old);
+        {   /* CAS: only clear if OUR listener is still published */
+            socket_t expected = srv;
+            atomic_compare_exchange_strong(&g_listen_sock, &expected, INVALID_SOCK);
+        }
+        close_sock(srv);
         we_init = 0;
     }
 
@@ -1411,7 +1417,7 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
         }
     }
 
-    (*env)->ReleaseByteArrayElements(env, payload, pbuf, JNI_ABORT);
+    if (payload) (*env)->ReleaseByteArrayElements(env, payload, pbuf, JNI_ABORT);
     return ok;
 }
 

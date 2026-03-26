@@ -206,6 +206,15 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                 break;
             }
 
+            /* Check outgoing frame deadline on EVERY iteration — if FD_WRITE
+             * stops firing (peer stops reading), the timeout check in the
+             * FD_WRITE handler alone would never run. */
+            if (out_active && (GetTickCount64() - out_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
+                win_print_status("[send timeout]", line, line_len);
+                loop_error = 1;
+                break;
+            }
+
             if (wr == WAIT_TIMEOUT) {
                 /* Cover traffic: send encrypted dummy frame on schedule. */
                 if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
