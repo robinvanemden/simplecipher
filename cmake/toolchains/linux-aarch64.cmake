@@ -22,6 +22,9 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
 # -fuse-ld=mold   mold linker
-# -static-pie      fully static PIE binary (ASLR)
+# -static          fully static binary
 # -s               strip all symbols
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=mold -static-pie -s")
+# NOTE: -static-pie would enable ASLR but requires rcrt1.o in the musl
+# sysroot (musl 1.2+).  Upgrade the toolchain and switch to -static-pie
+# when CI runners provide a musl build that includes rcrt1.o.
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=mold -static -s")

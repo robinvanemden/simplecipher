@@ -172,7 +172,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
         /* ----- Keyboard input (batch: read multiple bytes for paste) ----- */
         if (g_running && (fds[1].revents & POLLIN)) {
             unsigned char inbuf[256];
-            ssize_t sr = read(STDIN_FILENO, inbuf, sizeof inbuf);
+            ssize_t       sr = read(STDIN_FILENO, inbuf, sizeof inbuf);
             if (sr <= 0) continue;
 
             for (ssize_t bi = 0; bi < sr; bi++) {
@@ -183,8 +183,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                     break;
                 }
                 if (ch == 0x7F || ch == 0x08) {
-                    if (line_len > 0)
-                        line[--line_len] = '\0';
+                    if (line_len > 0) line[--line_len] = '\0';
                     continue;
                 }
                 if (ch == '\r' || ch == '\n') {

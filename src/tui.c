@@ -137,9 +137,9 @@ void tui_draw_status(const char *status) {
  * Colour-codes by sender: cyan for peer, yellow for system, default for self.
  * Unfilled rows below the last message are drawn as empty bordered lines. */
 void tui_draw_messages(void) {
-    int max_row   = tui_h - 2;
-    int total     = tui_msg_count < TUI_MSG_MAX ? tui_msg_count : TUI_MSG_MAX;
-    int max_text  = tui_w - 21;
+    int max_row  = tui_h - 2;
+    int total    = tui_msg_count < TUI_MSG_MAX ? tui_msg_count : TUI_MSG_MAX;
+    int max_text = tui_w - 21;
     int i;
 
     if (max_text < 1) max_text = 1;
@@ -208,19 +208,14 @@ void tui_draw_messages(void) {
             TUI_CLEAR_LINE();
 
             if (first) {
-                printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*.*s %s\xe2\x94\x82%s",
-                       TUI_COLOR_DIM, TUI_COLOR_RESET,
-                       tui_msgs[idx].ts, color, label, TUI_COLOR_RESET,
-                       max_text, chunk, text + offset,
-                       TUI_COLOR_DIM, TUI_COLOR_RESET);
+                printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET,
+                       tui_msgs[idx].ts, color, label, TUI_COLOR_RESET, max_text, chunk, text + offset, TUI_COLOR_DIM,
+                       TUI_COLOR_RESET);
                 first = 0;
             } else {
                 /* 18 = strlen(" [HH:MM:SS] label: ") — matches the prefix width */
-                printf("%s\xe2\x94\x82%s %*s%-*.*s %s\xe2\x94\x82%s",
-                       TUI_COLOR_DIM, TUI_COLOR_RESET,
-                       18, "",
-                       max_text, chunk, text + offset,
-                       TUI_COLOR_DIM, TUI_COLOR_RESET);
+                printf("%s\xe2\x94\x82%s %*s%-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET, 18, "", max_text,
+                       chunk, text + offset, TUI_COLOR_DIM, TUI_COLOR_RESET);
             }
             offset += chunk;
             row++;
@@ -229,11 +224,8 @@ void tui_draw_messages(void) {
         if (text_len == 0 && first) {
             TUI_GOTO(row, 1);
             TUI_CLEAR_LINE();
-            printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*s %s\xe2\x94\x82%s",
-                   TUI_COLOR_DIM, TUI_COLOR_RESET,
-                   tui_msgs[idx].ts, color, label, TUI_COLOR_RESET,
-                   max_text, "",
-                   TUI_COLOR_DIM, TUI_COLOR_RESET);
+            printf("%s\xe2\x94\x82%s [%s] %s%s%s: %-*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET,
+                   tui_msgs[idx].ts, color, label, TUI_COLOR_RESET, max_text, "", TUI_COLOR_DIM, TUI_COLOR_RESET);
             row++;
         }
     }
