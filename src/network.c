@@ -50,6 +50,8 @@ void set_sock_opts(socket_t fd) {
 
 /* Read exactly n bytes from fd into buf, looping on partial reads.
  * TCP is a stream: a single recv() may return fewer bytes than asked for.
+ * On POSIX, EINTR is retried UNLESS g_running is 0 (signal handler set it),
+ * so Ctrl+C / SIGHUP break out promptly even mid-frame.
  * Returns 0 when all n bytes are in buf, -1 on error or peer close. */
 [[nodiscard]] int read_exact(socket_t fd, void *buf, size_t n) {
     size_t done = 0;
@@ -60,7 +62,10 @@ void set_sock_opts(socket_t fd) {
 #else
         ssize_t r = recv(fd, (char *)buf + done, n - done, 0);
         if (r < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR) {
+                if (!g_running) return -1; /* signal requested shutdown */
+                continue;
+            }
             return -1;
         }
         if (r == 0) return -1;
@@ -71,7 +76,8 @@ void set_sock_opts(socket_t fd) {
 }
 
 /* Write exactly n bytes from buf to fd, looping on partial writes.
- * MSG_NOSIGNAL suppresses SIGPIPE on Linux when the peer closes. */
+ * MSG_NOSIGNAL suppresses SIGPIPE on Linux when the peer closes.
+ * EINTR check respects g_running — see read_exact above. */
 [[nodiscard]] int write_exact(socket_t fd, const void *buf, size_t n) {
     size_t done = 0;
     while (done < n) {
@@ -81,7 +87,10 @@ void set_sock_opts(socket_t fd) {
 #else
         ssize_t r = send(fd, (const char *)buf + done, n - done, MSG_NOSIGNAL);
         if (r < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR) {
+                if (!g_running) return -1;
+                continue;
+            }
             return -1;
         }
         if (r == 0) return -1;
@@ -112,7 +121,10 @@ void set_sock_opts(socket_t fd) {
 #else
         ssize_t r = recv(fd, (char *)buf + done, n - done, 0);
         if (r < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR) {
+                if (!g_running) return -1;
+                continue;
+            }
             return -1;
         }
         if (r == 0) return -1;
@@ -139,7 +151,10 @@ void set_sock_opts(socket_t fd) {
 #else
         ssize_t r = send(fd, (const char *)buf + done, n - done, MSG_NOSIGNAL);
         if (r < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR) {
+                if (!g_running) return -1;
+                continue;
+            }
             return -1;
         }
         if (r == 0) return -1;

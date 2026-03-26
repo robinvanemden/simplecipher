@@ -588,8 +588,14 @@ int sandbox_phase1(int sock_fd) {
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
     (void)sock_fd;
-    if (unveil(NULL, NULL) != 0 && g_require_sandbox) failed = 1;
-    if (pledge("stdio", NULL) != 0 && g_require_sandbox) failed = 1;
+    if (unveil(NULL, NULL) != 0) {
+        fprintf(stderr, "warning: OpenBSD unveil() failed\n");
+        if (g_require_sandbox) failed = 1;
+    }
+    if (pledge("stdio", NULL) != 0) {
+        fprintf(stderr, "warning: OpenBSD pledge() failed\n");
+        if (g_require_sandbox) failed = 1;
+    }
 #    endif
 #    if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
     (void)sock_fd;
@@ -612,7 +618,10 @@ int sandbox_phase2(int sock_fd) {
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
     (void)sock_fd;
-    if (pledge("stdio", NULL) != 0 && g_require_sandbox) failed = 1;
+    if (pledge("stdio", NULL) != 0) {
+        fprintf(stderr, "warning: OpenBSD pledge() phase2 failed\n");
+        if (g_require_sandbox) failed = 1;
+    }
 #    endif
 #    if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
     (void)sock_fd;

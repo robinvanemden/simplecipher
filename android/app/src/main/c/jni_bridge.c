@@ -557,9 +557,15 @@ static void *session_thread(void *arg) {
     }
 
     LOGI("connected (we_init=%d)", we_init);
-    g_session_sock = fd;  /* publish so nativeStop() can shutdown() */
+    /* Publish socket only if our generation still matches — a stale thread
+     * from a previous session must not overwrite a newer session's socket. */
+    if (g_session_gen != my_gen) goto cleanup;
+    g_session_sock = fd;
     (*env)->CallVoidMethod(env, cb, mid_onConnected);
-    jni_callback_ok(env);
+    if (jni_callback_ok(env) != 0) {
+        LOGE("onConnected callback failed — aborting session");
+        goto cleanup;
+    }
 
     /* ================================================================
      * Phase 2: Handshake
@@ -663,7 +669,10 @@ static void *session_thread(void *arg) {
             jboolean verified = fp_matched ? JNI_TRUE : JNI_FALSE;
             (*env)->CallVoidMethod(env, cb, mid_onPeerFingerprintReady, fp_jstr, verified);
             (*env)->DeleteLocalRef(env, fp_jstr);
-            jni_callback_ok(env);
+            if (jni_callback_ok(env) != 0) {
+                LOGE("onPeerFingerprintReady callback failed");
+                goto cleanup_keys;
+            }
             crypto_wipe(peer_hash, sizeof peer_hash);
             crypto_wipe(peer_fp_str, sizeof peer_fp_str);
         }
@@ -919,7 +928,10 @@ static void *session_thread(void *arg) {
                     crypto_wipe(msg_buf, plen);
 
                     (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)1);
-                    jni_callback_ok(env);
+                    if (jni_callback_ok(env) != 0) {
+                        LOGE("onSendResult callback failed — session desynced");
+                        running = 0;
+                    }
 
                 } else {
                     LOGE("unknown command 0x%02x, draining %d bytes", cmd, (int)plen);
@@ -981,8 +993,10 @@ cleanup:
     crypto_wipe(prekey_priv, sizeof prekey_priv);
     crypto_wipe(prekey_pub,  sizeof prekey_pub);
     /* Close socket — clear the global first so nativeStop() won't
-     * try to shutdown() a closed fd. */
-    atomic_exchange(&g_session_sock, INVALID_SOCK);
+     * try to shutdown() a closed fd.  Only clear if we still own it
+     * (generation matches); a newer session may have taken over. */
+    if (g_session_gen == my_gen)
+        atomic_exchange(&g_session_sock, INVALID_SOCK);
     if (fd != INVALID_SOCK) {
         sock_shutdown_both(fd);
         close_sock(fd);
