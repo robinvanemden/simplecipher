@@ -5,7 +5,7 @@
 
 Private chat between two people. No server. No account. Nothing stored to disk.
 
-Run the program, compare a short code over the phone to make sure nobody's listening in, and start talking. Everything is encrypted end-to-end. When the session ends, the keys are gone — even if someone recorded the entire conversation, they cannot decrypt it after the fact. Nothing is stored to disk. No sign-up required.
+Run the program, compare a short code over the phone to make sure nobody's listening in, and start talking. Everything is encrypted end-to-end. When the session ends, the keys are gone — even if someone recorded the entire conversation, they cannot decrypt it after the fact. No sign-up required.
 
 > **Security notice:** SimpleCipher has not been independently audited. Do not rely on it in situations where a security failure could put anyone at risk without first commissioning a professional review of the code and your deployment environment.
 

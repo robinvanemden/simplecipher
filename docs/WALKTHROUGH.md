@@ -98,9 +98,7 @@ protocol.c → frame_open(session, frame_in, plaintext_out, len_out)
 2. Derive the expected message key from the RX chain
 3. Decrypt and verify MAC: `crypto_aead_unlock(ciphertext → plaintext)`
 4. Parse flags, optional ratchet key, length, message
-5. Only on success: advance the RX chain and sequence number
-
-A forged or tampered frame fails at step 3 (MAC mismatch). Session state is untouched — the next legitimate frame still works.
+5. Only on success: advance the RX chain and sequence number. On failure (tampered frame, wrong sequence number), nothing changes — the session state is untouched and the next legitimate frame still works.
 
 ### Forward secrecy (chain_step)
 
@@ -172,5 +170,5 @@ Skip all of this on first reading — the protocol is complete without it.
 
 - **PROTOCOL.md** — formal protocol specification with glossary
 - **HARDENING.md** — platform-specific security measures
-- **tests/test_p2p.c** — 637 test assertions covering every code path
+- **tests/test_p2p.c** — 647 test assertions covering every code path
 - **Monocypher documentation** — https://monocypher.org/ (the underlying crypto library)
