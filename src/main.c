@@ -72,6 +72,7 @@ enum {
     EXIT_MITM      = 4, /* fingerprint mismatch or SAS mismatch */
     EXIT_SANDBOX   = 5, /* sandbox installation failed */
     EXIT_INTERNAL  = 6, /* platform init, key agreement, etc. */
+    EXIT_ABORT     = 7, /* user aborted SAS verification (timeout, Ctrl+D, Ctrl+C) */
 };
 
 /* g_fd and g_sess are file-scope statics, passed as parameters to the
@@ -131,6 +132,7 @@ static void usage(const char *prog) {
             "  Exit codes:\n"
             "    0  success      1  usage error    2  connection failed\n"
             "    3  handshake    4  MITM detected  5  sandbox failed\n"
+            "    6  internal     7  SAS aborted\n"
             "\n",
             prog, prog);
     exit(EXIT_USAGE);
@@ -664,7 +666,7 @@ int main(int argc, char *argv[]) {
         if (!sas_ok) {
             printf("\033[2J\033[H");
             printf("Aborted.\n");
-            rc = EXIT_MITM;
+            rc = EXIT_ABORT;
             goto out;
         }
 
@@ -716,7 +718,7 @@ int main(int argc, char *argv[]) {
 #endif
             if (rn <= 0) {
                 printf("Aborted.\n");
-                rc = EXIT_MITM;
+                rc = EXIT_ABORT;
                 goto out;
             }
             typed_sas[rn] = '\0';

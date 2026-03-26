@@ -185,6 +185,7 @@ For scripting and automation, SimpleCipher uses distinct exit codes:
 | 4 | MITM detected (safety code rejected or peer fingerprint mismatch) |
 | 5 | Sandbox error (`--require-sandbox` and sandbox installation failed) |
 | 6 | Internal error |
+| 7 | SAS aborted (timeout, Ctrl+D, or Ctrl+C during verification) |
 
 ### Safety code verification
 

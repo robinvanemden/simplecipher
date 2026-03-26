@@ -131,6 +131,17 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             break;
         }
 
+        /* Incoming frame deadline: if a partial frame has been accumulating
+         * for more than FRAME_TIMEOUT_S, the peer is stalling — disconnect.
+         * Must be checked here (not just in FD_READ) because a peer that
+         * sends a partial frame and goes silent generates no more FD_READ. */
+        if (in_have > 0 && (GetTickCount64() - in_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
+            tui_msg_add(TUI_SYSTEM, "[peer stalled mid-frame]");
+            status = "Peer stalled | Ctrl+C to exit";
+            tui_draw_screen(status, line, line_len);
+            break;
+        }
+
         /* ----- Console input ----- */
         if (wr == WAIT_OBJECT_0) {
             INPUT_RECORD recs[32];
@@ -265,7 +276,11 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 if (send_rc == 0) {
                     memcpy(sess->tx, out_next_tx, KEY);
                     sess->tx_seq++;
-                    if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
+                    /* Reset cover timer only for cover frames (out_text[0]==0).
+                     * Real message sends must NOT reset the timer — otherwise an
+                     * attacker forcing backpressure can correlate cover timing with
+                     * real user traffic. */
+                    if (cover && !out_text[0]) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                     out_active = 0;
                     /* out_text[0]==0 means this was a cover frame — no UI update */
                     if (out_text[0]) {
