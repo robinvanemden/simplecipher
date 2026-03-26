@@ -122,11 +122,11 @@ simplecipher connect --socks5 127.0.0.1:9050 <onion-address>
 #      HiddenServicePort 7777 127.0.0.1:7777
 # 2. Restart Tor:  sudo systemctl restart tor
 # 3. Get your .onion address:  cat /var/lib/tor/simplecipher/hostname
-# 4. Listen normally:  simplecipher listen
+# 4. Listen with cover traffic:  simplecipher listen --cover-traffic
 # Your peer connects to the .onion address via --socks5.
 ```
 
-Note: `torsocks` only works for **outbound** connections (connect). To accept incoming connections anonymously, you must configure a Tor onion service as shown above. See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for details.
+`--socks5` automatically enables cover traffic (encrypted dummy frames at random intervals to defeat timing correlation). Listeners behind onion services or transparent Tor routing (Whonix, Tails) should add `--cover-traffic` explicitly. See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for onion service setup.
 
 ### Options
 

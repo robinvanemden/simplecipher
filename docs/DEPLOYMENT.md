@@ -50,11 +50,11 @@ sudo systemctl restart tor
 # 3. Get your .onion address
 cat /var/lib/tor/simplecipher/hostname
 
-# 4. Listen normally — Tor routes incoming connections
-simplecipher listen
+# 4. Listen with cover traffic — Tor routes incoming connections
+simplecipher listen --cover-traffic
 ```
 
-Your peer connects to the `.onion` address via `--socks5`. Neither side learns the other's IP.
+Your peer connects to the `.onion` address via `--socks5` (which enables cover traffic automatically). The `--cover-traffic` flag on the listener ensures both sides send dummy frames, defeating timing correlation from either direction.
 
 ### 3. Identity verification: pre-shared fingerprints
 
@@ -120,13 +120,14 @@ Even with the setup above, these risks remain:
 
 **Tails:**
 - SimpleCipher runs without installation — download the binary to the Tails session (it's ~87 KB)
-- Tor is already running; use `--socks5 127.0.0.1:9050`
+- Tor is already running; use `--socks5 127.0.0.1:9050` (cover traffic enabled automatically)
+- For listening behind an onion service, add `--cover-traffic` explicitly
 - Everything is wiped on shutdown — no cleanup needed
 - The binary itself disappears after reboot (unless saved to persistent storage, which you should avoid)
 
 **Qubes OS:**
 - Run SimpleCipher in a disposable qube (AppVM)
-- Route through `sys-whonix` for Tor
+- Route through `sys-whonix` for Tor — add `--cover-traffic` since transparent routing bypasses `--socks5`
 - The qube is destroyed after use — clean slate every time
 
 **Hardened Linux:**

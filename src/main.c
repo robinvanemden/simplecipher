@@ -87,6 +87,9 @@ static void usage(const char *prog) {
             "  Options:\n"
             "    --tui                split-pane terminal interface\n"
             "    --socks5 host:port   connect through a SOCKS5 proxy (e.g. Tor)\n"
+            "    --cover-traffic      send dummy frames to defeat timing analysis\n"
+            "                         (auto-enabled by --socks5; use for listeners\n"
+            "                          behind onion services or transparent Tor)\n"
             "    --peer-fingerprint   verify the peer's public key fingerprint\n"
             "    port                 default: 7777\n"
             "\n"
@@ -121,6 +124,7 @@ int main(int argc, char *argv[]) {
      * managed internally by cli_chat_loop() and tui_chat_loop(). */
 
     int         tui_mode         = 0;
+    int         cover_traffic    = 0; /* explicit --cover-traffic or auto via --socks5 */
     const char *socks5_host      = nullptr;
     const char *socks5_port      = nullptr;
     const char *peer_fp_expected = nullptr;
@@ -139,6 +143,8 @@ int main(int argc, char *argv[]) {
         for (int i = 1; i < argc; i++) {
             if (strcmp(argv[i], "--tui") == 0) {
                 tui_mode = 1;
+            } else if (strcmp(argv[i], "--cover-traffic") == 0) {
+                cover_traffic = 1;
             } else if (strcmp(argv[i], "--socks5") == 0 && i + 1 < argc) {
                 const char *arg   = argv[++i];
                 const char *colon = strrchr(arg, ':');
@@ -164,6 +170,12 @@ int main(int argc, char *argv[]) {
         }
         argc = out;
     }
+
+    /* --socks5 implies --cover-traffic: if you're using Tor, you want
+     * timing-correlation protection.  --cover-traffic can also be set
+     * independently for listeners behind onion services or transparent
+     * Tor routing (Whonix, Tails, Qubes sys-whonix). */
+    if (socks5_host) cover_traffic = 1;
 
     if (argc < 2) usage(prog);
     if (plat_init() != 0) {
@@ -554,7 +566,7 @@ int main(int argc, char *argv[]) {
         }
 
         sandbox_phase2((int)g_fd); /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
-        tui_chat_loop(g_fd, &g_sess, socks5_host != nullptr);
+        tui_chat_loop(g_fd, &g_sess, cover_traffic);
     } else {
         printf("\n");
         printf("  +----------------------------------------------+\n");
@@ -661,7 +673,7 @@ int main(int argc, char *argv[]) {
         printf("\n");
 
         sandbox_phase2((int)g_fd); /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
-        cli_chat_loop(g_fd, &g_sess, socks5_host != nullptr);
+        cli_chat_loop(g_fd, &g_sess, cover_traffic);
     } /* end else (CLI mode) */
 
     g_running = 0;
