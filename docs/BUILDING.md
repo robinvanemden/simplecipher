@@ -11,7 +11,7 @@ make
 Or explicitly:
 
 ```bash
-gcc -O2 -std=c23 -Isrc -Ilib src/*.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
+gcc -O2 -std=c23 -DCIPHER_HARDEN -Isrc -Ilib src/*.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
 ```
 
 On OpenBSD 7.7 (Clang 16), use `-std=c2x` instead of `-std=c23`. A compatibility shim in `platform.h` maps the C23 `constexpr` keyword to `const` on older compilers.

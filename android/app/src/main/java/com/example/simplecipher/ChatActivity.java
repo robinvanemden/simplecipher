@@ -245,23 +245,12 @@ public class ChatActivity extends Activity implements NativeCallback {
            * already wiped the widgets and nativeStop() may have fired. */
           if (paused) return;
 
-          /* If peer fingerprint was pre-verified, skip SAS input */
-          if (fingerprintVerified) {
-            if (!nativePostCommand(CMD_CONFIRM_SAS, null)) return;
-
-            sasLayout.setVisibility(View.GONE);
-            chatLayout.setVisibility(View.VISIBLE);
-            statusText.setText("\uD83D\uDD12 Peer fingerprint verified");
-            statusText.setTextColor(0xFF4DD0B0);
-
-            inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
-            inAppKeyboard.setTarget(chatInput);
-            chatInput.requestFocus();
-            hideSystemKeyboard(chatInput);
-            return;
-          }
           pendingSas = code;
-          statusText.setText("Verify safety code with your peer");
+          if (fingerprintVerified) {
+            statusText.setText("\u2705 Fingerprint verified \u2014 confirm safety code to proceed");
+          } else {
+            statusText.setText("Verify safety code with your peer");
+          }
           sasCodeText.setText(code);
           sasLayout.setVisibility(View.VISIBLE);
 
