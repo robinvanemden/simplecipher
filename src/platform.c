@@ -208,26 +208,18 @@ void harden(void) {
 /* Helper: set PR_SET_NO_NEW_PRIVS and install a BPF filter.
  * Called once per phase.  Warns on stderr if seccomp fails so the user
  * knows the process is running without syscall sandboxing. */
-static void apply_seccomp(struct sock_filter *f, unsigned short len) {
+static int apply_seccomp(struct sock_filter *f, unsigned short len) {
     struct sock_fprog prog = {.len = len, .filter = f};
-    /* PR_SET_NO_NEW_PRIVS is required before installing a seccomp filter
-     * without CAP_SYS_ADMIN.  It prevents gaining privileges via execve
-     * (setuid bits are ignored after this point). */
     if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
         fprintf(stderr, "warning: seccomp unavailable (PR_SET_NO_NEW_PRIVS failed)\n");
-        if (g_require_sandbox) {
-            fprintf(stderr, "FATAL: --require-sandbox is set\n");
-            _exit(1);
-        }
-        return;
+        if (g_require_sandbox) return -1;
+        return 0;
     }
     if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) != 0) {
         fprintf(stderr, "warning: seccomp filter installation failed\n");
-        if (g_require_sandbox) {
-            fprintf(stderr, "FATAL: --require-sandbox is set\n");
-            _exit(1);
-        }
+        if (g_require_sandbox) return -1;
     }
+    return 0;
 }
 
 /* Phase 1 filter — handshake phase.
@@ -268,7 +260,7 @@ static void apply_seccomp(struct sock_filter *f, unsigned short len) {
  * NOT allow socket/connect/bind/listen/accept — those are no longer needed.
  * A compromised process cannot open new connections from this point on.
  */
-static void install_seccomp_phase1(void) {
+static int install_seccomp_phase1(void) {
     struct sock_filter filter[] = {
         /* Architecture check */
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
@@ -388,7 +380,7 @@ static void install_seccomp_phase1(void) {
         /* Default: kill the process on any disallowed syscall */
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
     };
-    apply_seccomp(filter, (unsigned short)(sizeof filter / sizeof filter[0]));
+    return apply_seccomp(filter, (unsigned short)(sizeof filter / sizeof filter[0]));
 }
 
 /* Phase 2 filter — chat loop phase.
@@ -432,7 +424,7 @@ static void install_seccomp_phase1(void) {
  *   prlimit64        — getrlimit/setrlimit (musl)
  *   rseq             — restartable sequences (glibc 2.35+)
  */
-static void install_seccomp_phase2(void) {
+static int install_seccomp_phase2(void) {
     struct sock_filter filter[] = {
         /* Load the syscall architecture */
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
@@ -508,7 +500,7 @@ static void install_seccomp_phase2(void) {
         /* Default: kill the process on any disallowed syscall */
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
     };
-    apply_seccomp(filter, (unsigned short)(sizeof filter / sizeof filter[0]));
+    return apply_seccomp(filter, (unsigned short)(sizeof filter / sizeof filter[0]));
 }
 #        endif /* SECCOMP_AUDIT_ARCH */
 #    endif     /* __linux__ */
@@ -542,11 +534,8 @@ static void capsicum_phase1(int sock_fd) {
      * still works (just without the sandbox), and the test SKIPs. */
     if (cap_enter() != 0) {
         fprintf(stderr, "warning: Capsicum cap_enter() failed — running unsandboxed\n");
-        if (g_require_sandbox) {
-            fprintf(stderr, "FATAL: --require-sandbox is set\n");
-            _exit(1);
-        }
-        return;
+        if (g_require_sandbox) return -1;
+        return 0;
     }
 
     /* Socket fd: read, write, poll, shutdown, get/setsockopt.
@@ -595,45 +584,47 @@ static void capsicum_phase2(int sock_fd) {
 
 /* ---- sandbox entry points ----------------------------------------------- */
 
-void sandbox_phase1(int sock_fd) {
+int sandbox_phase1(int sock_fd) {
+    int failed = 0;
 #    if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
     (void)sock_fd;
-    install_seccomp_phase1();
+    if (install_seccomp_phase1() != 0) failed = 1;
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
     capsicum_phase1(sock_fd);
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
     (void)sock_fd;
-    /* Lock filesystem access — no file paths needed at any phase. */
-    unveil(NULL, NULL);
-    /* TCP connection is already established.  Allow only I/O on existing
-     * file descriptors + getrandom (for the handshake key exchange).
-     * "inet" is NOT needed — we have the connected socket already. */
-    pledge("stdio", NULL);
+    if (unveil(NULL, NULL) != 0 && g_require_sandbox) failed = 1;
+    if (pledge("stdio", NULL) != 0 && g_require_sandbox) failed = 1;
 #    endif
 #    if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
     (void)sock_fd;
+    if (g_require_sandbox) {
+        fprintf(stderr, "warning: --require-sandbox has no effect on this platform\n");
+        failed = 1;
+    }
 #    endif
+    return failed ? -1 : 0;
 }
 
-void sandbox_phase2(int sock_fd) {
+int sandbox_phase2(int sock_fd) {
+    int failed = 0;
 #    if defined(CIPHER_HARDEN) && defined(__linux__) && defined(SECCOMP_AUDIT_ARCH)
     (void)sock_fd;
-    install_seccomp_phase2();
+    if (install_seccomp_phase2() != 0) failed = 1;
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__FreeBSD__)
     capsicum_phase2(sock_fd);
 #    endif
 #    if defined(CIPHER_HARDEN) && defined(__OpenBSD__)
     (void)sock_fd;
-    /* Drop network setup and DNS — the session socket is already open.
-     * "stdio" covers read, write, poll, close, and exit. */
-    pledge("stdio", NULL);
+    if (pledge("stdio", NULL) != 0 && g_require_sandbox) failed = 1;
 #    endif
 #    if !defined(CIPHER_HARDEN) || (!defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__))
     (void)sock_fd;
 #    endif
+    return failed ? -1 : 0;
 }
 
 void sandbox(void) {
@@ -641,13 +632,23 @@ void sandbox(void) {
      * Callers that have not been updated to the two-phase API still get the
      * full post-handshake restriction.  Pass -1 since Capsicum callers
      * should use sandbox_phase2(fd) directly. */
-    sandbox_phase2(-1);
+    (void)sandbox_phase2(-1);
 }
 
 #else
 void harden(void) {} /* no-op when CIPHER_HARDEN is not set */
-void sandbox_phase1(int sock_fd) { (void)sock_fd; }
-void sandbox_phase2(int sock_fd) { (void)sock_fd; }
+int  sandbox_phase1(int sock_fd) {
+    (void)sock_fd;
+    if (g_require_sandbox) {
+        fprintf(stderr, "warning: --require-sandbox requires -DCIPHER_HARDEN build\n");
+        return -1;
+    }
+    return 0;
+}
+int sandbox_phase2(int sock_fd) {
+    (void)sock_fd;
+    return 0;
+}
 void sandbox(void) {}
 #endif
 

@@ -416,7 +416,10 @@ int main(int argc, char *argv[]) {
      * A compromised process can no longer open new connections.  On OpenBSD,
      * this drops to pledge("stdio") + unveil(NULL, NULL).  On FreeBSD,
      * cap_enter() + per-fd Capsicum rights on the socket and terminal. */
-    sandbox_phase1((int)g_fd);
+    if (sandbox_phase1((int)g_fd) != 0) {
+        fprintf(stderr, "sandbox installation failed (--require-sandbox)\n");
+        goto out;
+    }
 
     /* ------------------------------------------------------------------
      * STEP 2: Commit-then-reveal handshake
@@ -585,7 +588,10 @@ int main(int argc, char *argv[]) {
             goto out;
         }
 
-        sandbox_phase2((int)g_fd); /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
+        if (sandbox_phase2((int)g_fd) != 0) { /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
+            fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
+            goto out;
+        }
         tui_chat_loop(g_fd, &g_sess, cover_traffic);
     } else {
         printf("\n");
@@ -692,7 +698,10 @@ int main(int argc, char *argv[]) {
         printf("  Type a message and press Enter to send.\n");
         printf("\n");
 
-        sandbox_phase2((int)g_fd); /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
+        if (sandbox_phase2((int)g_fd) != 0) { /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
+            fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
+            goto out;
+        }
         cli_chat_loop(g_fd, &g_sess, cover_traffic);
     } /* end else (CLI mode) */
 

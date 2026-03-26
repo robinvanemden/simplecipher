@@ -136,14 +136,21 @@ void set_sock_opts(socket_t fd) {
 }
 
 /* Exchange one value simultaneously with the peer.
- * The initiator sends first to avoid both sides waiting for each other. */
+ * The initiator sends first to avoid both sides waiting for each other.
+ * Uses deadline-aware I/O to defeat byte-dribble attacks. */
 [[nodiscard]] int exchange(socket_t fd, int we_init, const uint8_t *out, size_t out_n, uint8_t *in, size_t in_n) {
+    /* Absolute deadline for this exchange round.  Combined with
+     * set_sock_timeout (per-syscall), this bounds total wall-clock time
+     * even if an adversary dribbles one byte just under the per-call
+     * timeout.  15 seconds is generous for a single handshake round
+     * (33 or 32 bytes over any real network). */
+    uint64_t dl = monotonic_ms() + 15000;
     if (we_init) {
-        if (write_exact(fd, out, out_n) != 0) return -1;
-        if (read_exact(fd, in, in_n) != 0) return -1;
+        if (write_exact_dl(fd, out, out_n, dl) != 0) return -1;
+        if (read_exact_dl(fd, in, in_n, dl) != 0) return -1;
     } else {
-        if (read_exact(fd, in, in_n) != 0) return -1;
-        if (write_exact(fd, out, out_n) != 0) return -1;
+        if (read_exact_dl(fd, in, in_n, dl) != 0) return -1;
+        if (write_exact_dl(fd, out, out_n, dl) != 0) return -1;
     }
     return 0;
 }
@@ -342,10 +349,11 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
 /* Connect through a SOCKS5 proxy.  See socks5_build_request and
  * socks5_reply_skip above for the pure logic; this function handles I/O.
  *
- * A 30-second timeout is applied during the SOCKS5 handshake and removed
- * before returning the connected socket.  Without this, a broken or
- * malicious proxy can wedge the caller indefinitely — read_exact and
- * write_exact retry EINTR, so there is no other interrupt path. */
+ * A 30-second absolute deadline protects the SOCKS5 greeting/request/reply
+ * against byte-dribble attacks.  The initial TCP connect to the proxy is
+ * still blocking (typically localhost, completes instantly); on Android,
+ * the connect is done via non-blocking poll() with nativeStop() interrupt.
+ * The deadline is removed before returning the connected socket. */
 [[nodiscard]] socket_t connect_socket_socks5(const char *proxy_host, const char *proxy_port, const char *target_host,
                                              const char *target_port) {
     socket_t fd = connect_socket(proxy_host, proxy_port);

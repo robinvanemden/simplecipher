@@ -162,7 +162,10 @@ void harden(void);
  * Set by --require-sandbox before any sandbox call. */
 extern int g_require_sandbox;
 
-/* Two-phase syscall sandboxing.
+/* Two-phase syscall sandboxing.  Return 0 on success or if sandboxing
+ * is unavailable and g_require_sandbox is not set.  Return -1 if
+ * g_require_sandbox is set and installation failed (caller must wipe
+ * state and exit cleanly — the sandbox functions do NOT call _exit).
  *
  * sandbox_phase1(sock_fd) — call AFTER the TCP connection is established,
  *   BEFORE the handshake.  Connection setup (getifaddrs, getaddrinfo,
@@ -190,9 +193,9 @@ extern int g_require_sandbox;
  * ignore it (they operate at the syscall/process level).
  *
  * sandbox() is kept for backward compatibility — calls sandbox_phase2(-1). */
-void sandbox_phase1(int sock_fd);
-void sandbox_phase2(int sock_fd);
-void sandbox(void); /* legacy: equivalent to sandbox_phase2(-1) */
+[[nodiscard]] int sandbox_phase1(int sock_fd);
+[[nodiscard]] int sandbox_phase2(int sock_fd);
+void              sandbox(void); /* legacy: equivalent to sandbox_phase2(-1) */
 
 /* Signal handler: set the stop flag so the main loop exits on its next
  * iteration.  See platform.c for details on POSIX vs Windows behavior. */

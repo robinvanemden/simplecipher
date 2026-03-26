@@ -68,7 +68,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | TIOCSTI blocked in seccomp | `platform.c:sandbox_phase1()`, `platform.c:sandbox_phase2()` — BPF blocks ioctl 0x5412 | Source-level check |
 | Windows process mitigations | `platform.c:harden()` — SetProcessMitigationPolicy | Windows runtime check |
 | Sandbox failure warnings | `platform.c:apply_seccomp()`, `platform.c:capsicum_phase1()` | stderr output on failure |
-| MAC failure tolerance | `MAX_AUTH_FAILURES` in protocol.h, all 6 chat loops | `test_mac_failure_tolerance()` in test_p2p.c |
+| MAC failure tolerance | `MAX_AUTH_FAILURES` in protocol.h, all 6 chat loops | `test_mac_failure_tolerance()` tests core frame_open behavior; loop-specific counter/teardown paths not yet exercised |
 
 ## Fuzzing coverage
 

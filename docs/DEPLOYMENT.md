@@ -72,8 +72,9 @@ The strongest verification method is **fingerprints exchanged on paper** when yo
 # Listener
 simplecipher listen
 
-# Connector (uses the paper fingerprint)
-simplecipher connect --peer-fingerprint XXXX-XXXX-XXXX-XXXX <address>
+# Connector (uses the paper fingerprint — interactive to keep address off argv)
+simplecipher connect --peer-fingerprint XXXX-XXXX-XXXX-XXXX
+#   Host: <address>
 ```
 
 If the fingerprint matches, the connection proceeds to the safety code screen (defence in depth — both layers verify). If it doesn't match, the connection is aborted — someone is intercepting.
