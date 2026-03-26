@@ -100,15 +100,16 @@ void ratchet_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const
  * Called by frame_open when FLAG_RATCHET is set.  Performs the receiver's
  * half of the DH ratchet step:
  *   - Computes dh_secret = X25519(our dh_priv, peer's new public key).
- *   - Derives new root key and receiving chain.
- *   - Stores the peer's new public key as peer_dh.
- *   - Wipes all intermediates (dh_secret, ikm).
+ *   - Derives new root key and receiving chain in staged temporaries.
+ *   - Commits peer_dh, root, and rx atomically only on success.
+ *   - Wipes all intermediates (dh_secret, ikm, staged values).
  *
- * After this, the receiving chain is keyed with fresh DH entropy that an
- * attacker who stole the old chain key cannot derive.
+ * On failure (all-zero DH), NO session state is mutated — peer_dh, root,
+ * and rx remain unchanged so the session can continue if the caller
+ * tolerates the failure.
  *
- * Returns 0 on success, -1 if the DH output was all-zero (session must
- * be torn down). */
+ * Returns 0 on success, -1 if the DH output was all-zero (session-fatal;
+ * callers should tear down immediately). */
 [[nodiscard]] int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]);
 
 #endif /* SIMPLECIPHER_RATCHET_H */

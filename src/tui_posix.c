@@ -141,10 +141,11 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 break;
             }
             plen = 0;
-            if (frame_open(sess, frame, plain, &plen) != 0) {
+            int fo_rc = frame_open(sess, frame, plain, &plen);
+            if (fo_rc != 0) {
                 crypto_wipe(frame, sizeof frame);
                 crypto_wipe(plain, sizeof plain);
-                if (++auth_fails >= MAX_AUTH_FAILURES) {
+                if (fo_rc == -2 || ++auth_fails >= MAX_AUTH_FAILURES) {
                     tui_msg_add(TUI_SYSTEM, "[session error]");
                     status = "Session error  |  Ctrl+C to exit";
                     tui_draw_screen(status, line, line_len);

@@ -364,12 +364,13 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                                 uint8_t  plain[MAX_MSG + 1];
                                 uint16_t plen = 0;
 
-                                if (frame_open(sess, in_frame, plain, &plen) != 0) {
+                                int fo_rc = frame_open(sess, in_frame, plain, &plen);
+                                if (fo_rc != 0) {
                                     crypto_wipe(plain, sizeof plain);
                                     crypto_wipe(in_frame, sizeof in_frame);
                                     in_have           = 0;
                                     in_frame_start_ms = 0;
-                                    if (++auth_fails >= MAX_AUTH_FAILURES) {
+                                    if (fo_rc == -2 || ++auth_fails >= MAX_AUTH_FAILURES) {
                                         win_print_status("[session error: authentication or sequence failure]", line,
                                                          line_len);
                                         loop_error = 1;

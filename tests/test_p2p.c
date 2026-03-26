@@ -4982,6 +4982,68 @@ static void test_cover_traffic(void) {
     crypto_wipe(plain, sizeof plain);
 }
 
+static void test_ratchet_receive_atomic(void) {
+    printf("\n=== DH ratchet receive is atomic (no partial state on failure) ===\n");
+
+    uint8_t priv_a[KEY], pub_a[KEY], priv_b[KEY], pub_b[KEY];
+    uint8_t sas_a[KEY], sas_b[KEY];
+    session_t alice, bob;
+
+    gen_keypair(priv_a, pub_a);
+    gen_keypair(priv_b, pub_b);
+    session_init(&alice, 1, priv_a, pub_a, pub_b, sas_a);
+    session_init(&bob,   0, priv_b, pub_b, pub_a, sas_b);
+
+    /* Alice sends a normal ratcheted message to Bob */
+    uint8_t frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
+    uint16_t plen;
+    int rc = frame_build(&alice, (const uint8_t *)"hello", 5, frame, next_tx);
+    TEST("setup: alice builds ratchet frame", rc == 0);
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("setup: bob opens ratchet frame", rc == 0);
+
+    /* Save bob's state before the attack */
+    uint8_t saved_peer_dh[KEY], saved_root[KEY], saved_rx[KEY];
+    memcpy(saved_peer_dh, bob.peer_dh, KEY);
+    memcpy(saved_root, bob.root, KEY);
+    memcpy(saved_rx, bob.rx, KEY);
+
+    /* Call ratchet_receive with all-zero pub (low-order point) */
+    uint8_t zero_pub[KEY];
+    memset(zero_pub, 0, KEY);
+    rc = ratchet_receive(&bob, zero_pub);
+    TEST("ratchet_receive rejects all-zero pub", rc != 0);
+
+    /* Verify bob's state is completely unchanged */
+    TEST("peer_dh unchanged after failed ratchet_receive",
+         memcmp(bob.peer_dh, saved_peer_dh, KEY) == 0);
+    TEST("root unchanged after failed ratchet_receive",
+         memcmp(bob.root, saved_root, KEY) == 0);
+    TEST("rx unchanged after failed ratchet_receive",
+         memcmp(bob.rx, saved_rx, KEY) == 0);
+
+    /* Bob can still communicate with Alice */
+    rc = frame_build(&bob, (const uint8_t *)"reply", 5, frame, next_tx);
+    TEST("bob can still send after failed ratchet_receive", rc == 0);
+    memcpy(bob.tx, next_tx, KEY);
+    bob.tx_seq++;
+    plen = 0;
+    rc = frame_open(&alice, frame, plain, &plen);
+    TEST("alice can still receive from bob", rc == 0);
+    plain[plen] = '\0';
+    TEST("message content correct after failed ratchet", strcmp((char *)plain, "reply") == 0);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(priv_a, sizeof priv_a);
+    crypto_wipe(priv_b, sizeof priv_b);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next_tx, sizeof next_tx);
+    crypto_wipe(plain, sizeof plain);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -5065,6 +5127,7 @@ int main(void) {
     test_socks5_build_request();
     test_socks5_reply_skip();
     test_cover_traffic();
+    test_ratchet_receive_atomic();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);

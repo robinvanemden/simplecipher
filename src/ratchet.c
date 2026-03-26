@@ -93,9 +93,33 @@ int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
 }
 
 int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
-    /* Store the peer's new ratchet public key. */
-    memcpy(s->peer_dh, peer_new_pub, KEY);
+    /* Stage all outputs in temporaries — commit only if DH succeeds.
+     * Prevents a malicious low-order ratchet key from poisoning
+     * peer_dh/root/rx while callers tolerate the failure. */
+    uint8_t staged_root[KEY], staged_rx[KEY];
+    memcpy(staged_root, s->root, KEY);
 
-    /* Mix the DH secret into the root key and derive a fresh rx chain. */
-    return ratchet_step(s->root, s->rx, s->dh_priv, s->peer_dh);
+    uint8_t dh[KEY], ikm[KEY * 2];
+    crypto_x25519(dh, s->dh_priv, peer_new_pub);
+    if (is_zero32(dh)) {
+        crypto_wipe(dh, sizeof dh);
+        crypto_wipe(staged_root, sizeof staged_root);
+        return -1;
+    }
+
+    memcpy(ikm, staged_root, KEY);
+    memcpy(ikm + KEY, dh, KEY);
+    domain_hash(staged_root, "cipher ratchet v2", ikm, sizeof ikm);
+    expand(staged_rx, staged_root, "chain");
+
+    /* All validation passed — commit state atomically. */
+    memcpy(s->peer_dh, peer_new_pub, KEY);
+    memcpy(s->root, staged_root, KEY);
+    memcpy(s->rx, staged_rx, KEY);
+
+    crypto_wipe(dh, sizeof dh);
+    crypto_wipe(ikm, sizeof ikm);
+    crypto_wipe(staged_root, sizeof staged_root);
+    crypto_wipe(staged_rx, sizeof staged_rx);
+    return 0;
 }

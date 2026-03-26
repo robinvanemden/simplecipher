@@ -106,7 +106,9 @@ void session_wipe(session_t *s);
  * crypto work.  The chain advances only after the MAC passes -- a forged
  * frame leaves session state untouched.
  *
- * Returns 0 on success (out and out_len filled), -1 on any failure. */
+ * Returns 0 on success (out and out_len filled), -1 on auth/sequence
+ * failure (tolerable up to MAX_AUTH_FAILURES), or -2 on ratchet DH
+ * failure (session-fatal — callers must tear down immediately). */
 [[nodiscard]] int frame_open(session_t *s, const uint8_t frame[FRAME_SZ], uint8_t *out, uint16_t *out_len);
 
 /* Return 1 if s is a decimal integer in [1, 65535], 0 otherwise.

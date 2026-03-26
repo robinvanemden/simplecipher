@@ -766,9 +766,15 @@ static void *session_thread(void *arg) {
                     break;
                 }
 
-                if (frame_open(&sess, frame, plain, &plen) != 0) {
+                int fo_rc = frame_open(&sess, frame, plain, &plen);
+                if (fo_rc != 0) {
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(plain, sizeof plain);
+                    if (fo_rc == -2) {
+                        LOGE("frame_open: malicious ratchet key — session torn down");
+                        jni_call_str(env, cb, mid_onDisconnected, "Malicious ratchet key", "ratchet_fail");
+                        break;
+                    }
                     if (++auth_fails >= MAX_AUTH_FAILURES) {
                         LOGE("frame_open failed %d times — session torn down", auth_fails);
                         jni_call_str(env, cb, mid_onDisconnected, "Decryption failed", "decrypt_fail");

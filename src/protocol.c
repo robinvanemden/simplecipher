@@ -214,7 +214,9 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
  * crypto work.  The chain advances only after the MAC passes -- a forged
  * frame leaves session state untouched.
  *
- * Returns 0 on success (out and out_len filled), -1 on any failure. */
+ * Returns 0 on success (out and out_len filled), -1 on auth/sequence
+ * failure (tolerable up to MAX_AUTH_FAILURES), or -2 on ratchet DH
+ * failure (session-fatal — callers must tear down immediately). */
 [[nodiscard]] int frame_open(session_t *s, const uint8_t frame[FRAME_SZ], uint8_t *out, uint16_t *out_len) {
     uint64_t seq = le64_load(frame);
     if (seq != s->rx_seq) return -1; /* replay / reorder -- reject */
@@ -278,7 +280,7 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
             crypto_wipe(next_rx, sizeof next_rx);
             crypto_wipe(pt, sizeof pt);
             crypto_wipe(nonce, sizeof nonce);
-            return -1; /* all-zero DH — malicious peer */
+            return -2; /* ratchet DH failure — session-fatal */
         }
     } else memcpy(s->rx, next_rx, KEY);
     s->rx_seq++;
