@@ -448,6 +448,12 @@ int main(int argc, char *argv[]) {
      * A compromised process can no longer open new connections.  On OpenBSD,
      * this drops to pledge("stdio") + unveil(NULL, NULL).  On FreeBSD,
      * cap_enter() + per-fd Capsicum rights on the socket and terminal. */
+    /* Set socket timeouts BEFORE the sandbox — setsockopt is blocked by
+     * OpenBSD pledge("stdio") and FreeBSD Capsicum phase 2.  The handshake
+     * uses deadline-aware I/O (15s per exchange round) on top of this
+     * backstop.  The chat phase reuses the same SO_RCVTIMEO/SO_SNDTIMEO. */
+    set_sock_timeout(g_fd, FRAME_TIMEOUT_S);
+
     if (sandbox_phase1((int)g_fd) != 0) {
         fprintf(stderr, "sandbox installation failed (--require-sandbox)\n");
         goto out;
@@ -465,10 +471,6 @@ int main(int argc, char *argv[]) {
      * listen/connect) so the fingerprint could be shown on the listen
      * screen for pre-sharing.
      * ------------------------------------------------------------------ */
-
-    /* 30-second timeout: disconnect a peer who stalls during the handshake.
-     * Removed after the handshake so idle chat sessions are not affected. */
-    set_sock_timeout(g_fd, HANDSHAKE_TIMEOUT_S);
 
     /* Two-round handshake (v3):
      *   Round 1: version || commitment  (33 bytes each way)
@@ -507,31 +509,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    set_sock_timeout(g_fd, 0); /* I/O phase of handshake done; verify_commit
-                                 * below is pure computation, needs no timeout */
-
-#ifndef _WIN32
-    /* POSIX chat-phase read timeout.
-     *
-     * poll() returns only when data has actually started arriving, so this
-     * timeout does NOT fire on idle silence between messages -- two people
-     * can sit quietly for hours without being disconnected.
-     *
-     * What it DOES prevent: a peer who sends the first bytes of a frame
-     * then stalls.  The chat loops use read_exact_dl() with a 30-second
-     * absolute per-frame deadline that tightens SO_RCVTIMEO to remaining
-     * time before each recv().  A byte-dribble attack (one byte just under
-     * the per-syscall timeout) is bounded to 30 seconds total, not 30
-     * seconds per byte.  Any real network delivers 512 bytes in milliseconds.
-     *
-     * The SO_RCVTIMEO set here is a backstop for the deadline logic; the
-     * actual enforcement is in read_exact_dl inside each event loop.
-     *
-     * Windows uses a different strategy: WSAEventSelect puts the socket in
-     * non-blocking mode, so partial frames are accumulated in a small buffer
-     * and never block the event loop. */
-    set_sock_timeout(g_fd, FRAME_TIMEOUT_S);
-#endif
+    /* SO_RCVTIMEO/SO_SNDTIMEO was already set to FRAME_TIMEOUT_S before
+     * sandbox_phase1.  No need to re-arm — the handshake uses deadline
+     * I/O, and the chat phase reuses the same socket timeout as a backstop.
+     * Cannot call setsockopt here: blocked by pledge/Capsicum/seccomp. */
 
     if (!verify_commit(commit_peer, peer_pub)) {
         fprintf(stderr, "[!] commitment mismatch -- possible MITM attack\n");
