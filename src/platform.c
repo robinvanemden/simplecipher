@@ -11,13 +11,10 @@
 
 /* ---- global state ------------------------------------------------------- */
 
-/* g_running is global because the signal handler writes it, and
- * volatile sig_atomic_t is the only type the C standard guarantees is
- * safe to write from a signal handler without data races. */
-volatile sig_atomic_t g_running = 1;
+_Atomic volatile sig_atomic_t g_running = 1;
 
 #if defined(_WIN32) || defined(_WIN64)
-volatile SOCKET g_interrupt_sock = INVALID_SOCKET;
+_Atomic volatile SOCKET g_interrupt_sock = INVALID_SOCKET;
 #endif
 
 /* ---- platform init/quit ------------------------------------------------- */
@@ -663,12 +660,11 @@ void on_sig(int sig) {
  * until the OS reclaims the pages. */
 BOOL WINAPI on_console_ctrl(DWORD event) {
     (void)event;
-    g_running = 0;
-    /* Close the socket the main thread is blocking on (accept, connect, recv).
-     * This forces the blocking Winsock call to return with an error so the
-     * main thread can check g_running and exit cleanly.  On POSIX, signals
-     * deliver EINTR instead; Windows has no equivalent mechanism. */
-    SOCKET s = g_interrupt_sock;
+    atomic_store(&g_running, 0);
+    /* Atomically swap g_interrupt_sock to INVALID_SOCKET, then close the
+     * old value.  This eliminates the TOCTOU race where the main thread
+     * clears the socket between our read and close. */
+    SOCKET s = atomic_exchange(&g_interrupt_sock, INVALID_SOCKET);
     if (s != INVALID_SOCKET) closesocket(s);
     return TRUE;
 }

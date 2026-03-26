@@ -57,6 +57,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <time.h>
 #include <errno.h>
 
@@ -123,17 +124,21 @@ typedef int socket_t;
 
 #endif /* platform */
 
-/* g_running is global because the signal handler writes it, and
- * volatile sig_atomic_t is the only type the C standard guarantees is
- * safe to write from a signal handler without data races. */
-extern volatile sig_atomic_t g_running;
+/* g_running is written from signal handlers (POSIX) and from the console
+ * control handler thread (Windows).  volatile sig_atomic_t satisfies the
+ * C standard's signal-handler requirement.  _Atomic adds proper memory
+ * ordering for the Windows thread case and for ARM64 where volatile alone
+ * does not imply acquire/release semantics. */
+extern _Atomic volatile sig_atomic_t g_running;
 
 #if defined(_WIN32) || defined(_WIN64)
 /* g_interrupt_sock is set to the currently blocking socket (accept, connect,
  * recv) so the Windows console control handler can closesocket() it from
  * its separate thread, forcing the blocking call to return with an error.
- * On POSIX this is unnecessary: signals deliver EINTR to blocking calls. */
-extern volatile SOCKET g_interrupt_sock;
+ * _Atomic eliminates the TOCTOU race where the handler reads the socket
+ * while the main thread is clearing it.  On POSIX, signals deliver EINTR
+ * to blocking calls instead; this variable is not used. */
+extern _Atomic volatile SOCKET g_interrupt_sock;
 #endif
 
 /* Platform initialization and cleanup.
