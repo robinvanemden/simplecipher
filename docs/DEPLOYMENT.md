@@ -94,7 +94,7 @@ During the session:
 
 - [ ] Verified the safety code or fingerprint matched
 - [ ] Not copying messages to clipboard (clipboard is shared with other apps)
-- [ ] Not running in a terminal multiplexer that logs to disk (tmux/screen with logging enabled)
+- [ ] **Not running inside tmux or screen** (their scrollback survives terminal purge — use a plain terminal window)
 
 After the session:
 
@@ -111,6 +111,10 @@ Even with the setup above, these risks remain:
 - **Endpoint compromise during the session** — if an attacker has code execution on your machine while SimpleCipher is running, they can read memory. `mlockall` + seccomp reduce the attack surface but cannot prevent a kernel-level compromise.
 - **The peer** — SimpleCipher protects the channel, not the endpoints. If your peer is compromised or is the adversary, encryption doesn't help.
 - **Metadata** — even with Tor, the timing and frequency of your connections may be observable. Tor hides IP addresses, not usage patterns.
+- **Traffic fingerprinting** — the handshake (33 + 32 bytes each way) and uniform 512-byte frames are a distinctive pattern that deep packet inspection (DPI) can identify. Without Tor, a network observer can detect SimpleCipher usage from packet sizes alone. Tor wraps everything in TLS cells, hiding the pattern.
+- **Connection racing** — the listener accepts the first TCP connection unconditionally. A local attacker (or any host that can reach the port) could connect before the real peer. The [SAS](PROTOCOL.md#sas) verification catches this, but only if the user actually verifies carefully. On untrusted networks, always use Tor onion services instead of direct listen.
+- **Safety code verification call** — comparing the [SAS](PROTOCOL.md#sas) by phone creates a metadata trail: call records link two people at the exact time of the session. Use pre-shared paper fingerprints instead to eliminate this call entirely. If a call is unavoidable, use a burner phone or introduce a time gap between the handshake and the call.
+- **Terminal multiplexers** — tmux and screen maintain their own scrollback buffers in a separate process. SimpleCipher's terminal purge (`\033[3J`) cannot reach them. **Never run SimpleCipher inside tmux or screen.** Use a dedicated terminal window and close it immediately after the session.
 
 ### 6. Platform-specific notes
 

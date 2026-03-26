@@ -38,7 +38,7 @@
  *
  * Domain separation ensures that hashing the same data for different
  * protocol purposes produces unrelated outputs.  Each label ("cipher
- * commit v1", "cipher x25519 sas root v1", etc.) gives a distinct
+ * commit v3", "cipher x25519 sas root v1", etc.) gives a distinct
  * output space so values cannot be confused or substituted across uses. */
 void domain_hash(uint8_t out[32], const char *label, const uint8_t *msg, size_t msg_sz) {
     crypto_blake2b_keyed(out, 32, (const uint8_t *)label, strlen(label), msg, msg_sz);
@@ -99,7 +99,7 @@ void chain_step(const uint8_t chain[32], uint8_t mk[32], uint8_t next[32]) {
  *
  * With commitment, Mallory must commit to her fake keys before she sees
  * A or B.  She cannot adapt after the fact, so the search attack fails. */
-void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]) { domain_hash(commit, "cipher commit v1", pub, KEY); }
+void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]) { domain_hash(commit, "cipher commit v3", pub, KEY); }
 
 /* Verify a revealed public key against a previously received commitment.
  * Returns 1 if the key matches the commitment, 0 otherwise.
@@ -107,7 +107,7 @@ void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]) { domain_hash(comm
 [[nodiscard]] int verify_commit(const uint8_t commit[KEY], const uint8_t pub[KEY]) {
     uint8_t expected[KEY];
     int     ok;
-    domain_hash(expected, "cipher commit v1", pub, KEY);
+    domain_hash(expected, "cipher commit v3", pub, KEY);
     ok = (crypto_verify32(expected, commit) == 0);
     crypto_wipe(expected, sizeof expected);
     return ok;

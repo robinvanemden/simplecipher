@@ -150,7 +150,7 @@ uint8_t do_one_computation(uint8_t *data) {
          * A timing leak here would let an attacker distinguish
          * different secret inputs from their hashing time. */
         uint8_t out[32];
-        domain_hash(out, "cipher commit v1", data, 32);
+        domain_hash(out, "cipher commit v3", data, 32);
         ret = out[0];
         crypto_wipe(out, 32);
         break;

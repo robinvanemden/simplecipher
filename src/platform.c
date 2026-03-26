@@ -103,6 +103,19 @@ void harden(void) {
      * via crash dump files when the process terminates abnormally. */
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 
+    /* Remove the current working directory from the DLL search order.
+     * Prevents CWD-planted DLL hijacking for implicitly loaded DLLs
+     * (e.g. iphlpapi.dll on older Windows where it is not a KnownDLL).
+     * Available since Windows 8 / Server 2012.  Best-effort. */
+    {
+        typedef BOOL(WINAPI * pSetDDD)(DWORD);
+        HMODULE k = GetModuleHandleA("kernel32.dll");
+        if (k) {
+            pSetDDD fn = (pSetDDD)(void *)GetProcAddress(k, "SetDefaultDllDirectories");
+            if (fn) (void)fn(0x00000800 /* LOAD_LIBRARY_SEARCH_SYSTEM32 */);
+        }
+    }
+
     /* Process mitigation policies (Windows 8+, best-effort).
      *
      * Loaded via GetProcAddress because llvm-mingw headers do not
@@ -131,9 +144,8 @@ void harden(void) {
 }
 #    else /* POSIX */
 void harden(void) {
-    /* Best-effort: succeeds as root or with ulimit -l unlimited,
-     * silently fails for unprivileged users (expected, not fatal). */
-    (void)mlockall(MCL_CURRENT | MCL_FUTURE);
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+        fprintf(stderr, "warning: mlockall failed — keys may be swapped to disk\n");
     /* Disable core dumps so a crash never writes key material to disk.
      * Set soft limit to 0 first (always allowed), then try to drop the
      * hard limit too (requires privilege — best-effort). */

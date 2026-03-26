@@ -120,7 +120,7 @@ int main(void) {
         uint8_t msg[32], out[32];
         fill_random(msg, 32);
         poison(msg, 32);           /* mark message as secret */
-        domain_hash(out, "cipher commit v1", msg, 32);
+        domain_hash(out, "cipher commit v3", msg, 32);
         unpoison(msg, 32);
         unpoison(out, 32);        /* output is derived from secret but now public */
     }

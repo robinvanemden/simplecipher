@@ -569,7 +569,7 @@ static void test_domain_separation(void) {
 
     /* Same data, different labels must produce different hashes */
     uint8_t h1[32], h2[32], h3[32];
-    domain_hash(h1, "cipher commit v1", data, KEY);
+    domain_hash(h1, "cipher commit v3", data, KEY);
     domain_hash(h2, "cipher x25519 sas root v1", data, KEY);
     domain_hash(h3, "some other label", data, KEY);
 
@@ -3548,8 +3548,8 @@ static void test_kdf_known_answer_vectors(void) {
     /* --- determinism: same inputs produce same output --- */
     uint8_t msgAA[32];
     memset(msgAA, 0xAA, 32);
-    domain_hash(out1, "cipher commit v1", msgAA, 32);
-    domain_hash(out2, "cipher commit v1", msgAA, 32);
+    domain_hash(out1, "cipher commit v3", msgAA, 32);
+    domain_hash(out2, "cipher commit v3", msgAA, 32);
     TEST("domain_hash deterministic (same inputs)",
          crypto_verify32(out1, out2) == 0);
 
@@ -3581,26 +3581,26 @@ static void test_kdf_known_answer_vectors(void) {
 
     /* --- true KAT: domain_hash with all-zero input --- */
     uint8_t zero32[32] = {0};
-    domain_hash(out1, "cipher commit v1", zero32, 32);
-    TEST("KAT domain_hash(\"cipher commit v1\", zeros) byte 0",
-         out1[0] == 0x6a);
-    TEST("KAT domain_hash(\"cipher commit v1\", zeros) byte 1",
-         out1[1] == 0x48);
-    TEST("KAT domain_hash(\"cipher commit v1\", zeros) byte 2",
-         out1[2] == 0xb5);
-    TEST("KAT domain_hash(\"cipher commit v1\", zeros) byte 3",
-         out1[3] == 0x87);
+    domain_hash(out1, "cipher commit v3", zero32, 32);
+    TEST("KAT domain_hash(\"cipher commit v3\", zeros) byte 0",
+         out1[0] == 0x19);
+    TEST("KAT domain_hash(\"cipher commit v3\", zeros) byte 1",
+         out1[1] == 0x58);
+    TEST("KAT domain_hash(\"cipher commit v3\", zeros) byte 2",
+         out1[2] == 0x92);
+    TEST("KAT domain_hash(\"cipher commit v3\", zeros) byte 3",
+         out1[3] == 0xa5);
 
     /* --- KAT: domain_hash with 0xAA input --- */
-    domain_hash(out1, "cipher commit v1", msgAA, 32);
-    TEST("KAT domain_hash(\"cipher commit v1\", 0xAA*32) byte 0",
-         out1[0] == 0x24);
-    TEST("KAT domain_hash(\"cipher commit v1\", 0xAA*32) byte 1",
-         out1[1] == 0xe6);
-    TEST("KAT domain_hash(\"cipher commit v1\", 0xAA*32) byte 2",
-         out1[2] == 0xe2);
-    TEST("KAT domain_hash(\"cipher commit v1\", 0xAA*32) byte 3",
-         out1[3] == 0xb7);
+    domain_hash(out1, "cipher commit v3", msgAA, 32);
+    TEST("KAT domain_hash(\"cipher commit v3\", 0xAA*32) byte 0",
+         out1[0] == 0x03);
+    TEST("KAT domain_hash(\"cipher commit v3\", 0xAA*32) byte 1",
+         out1[1] == 0xed);
+    TEST("KAT domain_hash(\"cipher commit v3\", 0xAA*32) byte 2",
+         out1[2] == 0x5a);
+    TEST("KAT domain_hash(\"cipher commit v3\", 0xAA*32) byte 3",
+         out1[3] == 0x92);
 
     /* --- KAT: expand("sas") with 0x42 PRK --- */
     TEST("KAT expand(0x42*32, \"sas\") byte 0", exp_sas[0] == 0x22);

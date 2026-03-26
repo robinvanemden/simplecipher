@@ -43,20 +43,35 @@ void win_console_restore(HANDLE h_in, DWORD old_mode) {
     if (h_in && h_in != INVALID_HANDLE_VALUE) SetConsoleMode(h_in, old_mode);
 }
 
+/* Write a buffer to stdout via WriteFile (bypassing libc stdio) and wipe it.
+ * This avoids leaving plaintext in libc's internal stdio buffer. */
+static void win_write_wipe(char *buf, size_t len) {
+    DWORD w;
+    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buf, (DWORD)len, &w, NULL);
+    crypto_wipe(buf, len);
+}
+
 /* Erase the current local input line before printing an asynchronous event
  * (peer message, disconnect notice, auth failure, etc.).  Then the caller
  * can print the event and redraw the prompt plus any partially typed text. */
 static void win_clear_input_line(size_t len) {
+    char   buf[MAX_MSG + 8];
     size_t i;
-    putchar('\r');
-    for (i = 0; i < len + 2; i++) putchar(' ');
-    putchar('\r');
+    int    n;
+    buf[0] = '\r';
+    for (i = 0; i < len + 2 && i + 1 < sizeof buf - 1; i++) buf[i + 1] = ' ';
+    buf[i + 1] = '\r';
+    n          = (int)(i + 2);
+    win_write_wipe(buf, (size_t)n);
 }
 
 /* Redraw the simple local prompt and the current partially typed line. */
 static void win_redraw_input(const char *line, size_t len) {
-    printf("> %.*s", (int)len, line);
-    fflush(stdout);
+    char buf[MAX_MSG + 8];
+    int  n = snprintf(buf, sizeof buf, "> %.*s", (int)len, line);
+    if (n < 0) n = 0;
+    if (n > (int)sizeof buf) n = (int)sizeof buf;
+    win_write_wipe(buf, (size_t)n);
 }
 
 /* Print one chat line while preserving any local text currently being typed.
@@ -70,8 +85,13 @@ static void win_print_chat(const char *who, const char *msg, const char *line, s
 /* Print a status line (disconnect, send error, etc.) and then restore the
  * partially typed local input line so the console stays readable. */
 static void win_print_status(const char *msg, const char *line, size_t line_len) {
+    char buf[MAX_MSG + 8];
+    int  n;
     win_clear_input_line(line_len);
-    printf("%s\n", msg);
+    n = snprintf(buf, sizeof buf, "%s\n", msg);
+    if (n < 0) n = 0;
+    if (n > (int)sizeof buf) n = (int)sizeof buf;
+    win_write_wipe(buf, (size_t)n);
     win_redraw_input(line, line_len);
 }
 
@@ -200,16 +220,20 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
 
                     if (k->wVirtualKeyCode == VK_BACK || k->uChar.AsciiChar == '\b') {
                         if (line_len > 0) {
+                            char  bs[3] = {'\b', ' ', '\b'};
+                            DWORD bsw;
                             line[--line_len] = '\0';
-                            printf("\b \b");
-                            fflush(stdout);
+                            WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), bs, 3, &bsw, NULL);
                         }
                         continue;
                     }
 
                     if (k->wVirtualKeyCode == VK_RETURN || k->uChar.AsciiChar == '\r') {
-                        putchar('\n');
-                        fflush(stdout);
+                        {
+                            char  nl = '\n';
+                            DWORD nlw;
+                            WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), &nl, 1, &nlw, NULL);
+                        }
 
                         if (line_len == 0) {
                             win_redraw_input(line, line_len);
@@ -254,10 +278,10 @@ void cli_chat_loop(socket_t fd, session_t *sess) {
                     ch = k->uChar.AsciiChar;
                     if (ch >= 0x20 && ch <= 0x7E) {
                         if (line_len < (size_t)MAX_MSG_RATCHET) {
+                            DWORD chw;
                             line[line_len++] = ch;
                             line[line_len]   = '\0';
-                            putchar(ch);
-                            fflush(stdout);
+                            WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), &ch, 1, &chw, NULL);
                         }
                         continue;
                     }
