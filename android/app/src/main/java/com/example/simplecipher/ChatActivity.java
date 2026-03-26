@@ -379,6 +379,7 @@ public class ChatActivity extends Activity implements NativeCallback {
           sendBtn.setEnabled(false);
           chatInput.setEnabled(false); /* block Enter key too, not just button */
           sessionLive = false;
+          pendingSendMsg = null;
         });
   }
 

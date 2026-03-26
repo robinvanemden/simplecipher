@@ -517,10 +517,11 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.FREEBSD_SSH_KEY }}
           HOST: ${{ secrets.FREEBSD_HOST }}
+          HOST_KEY: ${{ secrets.FREEBSD_HOST_KEY }}
         run: |
           # Skip if secrets are not configured (forks, PRs from forks)
-          if [ -z "$SSH_KEY" ] || [ -z "$HOST" ]; then
-            echo "SKIP: FREEBSD_SSH_KEY or FREEBSD_HOST not set"
+          if [ -z "$SSH_KEY" ] || [ -z "$HOST" ] || [ -z "$HOST_KEY" ]; then
+            echo "SKIP: FREEBSD_SSH_KEY or FREEBSD_HOST or FREEBSD_HOST_KEY not set"
             exit 0
           fi
 
@@ -528,7 +529,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/freebsd_key
           chmod 600 ~/.ssh/freebsd_key
-          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
+          echo "$HOST_KEY" >> ~/.ssh/known_hosts
 
           SSH="ssh -i ~/.ssh/freebsd_key ci@$HOST"
 
@@ -568,10 +569,11 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.OPENBSD_SSH_KEY }}
           HOST: ${{ secrets.OPENBSD_HOST }}
+          HOST_KEY: ${{ secrets.OPENBSD_HOST_KEY }}
         run: |
           # Skip if secrets are not configured (forks, PRs from forks)
-          if [ -z "$SSH_KEY" ] || [ -z "$HOST" ]; then
-            echo "SKIP: OPENBSD_SSH_KEY or OPENBSD_HOST not set"
+          if [ -z "$SSH_KEY" ] || [ -z "$HOST" ] || [ -z "$HOST_KEY" ]; then
+            echo "SKIP: OPENBSD_SSH_KEY or OPENBSD_HOST or OPENBSD_HOST_KEY not set"
             exit 0
           fi
 
@@ -579,7 +581,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/openbsd_key
           chmod 600 ~/.ssh/openbsd_key
-          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
+          echo "$HOST_KEY" >> ~/.ssh/known_hosts
 
           SSH="ssh -i ~/.ssh/openbsd_key ci@$HOST"
 
@@ -621,15 +623,16 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.ARM64_SSH_KEY }}
           HOST: ${{ secrets.ARM64_HOST }}
+          HOST_KEY: ${{ secrets.ARM64_HOST_KEY }}
         run: |
-          if [ -z "$SSH_KEY" ] || [ -z "$HOST" ]; then
-            echo "SKIP: ARM64_SSH_KEY or ARM64_HOST not set"
+          if [ -z "$SSH_KEY" ] || [ -z "$HOST" ] || [ -z "$HOST_KEY" ]; then
+            echo "SKIP: ARM64_SSH_KEY or ARM64_HOST or ARM64_HOST_KEY not set"
             exit 0
           fi
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/arm64_key
           chmod 600 ~/.ssh/arm64_key
-          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
+          echo "$HOST_KEY" >> ~/.ssh/known_hosts
           SSH="ssh -i ~/.ssh/arm64_key ci@$HOST"
           $SSH "
             set -e

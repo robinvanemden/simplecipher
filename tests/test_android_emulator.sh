@@ -333,8 +333,9 @@ if [ -f "$PROXY_BIN" ] && [ -f "$PEER_BIN" ]; then
             elif echo "$UI_DUMP" | grep -qi "Connected\|handshake\|Performing"; then
                 pass "App SOCKS5 path: reached connected/handshake state"
             elif echo "$UI_DUMP" | grep -qi "SOCKS5\|proxy.*fail\|proxy.*error\|Connection failed\|connect failed"; then
-                # SOCKS5-specific failure proves the proxy path was exercised
-                pass "App SOCKS5 path: proxy connection attempted (expected failure)"
+                # SOCKS5 path was invoked but no real proxy available in emulator CI.
+                # Not a positive success, but not a regression either.
+                echo "  SKIP  App SOCKS5 path: proxy invoked, no real proxy in CI (non-fatal)"
             elif echo "$UI_DUMP" | grep -qi "failed\|error\|disconnect"; then
                 # Generic failure — might not be SOCKS5-related
                 fail "App SOCKS5 path: generic error in UI (not clearly SOCKS5-related)"

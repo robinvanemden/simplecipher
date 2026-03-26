@@ -40,25 +40,32 @@ if ss -tln | grep -q ':9050'; then
     # This will fail at the handshake (Tor can't resolve 127.0.0.1 through
     # the network), but the SOCKS5 negotiation itself should complete.
     # Use timeout to prevent hanging.
-    timeout 15 $BIN connect --socks5 127.0.0.1:9050 127.0.0.1 $PORT < /dev/null 2>&1 &
+    # Capture stderr to check for SOCKS5 negotiation evidence
+    CONNECT_LOG=$(mktemp)
+    timeout 15 $BIN connect --socks5 127.0.0.1:9050 127.0.0.1 $PORT < /dev/null 2>"$CONNECT_LOG" &
     CONNECT_PID=$!
     sleep 10
 
-    # Check if the connect process started (SOCKS5 negotiation happened)
+    # Check for SOCKS5-specific output proving negotiation happened
     if kill -0 $CONNECT_PID 2>/dev/null; then
-        pass "Tor SOCKS5 connect: process alive (SOCKS5 negotiation in progress)"
+        # Still running — check if SOCKS5 negotiation started
+        if grep -qi "SOCKS5\|Connecting.*9050\|proxy" "$CONNECT_LOG"; then
+            pass "Tor SOCKS5 connect: SOCKS5 negotiation in progress"
+        else
+            pass "Tor SOCKS5 connect: process alive (awaiting SOCKS5)"
+        fi
     else
         wait $CONNECT_PID 2>/dev/null
         EXIT_CODE=$?
-        # Exit 1 = connection failed (expected: Tor can't loopback to 127.0.0.1)
-        # Exit 124 = timeout killed it (expected: handshake stall)
-        # Exit >128 = signal (crash) — should fail
-        if [ $EXIT_CODE -le 124 ]; then
-            pass "Tor SOCKS5 connect: exited $EXIT_CODE (expected — Tor can't loopback)"
-        else
+        if [ $EXIT_CODE -gt 128 ]; then
             fail "Tor SOCKS5 connect: crashed with signal $((EXIT_CODE - 128))"
+        elif grep -qi "SOCKS5" "$CONNECT_LOG"; then
+            pass "Tor SOCKS5 connect: SOCKS5 path exercised (exit $EXIT_CODE)"
+        else
+            fail "Tor SOCKS5 connect: no SOCKS5 evidence in output (exit $EXIT_CODE)"
         fi
     fi
+    rm -f "$CONNECT_LOG"
 
     kill $LISTENER_PID 2>/dev/null || true
     kill $CONNECT_PID 2>/dev/null || true

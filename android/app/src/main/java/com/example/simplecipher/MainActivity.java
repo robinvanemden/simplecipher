@@ -6,6 +6,8 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -56,6 +58,7 @@ public class MainActivity extends Activity {
   private boolean fpExpanded = false;
   private String selfFingerprint = null;
   private String peerFingerprint = null;
+  private final Handler clipboardHandler = new Handler(Looper.getMainLooper());
   private final QrHelper qr = new QrHelperImpl();
   private SimpleKeyboard inAppKeyboard;
 
@@ -326,6 +329,10 @@ public class MainActivity extends Activity {
   @Override
   protected void onStop() {
     if (inAppKeyboard != null) inAppKeyboard.setVisibility(View.GONE);
+    /* Clear any pending clipboard auto-clear callbacks and clear clipboard now */
+    clipboardHandler.removeCallbacksAndMessages(null);
+    ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+    if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("", ""));
     /* Wipe pre-generated key when app is backgrounded.
      * LIFECYCLE INVARIANT: when MainActivity starts ChatActivity,
      * Android guarantees: A.onPause -> B.onCreate -> ... -> A.onStop.
@@ -445,10 +452,14 @@ public class MainActivity extends Activity {
                   .show();
             }
             /* Auto-clear clipboard after 30 seconds.
-             * Uses copyBtn.postDelayed — when the view is detached
-             * (activity destroyed / localIpsContainer.removeAllViews),
-             * pending callbacks are automatically cancelled. */
-            v.postDelayed(() -> cm.setPrimaryClip(ClipData.newPlainText("", "")), 30000);
+             * Uses a field-level Handler so the callback survives
+             * view detachment (localIpsContainer.removeAllViews). */
+            clipboardHandler.postDelayed(
+                () -> {
+                  ClipboardManager cmClear = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                  if (cmClear != null) cmClear.setPrimaryClip(ClipData.newPlainText("", ""));
+                },
+                30000);
           });
       row.addView(copyBtn);
 
