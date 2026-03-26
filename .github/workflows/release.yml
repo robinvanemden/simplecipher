@@ -56,6 +56,12 @@ jobs:
               sudo tar -xJf "$ARCHIVE" -C /opt/x-tools/
               rm -f "$ARCHIVE"
             fi
+            # Re-verify after cache restore: detect poisoned cache.
+            GCC="/opt/x-tools/$TRIPLE/bin/$TRIPLE-gcc"
+            if [ ! -x "$GCC" ] || ! file "$GCC" | grep -q "ELF"; then
+              echo "::error::Toolchain $TRIPLE appears corrupted (missing or non-ELF gcc)"
+              exit 1
+            fi
             echo "/opt/x-tools/$TRIPLE/$TRIPLE/bin" >> "$GITHUB_PATH"
           done
 
@@ -74,6 +80,12 @@ jobs:
             sudo tar -xJf "$ARCHIVE" -C /opt/
             sudo mv /opt/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64 /opt/llvm-mingw
             rm -f "$ARCHIVE"
+          fi
+          # Re-verify after cache restore: detect poisoned cache.
+          CLANG="/opt/llvm-mingw/bin/x86_64-w64-mingw32-clang"
+          if [ ! -x "$CLANG" ] || ! file "$CLANG" | grep -q "ELF"; then
+            echo "::error::llvm-mingw appears corrupted (missing or non-ELF clang)"
+            exit 1
           fi
 
       - name: Patch llvm-mingw toolchain path for CI
