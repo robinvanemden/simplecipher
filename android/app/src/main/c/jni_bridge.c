@@ -142,6 +142,14 @@ static _Atomic int g_session_active = 0;
  * matches — preventing a stale thread from marking a newer session inactive. */
 static _Atomic int g_session_gen = 0;
 
+/* Mutex protecting the generation check + socket publish/clear sequences.
+ * A plain generation check followed by a separate socket write is a TOCTOU
+ * race: a detached stale thread can pass the check, then a new nativeStart
+ * increments the generation, and the stale thread still writes.  The mutex
+ * makes check+write atomic.  Held only for a few instructions — never
+ * during blocking I/O (accept, read, write, poll). */
+static pthread_mutex_t g_session_mtx = PTHREAD_MUTEX_INITIALIZER;
+
 /* ---- Pre-generated key (set by MainActivity before nativeStart) --------- */
 
 static uint8_t     g_prekey_priv[KEY];
@@ -356,8 +364,9 @@ static void *session_thread(void *arg) {
         close(pipe_rd);
         /* Cannot DeleteGlobalRef(cb) without a JNI env — accept the leak.
          * Clear g_session_active so nativeStart() doesn't wait forever. */
-        if (g_session_gen == my_gen)
-            g_session_active = 0;
+        pthread_mutex_lock(&g_session_mtx);
+        if (g_session_gen == my_gen) g_session_active = 0;
+        pthread_mutex_unlock(&g_session_mtx);
         return NULL;
     }
 
@@ -513,14 +522,10 @@ static void *session_thread(void *arg) {
          * When nativeStop() closes the pipe write end, select() marks
          * pipe_rd readable; read() then returns EOF.  nativeStop() also
          * closes g_listen_sock, making select() return on srv too. */
-        /* Publish only if our generation still matches — atomic CAS prevents
-         * a stale detached thread from overwriting a newer session's socket
-         * if g_session_gen changes between the check and the store. */
-        {
-            socket_t expected = INVALID_SOCK;
-            if (g_session_gen == my_gen)
-                atomic_compare_exchange_strong(&g_listen_sock, &expected, srv);
-        }
+        /* Publish under mutex: generation check + socket write are atomic. */
+        pthread_mutex_lock(&g_session_mtx);
+        if (g_session_gen == my_gen) g_listen_sock = srv;
+        pthread_mutex_unlock(&g_session_mtx);
         while (fd == INVALID_SOCK) {
             fd_set rfds;
             FD_ZERO(&rfds);
@@ -535,10 +540,9 @@ static void *session_thread(void *arg) {
             if (FD_ISSET(pipe_rd, &rfds)) {
                 /* nativeStop() closed pipe (or CMD_QUIT fallback) — abort */
                 LOGI("quit received during listen");
-                {   /* CAS: only clear if OUR listener is still published */
-                    socket_t expected = srv;
-                    atomic_compare_exchange_strong(&g_listen_sock, &expected, INVALID_SOCK);
-                }
+                pthread_mutex_lock(&g_session_mtx);
+                if (g_listen_sock == srv) g_listen_sock = INVALID_SOCK;
+                pthread_mutex_unlock(&g_session_mtx);
                 close_sock(srv);
                 jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_listen");
                 goto cleanup;
@@ -548,10 +552,9 @@ static void *session_thread(void *arg) {
                 fd = accept(srv, NULL, NULL);
             }
         }
-        {   /* CAS: only clear if OUR listener is still published */
-            socket_t expected = srv;
-            atomic_compare_exchange_strong(&g_listen_sock, &expected, INVALID_SOCK);
-        }
+        pthread_mutex_lock(&g_session_mtx);
+        if (g_listen_sock == srv) g_listen_sock = INVALID_SOCK;
+        pthread_mutex_unlock(&g_session_mtx);
         close_sock(srv);
         we_init = 0;
     }
@@ -571,14 +574,14 @@ static void *session_thread(void *arg) {
     }
 
     LOGI("connected (we_init=%d)", we_init);
-    /* Publish socket only if our generation still matches — atomic CAS
-     * prevents a TOCTOU race with a concurrent nativeStart(). */
-    {
-        int gen = my_gen;
-        if (!atomic_compare_exchange_strong(&g_session_gen, &gen, my_gen)) goto cleanup;
-        socket_t expected = INVALID_SOCK;
-        atomic_compare_exchange_strong(&g_session_sock, &expected, fd);
+    /* Publish under mutex: generation check + socket write are atomic. */
+    pthread_mutex_lock(&g_session_mtx);
+    if (g_session_gen != my_gen) {
+        pthread_mutex_unlock(&g_session_mtx);
+        goto cleanup;
     }
+    g_session_sock = fd;
+    pthread_mutex_unlock(&g_session_mtx);
     (*env)->CallVoidMethod(env, cb, mid_onConnected);
     if (jni_callback_ok(env) != 0) {
         LOGE("onConnected callback failed — aborting session");
@@ -1022,12 +1025,11 @@ cleanup:
     crypto_wipe(prekey_priv, sizeof prekey_priv);
     crypto_wipe(prekey_pub,  sizeof prekey_pub);
     /* Close socket — clear the global first so nativeStop() won't
-     * try to shutdown() a closed fd.  CAS ensures we only clear if
-     * our fd is still the published value (not a newer session's). */
-    {
-        socket_t expected = fd;
-        atomic_compare_exchange_strong(&g_session_sock, &expected, INVALID_SOCK);
-    }
+     * try to shutdown() a closed fd.  Mutex + value check ensures we
+     * only clear if our fd is still the published value. */
+    pthread_mutex_lock(&g_session_mtx);
+    if (g_session_sock == fd) g_session_sock = INVALID_SOCK;
+    pthread_mutex_unlock(&g_session_mtx);
     if (fd != INVALID_SOCK) {
         sock_shutdown_both(fd);
         close_sock(fd);
@@ -1045,14 +1047,10 @@ cleanup:
     /* Detach from JVM */
     (*g_jvm)->DetachCurrentThread(g_jvm);
 
-    /* Only clear g_session_active if our generation still matches.
-     * CAS on g_session_gen: if it still equals my_gen, no newer session
-     * was spawned and we can safely clear the active bit. */
-    {
-        int gen = my_gen;
-        if (atomic_compare_exchange_strong(&g_session_gen, &gen, my_gen))
-            g_session_active = 0;
-    }
+    /* Only clear g_session_active if our generation still matches. */
+    pthread_mutex_lock(&g_session_mtx);
+    if (g_session_gen == my_gen) g_session_active = 0;
+    pthread_mutex_unlock(&g_session_mtx);
     LOGI("session thread exiting (gen=%d)", my_gen);
     return NULL;
 }
@@ -1119,16 +1117,19 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
      * old socket is fully closed before we try to bind the same port.
      * Without this, listen→back→listen fails with "address in use". */
     if (g_session_active) {
-        /* Shutdown session socket to unblock read_exact/write_exact */
+        /* Shutdown old session's sockets under mutex. */
+        pthread_mutex_lock(&g_session_mtx);
         {
-            socket_t s = atomic_exchange(&g_session_sock, INVALID_SOCK);
+            socket_t s = g_session_sock;
+            g_session_sock = INVALID_SOCK;
             if (s != INVALID_SOCK) sock_shutdown_both(s);
         }
-        /* Close the listen socket to unblock accept() if still waiting */
         {
-            socket_t ls = atomic_exchange(&g_listen_sock, INVALID_SOCK);
+            socket_t ls = g_listen_sock;
+            g_listen_sock = INVALID_SOCK;
             if (ls != INVALID_SOCK) close_sock(ls);
         }
+        pthread_mutex_unlock(&g_session_mtx);
         /* Wait for thread to exit.  Poll g_session_active with short
          * sleeps rather than pthread_timedjoin_np (not available on Bionic). */
         for (int i = 0; i < 20 && g_session_active; i++) {
@@ -1461,21 +1462,22 @@ Java_com_example_simplecipher_ChatActivity_nativeStop(
         if (wr >= 0) close(wr);
     }
 
-    /* 2. Shutdown session socket → unblock read_exact/write_exact */
+    /* 2. Shutdown session socket → unblock read_exact/write_exact
+     * 3. Close listen socket → unblock select/accept
+     * Both under mutex to prevent racing with the session thread's
+     * generation-guarded publish/clear sequences. */
+    pthread_mutex_lock(&g_session_mtx);
     {
-        socket_t s = atomic_exchange(&g_session_sock, INVALID_SOCK);
-        if (s != INVALID_SOCK) {
-            /* shutdown() signals the thread without closing the fd.
-             * The thread still owns the fd for close() in cleanup. */
-            sock_shutdown_both(s);
-        }
+        socket_t s = g_session_sock;
+        g_session_sock = INVALID_SOCK;
+        if (s != INVALID_SOCK) sock_shutdown_both(s);
     }
-
-    /* 3. Close listen socket → unblock select/accept */
     {
-        socket_t ls = atomic_exchange(&g_listen_sock, INVALID_SOCK);
+        socket_t ls = g_listen_sock;
+        g_listen_sock = INVALID_SOCK;
         if (ls != INVALID_SOCK) close_sock(ls);
     }
+    pthread_mutex_unlock(&g_session_mtx);
 }
 
 JNIEXPORT jstring JNICALL
