@@ -57,6 +57,6 @@ Consumers (main.c, test_p2p.c, jni_bridge.c) include headers and link object fil
 
 ## Tests
 
-`tests/test_p2p.c` — 637 tests covering crypto, DH ratchet, TCP loopback handshake, bidirectional messaging, tamper detection, replay rejection, forward secrecy, post-compromise security, KDF known-answer vectors, constant-time verification, SOCKS5 request building, peer fingerprint verification, cover traffic, transactional ratchet receive, MAC failure tolerance. Must pass before any release.
+`tests/test_p2p.c` — 637 tests, `tests/test_socks5_proxy.c` — 10 SOCKS5 proxy tests (647 total) covering crypto, DH ratchet, TCP loopback handshake, bidirectional messaging, tamper detection, replay rejection, forward secrecy, post-compromise security, KDF known-answer vectors, constant-time verification, SOCKS5 request building, peer fingerprint verification, cover traffic, transactional ratchet receive, MAC failure tolerance. Must pass before any release.
 
 Run with: `make test`
