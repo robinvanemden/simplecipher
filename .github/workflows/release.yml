@@ -382,7 +382,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/freebsd_key
           chmod 600 ~/.ssh/freebsd_key
-          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
           SSH="ssh -i ~/.ssh/freebsd_key ci@$HOST"
           $SSH "
             set -e
@@ -418,7 +418,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/openbsd_key
           chmod 600 ~/.ssh/openbsd_key
-          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
           SSH="ssh -i ~/.ssh/openbsd_key ci@$HOST"
           $SSH "
             set -e
@@ -454,7 +454,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/arm64_key
           chmod 600 ~/.ssh/arm64_key
-          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
           SSH="ssh -i ~/.ssh/arm64_key ci@$HOST"
           $SSH "
             set -e

@@ -332,10 +332,13 @@ if [ -f "$PROXY_BIN" ] && [ -f "$PEER_BIN" ]; then
                 pass "App SOCKS5 path: reached SAS/verification screen"
             elif echo "$UI_DUMP" | grep -qi "Connected\|handshake\|Performing"; then
                 pass "App SOCKS5 path: reached connected/handshake state"
+            elif echo "$UI_DUMP" | grep -qi "SOCKS5\|proxy.*fail\|proxy.*error\|Connection failed\|connect failed"; then
+                # SOCKS5-specific failure proves the proxy path was exercised
+                pass "App SOCKS5 path: proxy connection attempted (expected failure)"
             elif echo "$UI_DUMP" | grep -qi "failed\|error\|disconnect"; then
-                # Connection failed is acceptable (peer might not have responded in time)
-                # but it proves the SOCKS5 path was exercised (not a silent skip)
-                pass "App SOCKS5 path: connection attempted through proxy (peer timeout)"
+                # Generic failure — might not be SOCKS5-related
+                fail "App SOCKS5 path: generic error in UI (not clearly SOCKS5-related)"
+                echo "  UI dump: $(echo "$UI_DUMP" | head -5)"
             else
                 fail "App SOCKS5 path: no evidence of SOCKS5 connection attempt in UI"
                 echo "  UI dump: $(echo "$UI_DUMP" | head -5)"

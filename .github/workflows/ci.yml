@@ -528,7 +528,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/freebsd_key
           chmod 600 ~/.ssh/freebsd_key
-          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
 
           SSH="ssh -i ~/.ssh/freebsd_key ci@$HOST"
 
@@ -579,7 +579,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/openbsd_key
           chmod 600 ~/.ssh/openbsd_key
-          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
 
           SSH="ssh -i ~/.ssh/openbsd_key ci@$HOST"
 
@@ -629,7 +629,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/arm64_key
           chmod 600 ~/.ssh/arm64_key
-          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
           SSH="ssh -i ~/.ssh/arm64_key ci@$HOST"
           $SSH "
             set -e
@@ -648,11 +648,11 @@ jobs:
             echo '=== SOCKS5 proxy test ==='
             ./tests/test_socks5_proxy
             echo '=== Valgrind memory check (SOCKS5) ==='
-            valgrind --leak-check=full --error-exitcode=42 ./tests/test_socks5_proxy 2>&1 | tail -5
+            valgrind --leak-check=full --error-exitcode=42 ./tests/test_socks5_proxy
             echo '=== Valgrind memory check (core) ==='
-            timeout 300 valgrind --error-exitcode=42 ./tests/test_p2p 2>&1 | tail -5
+            timeout 300 valgrind --error-exitcode=42 ./tests/test_p2p
             echo '=== Real Tor SOCKS5 test ==='
-            bash tests/test_arm64_tor.sh || echo 'Tor test had failures (non-fatal for CI)'
+            bash tests/test_arm64_tor.sh
           "
           rm -f ~/.ssh/arm64_key
 

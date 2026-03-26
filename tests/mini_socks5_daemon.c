@@ -134,12 +134,12 @@ int main(void) {
         if (fds[0].revents & (POLLIN | POLLHUP)) {
             ssize_t n = recv(client, buf, sizeof buf, 0);
             if (n <= 0) break;
-            send(target_fd, buf, (size_t)n, 0);
+            if (send_all(target_fd, buf, (size_t)n) != 0) break;
         }
         if (fds[1].revents & (POLLIN | POLLHUP)) {
             ssize_t n = recv(target_fd, buf, sizeof buf, 0);
             if (n <= 0) break;
-            send(client, buf, (size_t)n, 0);
+            if (send_all(client, buf, (size_t)n) != 0) break;
         }
     }
 
