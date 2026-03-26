@@ -72,6 +72,8 @@ public class ChatActivity extends Activity implements NativeCallback {
   /* Pause flag: when true, appendChat() drops messages to avoid
    * leaking plaintext into the Java heap while the app is backgrounded. */
   private boolean paused = false;
+  /* Message waiting for onSendResult confirmation before display. */
+  private String pendingSendMsg = null;
 
   /**
    * True if the peer fingerprint was pre-verified by native during handshake. Set from native
@@ -206,11 +208,14 @@ public class ChatActivity extends Activity implements NativeCallback {
     try {
       byte[] payload = msg.getBytes("UTF-8");
       boolean ok = nativePostCommand(CMD_SEND, payload);
-      /* Show the message only after we know it reached the pipe.
-       * If the pipe is full (backpressure), the user sees the failure
-       * instead of a phantom "sent" message. */
+      /* Do NOT show the message here — the pipe write succeeding only
+       * means the bytes reached the native thread's command buffer.
+       * The native thread might still reject it (e.g., frame_build fails
+       * because the message exceeds MAX_MSG_RATCHET after a ratchet step).
+       * The message is shown later when onSendResult(true) arrives.
+       * Store it as pending so onSendResult can display it. */
       if (ok) {
-        appendChat("me", msg);
+        pendingSendMsg = msg;
       } else {
         appendChat("system", "[send failed — pipe full, try again]");
       }
@@ -336,9 +341,14 @@ public class ChatActivity extends Activity implements NativeCallback {
 
   @Override
   public void onSendResult(boolean ok) {
-    if (!ok) {
-      uiHandler.post(() -> appendChat("system", "[send failed]"));
-    }
+    uiHandler.post(() -> {
+      if (ok && pendingSendMsg != null) {
+        appendChat("me", pendingSendMsg);
+      } else if (!ok) {
+        appendChat("system", "[send failed]");
+      }
+      pendingSendMsg = null;
+    });
   }
 
   @Override

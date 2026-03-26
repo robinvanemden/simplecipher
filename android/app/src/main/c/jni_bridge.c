@@ -1067,6 +1067,13 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     g_jvm = vm;
 
+    /* Ignore SIGPIPE: if the session thread closes the pipe read end
+     * before nativeStop() closes the write end, a late nativePostCommand()
+     * would write to a pipe with no readers and get SIGPIPE (default:
+     * terminate process).  Desktop main.c installs SIG_IGN for SIGPIPE
+     * via sigaction; we do the same here at library load time. */
+    signal(SIGPIPE, SIG_IGN);
+
     /* Block ptrace and /proc/self/mem access — prevents memory dumping
      * of crypto keys by a compromised app or debugger. */
     prctl(PR_SET_DUMPABLE, 0);
