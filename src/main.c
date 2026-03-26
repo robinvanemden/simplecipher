@@ -517,13 +517,15 @@ int main(int argc, char *argv[]) {
      * timeout does NOT fire on idle silence between messages -- two people
      * can sit quietly for hours without being disconnected.
      *
-     * What it DOES prevent: a peer who connects, completes the handshake,
-     * then sends the first few bytes of a frame and stalls.  poll() would
-     * return (data arrived), but read_exact would then block forever waiting
-     * for the remaining bytes.  With a 30-second SO_RCVTIMEO, read_exact
-     * returns -1 if the full frame does not arrive within 30 seconds of
-     * poll() waking up.  Any real network delivers 512 bytes in milliseconds
-     * once transmission has started.
+     * What it DOES prevent: a peer who sends the first bytes of a frame
+     * then stalls.  The chat loops use read_exact_dl() with a 30-second
+     * absolute per-frame deadline that tightens SO_RCVTIMEO to remaining
+     * time before each recv().  A byte-dribble attack (one byte just under
+     * the per-syscall timeout) is bounded to 30 seconds total, not 30
+     * seconds per byte.  Any real network delivers 512 bytes in milliseconds.
+     *
+     * The SO_RCVTIMEO set here is a backstop for the deadline logic; the
+     * actual enforcement is in read_exact_dl inside each event loop.
      *
      * Windows uses a different strategy: WSAEventSelect puts the socket in
      * non-blocking mode, so partial frames are accumulated in a small buffer

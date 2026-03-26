@@ -134,7 +134,11 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
 
         /* ----- Incoming frame from peer ----- */
         if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
-            if (read_exact(fd, frame, FRAME_SZ) != 0) {
+            /* Per-frame deadline: a real 512-byte frame completes in
+             * milliseconds once poll() says data arrived.  The deadline
+             * defeats byte-dribble attacks that reset SO_RCVTIMEO by
+             * sending one byte just under the per-syscall timeout. */
+            if (read_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                 tui_msg_add(TUI_SYSTEM, "[peer disconnected]");
                 status = "Peer disconnected  |  Ctrl+C to exit";
                 tui_draw_screen(status, line, line_len);

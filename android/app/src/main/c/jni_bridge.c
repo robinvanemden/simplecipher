@@ -789,8 +789,8 @@ static void *session_thread(void *arg) {
                 uint8_t  plain[MAX_MSG + 1];
                 uint16_t plen = 0;
 
-                if (read_exact(fd, frame, FRAME_SZ) != 0) {
-                    LOGI("peer disconnected (read_exact failed)");
+                if (read_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                    LOGI("peer disconnected (frame read failed)");
                     crypto_wipe(frame, sizeof frame);
                     jni_call_str(env, cb, mid_onDisconnected, "Peer disconnected", "peer_dc");
                     break;
@@ -1094,7 +1094,10 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
             usleep(100000);  /* 100ms × 20 = 2s max wait */
         }
         if (g_session_active) {
-            LOGE("previous session thread did not exit in time");
+            LOGE("previous session thread did not exit in time — detaching");
+            /* Detach so the thread auto-cleans when it eventually exits.
+             * Without this, the joinable thread leaks its stack. */
+            pthread_detach(g_session_thread);
         } else {
             pthread_join(g_session_thread, NULL);
         }
