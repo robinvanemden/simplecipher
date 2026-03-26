@@ -173,7 +173,8 @@ void set_sock_opts(socket_t fd) {
      * even if an adversary dribbles one byte just under the per-call
      * timeout.  15 seconds is generous for a single handshake round
      * (33 or 32 bytes over any real network). */
-    uint64_t dl = monotonic_ms() + 15000;
+    enum { EXCHANGE_DEADLINE_MS = 15000 };
+    uint64_t dl = monotonic_ms() + EXCHANGE_DEADLINE_MS;
     if (we_init) {
         if (write_exact_dl(fd, out, out_n, dl) != 0) return -1;
         if (read_exact_dl(fd, in, in_n, dl) != 0) return -1;

@@ -112,7 +112,7 @@ static void usage(const char *prog) {
  * one TCP socket, one console.  The only difference is how each OS exposes
  * waitable input events. */
 int main(int argc, char *argv[]) {
-    int         we_init;
+    int         we_init; /* 1 = connect (initiator), 0 = listen (responder) */
     const char *host = nullptr;
     const char *port = "7777";
     uint8_t     self_priv[KEY], self_pub[KEY], peer_pub[KEY];
