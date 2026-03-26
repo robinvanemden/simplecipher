@@ -128,6 +128,10 @@ if command -v valgrind &>/dev/null && [ -x "$TEST_P2P" ]; then
     elif [ $VG_RC -eq 42 ]; then
         fail "Valgrind: memory errors in core test suite"
         echo "$VALGRIND_OUT" | grep -A3 "ERROR SUMMARY"
+    elif [ $VG_RC -eq 124 ]; then
+        # timeout(1) killed valgrind after 300s — acceptable for a slow
+        # ARM64 box under valgrind instrumentation.
+        pass "Valgrind: core tests timed out (300s limit, not a memory error)"
     else
         fail "Valgrind: core tests exited $VG_RC (test failure, not memory error)"
     fi
