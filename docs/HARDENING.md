@@ -64,7 +64,7 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 ### Unit and integration tests (CI, blocking)
 
 ```bash
-make test    # 647 tests
+make test    # 649 tests (639 core + 10 SOCKS5)
 ```
 
 Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultaneous send), TCP loopback, tamper/replay/reserved-flag rejection, forward secrecy, KDF known-answer vectors, fingerprint verification, SOCKS5 request building, deterministic session vectors.

@@ -157,6 +157,9 @@ simplecipher connect
 # Verify peer identity with a pre-shared fingerprint (interactive)
 simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678
 #   Host: 100.x.y.z
+
+# Show version and build info
+simplecipher --version
 ```
 
 TUI mode works on Linux, macOS, and Windows 10+. No dependencies — pure ANSI escape sequences.
@@ -168,6 +171,20 @@ TUI mode works on Linux, macOS, and Windows 10+. No dependencies — pure ANSI e
 **Peer fingerprint** (`--peer-fingerprint`): the listener's fingerprint is shown on the listen screen *before* any connection is made, so it can be shared while waiting for a peer. The connector passes it as a flag. After the handshake, the peer's public key is hashed and compared — mismatch aborts the connection. This is optional additional verification on top of the SAS code, useful when you can pre-share a fingerprint but can't make a phone call.
 
 On Android, the same flow happens through the app UI: choose Listen or Connect, enter the host/port, verify the safety code, and chat.
+
+### Exit codes
+
+For scripting and automation, SimpleCipher uses distinct exit codes:
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success (clean shutdown) |
+| 1 | Usage error (bad arguments) |
+| 2 | Network error (connection failed, timeout) |
+| 3 | Handshake failure (protocol mismatch, commitment mismatch) |
+| 4 | MITM detected (safety code rejected or peer fingerprint mismatch) |
+| 5 | Sandbox error (`--require-sandbox` and sandbox installation failed) |
+| 6 | Internal error |
 
 ### Safety code verification
 
@@ -239,7 +256,7 @@ SimpleCipher encrypts your conversation. The operating system protects everythin
 ## FAQ
 
 **Can someone read my messages?**
-Not if you compare the safety code. The encryption uses the same industry-standard algorithms as Signal and WhatsApp ([X25519](docs/PROTOCOL.md#x25519), [XChaCha20-Poly1305](docs/PROTOCOL.md#xchacha20-poly1305)). The code has been tested with 647 automated tests, formally verified with CBMC, and the crypto library ([Monocypher](https://monocypher.org/)) has been [professionally audited](https://monocypher.org/quality-assurance/audit). That said, SimpleCipher itself has not been independently audited as a complete system. If your safety depends on this tool, commission a professional audit first.
+Not if you compare the safety code. The encryption uses the same industry-standard algorithms as Signal and WhatsApp ([X25519](docs/PROTOCOL.md#x25519), [XChaCha20-Poly1305](docs/PROTOCOL.md#xchacha20-poly1305)). The code has been tested with 649 automated tests, formally verified with CBMC, and the crypto library ([Monocypher](https://monocypher.org/)) has been [professionally audited](https://monocypher.org/quality-assurance/audit). That said, SimpleCipher itself has not been independently audited as a complete system. If your safety depends on this tool, commission a professional audit first.
 
 **Can someone intercept the connection?**
 They can try, but the safety code comparison stops them. Both sides lock in their keys before revealing them, then derive a code that must match. If it matches, no one is in the middle. If you skip the comparison, all bets are off.
