@@ -37,7 +37,9 @@ static void tui_sigwinch(int sig) {
 void tui_restore_term(void) {
     printf("\033[?25h"); /* show cursor */
     printf("\033[0 q");  /* restore default cursor shape */
-    printf("\033[0m");   /* reset colors */
+    printf("\033[0m");     /* reset colors */
+    printf("\033[?1049l"); /* leave alternate screen buffer — erases all
+                           * chat content and restores the original screen */
     fflush(stdout);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &tui_orig_termios);
 }
@@ -72,8 +74,12 @@ void tui_init_term(void) {
     sa.sa_flags = 0;
     sigaction(SIGWINCH, &sa, nullptr);
 
-    printf("\033[?25l"); /* hide cursor while drawing the UI frame */
-    printf("\033[2J");   /* clear screen */
+    printf("\033[?1049h"); /* enter alternate screen buffer — chat never
+                           * touches the user's previous scrollback, and
+                           * leaving the alternate buffer on exit erases
+                           * all chat content from the terminal. */
+    printf("\033[?25l");   /* hide cursor while drawing the UI frame */
+    printf("\033[2J");     /* clear screen */
     fflush(stdout);
 }
 

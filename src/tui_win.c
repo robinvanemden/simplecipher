@@ -33,6 +33,7 @@ void tui_restore_term(void) {
     printf("\033[?25h");
     printf("\033[0 q"); /* restore default cursor shape */
     printf("\033[0m");
+    printf("\033[?1049l"); /* leave alternate screen buffer */
     fflush(stdout);
     if (tui_h_out != INVALID_HANDLE_VALUE) SetConsoleMode(tui_h_out, tui_orig_out_mode);
     if (tui_orig_out_cp != 0) SetConsoleOutputCP(tui_orig_out_cp);
@@ -46,6 +47,7 @@ void tui_init_term(void) {
     SetConsoleOutputCP(CP_UTF8);
     atexit(tui_restore_term);
 
+    printf("\033[?1049h"); /* alternate screen buffer */
     printf("\033[?25l");
     printf("\033[2J");
     fflush(stdout);
