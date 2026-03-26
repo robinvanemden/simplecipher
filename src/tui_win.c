@@ -76,8 +76,9 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     uint64_t    in_frame_start_ms = 0;
     uint8_t     out_frame[FRAME_SZ];
     uint8_t     out_next_tx[KEY];
-    size_t      out_off    = 0;
-    int         out_active = 0;
+    size_t      out_off            = 0;
+    int         out_active         = 0;
+    uint64_t    out_frame_start_ms = 0;
     char        out_text[MAX_MSG + 1];
     WSAEVENT    net_ev;
     const char *status     = "Secure session active  |  Ctrl+C to quit";
@@ -154,9 +155,10 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                     memcpy(out_text, line, line_len);
                     out_text[line_len] = '\0';
                     crypto_wipe(line, sizeof line);
-                    line_len   = 0;
-                    out_off    = 0;
-                    out_active = 1;
+                    line_len           = 0;
+                    out_off            = 0;
+                    out_active         = 1;
+                    out_frame_start_ms = GetTickCount64();
 
                     {
                         int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
@@ -244,6 +246,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             }
 
             if (out_active && (ne.lNetworkEvents & FD_WRITE)) {
+                /* Deadline: abort if a partial send has been pending too long. */
+                if ((GetTickCount64() - out_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) break;
                 int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
                 if (send_rc < 0) break;
                 if (send_rc == 0) {
@@ -273,9 +277,10 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
         /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
         if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
             if (frame_build(sess, NULL, 0, out_frame, out_next_tx) != 0) break;
-            out_off     = 0;
-            out_active  = 1;
-            out_text[0] = '\0'; /* mark as cover frame */
+            out_off            = 0;
+            out_active         = 1;
+            out_frame_start_ms = GetTickCount64();
+            out_text[0]        = '\0'; /* mark as cover frame */
             {
                 int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
                 if (send_rc < 0) break;
