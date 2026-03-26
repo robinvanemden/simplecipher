@@ -74,6 +74,8 @@ public class ChatActivity extends Activity implements NativeCallback {
   private boolean paused = false;
   /* Message waiting for onSendResult confirmation before display. */
   private String pendingSendMsg = null;
+  /* True after onConnected, false after onDisconnected/onStop. */
+  private boolean sessionLive = false;
 
   /**
    * True if the peer fingerprint was pre-verified by native during handshake. Set from native
@@ -201,6 +203,7 @@ public class ChatActivity extends Activity implements NativeCallback {
   /* ---- Send message --------------------------------------------------- */
 
   private void sendMessage() {
+    if (!sessionLive) return; /* session dead — ignore Enter key */
     String msg = chatInput.getText().toString().trim();
     if (msg.isEmpty()) return;
     chatInput.setText("");
@@ -235,7 +238,10 @@ public class ChatActivity extends Activity implements NativeCallback {
 
   @Override
   public void onConnected() {
-    uiHandler.post(() -> statusText.setText("Connected. Performing handshake..."));
+    uiHandler.post(() -> {
+      statusText.setText("Connected. Performing handshake...");
+      sessionLive = true;
+    });
   }
 
   @Override
@@ -366,6 +372,8 @@ public class ChatActivity extends Activity implements NativeCallback {
           appendChat("system", reason);
           appendChat("system", "Session ended. Keys wiped. Nothing was stored to disk.");
           sendBtn.setEnabled(false);
+          chatInput.setEnabled(false); /* block Enter key too, not just button */
+          sessionLive = false;
         });
   }
 
@@ -455,6 +463,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     if (chatLog != null) chatLog.setText("");
     if (chatInput != null) chatInput.setText("");
     pendingSas = null;
+    pendingSendMsg = null; /* wipe unsent plaintext from activity field */
     super.onPause();
   }
 
@@ -475,6 +484,8 @@ public class ChatActivity extends Activity implements NativeCallback {
      * is a target for memory-dumping attacks.  Ending the session on
      * stop reduces the exposure window to only the time the user is
      * actively looking at the screen. */
+    sessionLive = false;
+    pendingSendMsg = null;
     nativeStop();
     if (statusText != null) statusText.setText("");
     if (sasInput != null) sasInput.setText("");

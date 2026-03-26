@@ -22,6 +22,27 @@
 #include <netdb.h>
 #include <poll.h>
 #include <signal.h>
+#include <errno.h>
+
+/* TCP-correct exact-byte read/write — loops on partial returns. */
+static int recv_exact(int fd, void *buf, size_t n) {
+    size_t done = 0;
+    while (done < n) {
+        ssize_t r = recv(fd, (char *)buf + done, n - done, 0);
+        if (r <= 0) { if (r < 0 && errno == EINTR) continue; return -1; }
+        done += (size_t)r;
+    }
+    return 0;
+}
+static int send_all(int fd, const void *buf, size_t n) {
+    size_t done = 0;
+    while (done < n) {
+        ssize_t r = send(fd, (const char *)buf + done, n - done, 0);
+        if (r <= 0) { if (r < 0 && errno == EINTR) continue; return -1; }
+        done += (size_t)r;
+    }
+    return 0;
+}
 
 int main(void) {
     signal(SIGPIPE, SIG_IGN);
@@ -48,41 +69,41 @@ int main(void) {
 
     /* SOCKS5 greeting */
     char buf[4096];
-    if (recv(client, buf, 3, 0) != 3 || buf[0] != 5) goto done;
+    if (recv_exact(client, buf, 3) != 0 || buf[0] != 5) goto done;
     char reply1[2] = {5, 0};
-    send(client, reply1, 2, 0);
+    send_all(client, reply1, 2);
 
     /* SOCKS5 CONNECT request */
     unsigned char hdr[4];
-    if (recv(client, (char *)hdr, 4, 0) != 4) goto done;
+    if (recv_exact(client, hdr, 4) != 0) goto done;
     int target_fd = -1;
 
     if (hdr[3] == 0x01) { /* IPv4 */
         unsigned char a[6];
-        if (recv(client, (char *)a, 6, 0) != 6) goto done;
+        if (recv_exact(client, a, 6) != 0) goto done;
         struct sockaddr_in sa = {.sin_family = AF_INET};
         memcpy(&sa.sin_addr, a, 4);
         memcpy(&sa.sin_port, a + 4, 2);
         target_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (target_fd < 0 || connect(target_fd, (struct sockaddr *)&sa, sizeof sa) != 0) {
             char fail[10] = {5, 1};
-            send(client, fail, 10, 0);
+            send_all(client, fail, 10);
             if (target_fd >= 0) close(target_fd);
             goto done;
         }
     } else if (hdr[3] == 0x03) { /* Domain */
         unsigned char dlen;
-        if (recv(client, (char *)&dlen, 1, 0) != 1) goto done;
+        if (recv_exact(client, &dlen, 1) != 0) goto done;
         char host[256] = {0};
-        if (recv(client, host, dlen, 0) != dlen) goto done;
+        if (recv_exact(client, host, dlen) != 0) goto done;
         unsigned char pb[2];
-        if (recv(client, (char *)pb, 2, 0) != 2) goto done;
+        if (recv_exact(client, pb, 2) != 0) goto done;
         char port_str[8];
         snprintf(port_str, sizeof port_str, "%d", (pb[0] << 8) | pb[1]);
         struct addrinfo hints = {.ai_socktype = SOCK_STREAM}, *res;
         if (getaddrinfo(host, port_str, &hints, &res) != 0) {
             char fail[10] = {5, 4};
-            send(client, fail, 10, 0);
+            send_all(client, fail, 10);
             goto done;
         }
         target_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
@@ -90,20 +111,20 @@ int main(void) {
         freeaddrinfo(res);
         if (rc != 0) {
             char fail[10] = {5, 5};
-            send(client, fail, 10, 0);
+            send_all(client, fail, 10);
             if (target_fd >= 0) close(target_fd);
             goto done;
         }
     } else {
         char fail[10] = {5, 8};
-        send(client, fail, 10, 0);
+        send_all(client, fail, 10);
         goto done;
     }
 
     /* Success */
     {
         char ok[10] = {5, 0, 0, 1, 0, 0, 0, 0, 0, 0};
-        send(client, ok, 10, 0);
+        send_all(client, ok, 10);
     }
 
     /* Relay */
