@@ -300,7 +300,8 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                         if (send_rc == 0) {
                             memcpy(sess->tx, out_next_tx, KEY);
                             sess->tx_seq++;
-                            if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
+                            /* Cover timer NOT reset on real sends — schedule runs independently
+                             * so real messages blend into the cover traffic pattern. */
                             out_active = 0;
                             win_print_chat(" me", out_text, line, line_len);
                             crypto_wipe(out_frame, sizeof out_frame);

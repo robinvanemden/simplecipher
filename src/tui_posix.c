@@ -207,7 +207,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
 
                 memcpy(sess->tx, next_tx, KEY);
                 sess->tx_seq++;
-                if (cover) next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+                /* Cover timer NOT reset on real sends — schedule runs independently
+                 * so real messages blend into the cover traffic pattern. */
 
                 tui_msg_add(TUI_ME, line);
                 crypto_wipe(line, sizeof line);

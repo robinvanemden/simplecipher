@@ -164,7 +164,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                         if (send_rc == 0) {
                             memcpy(sess->tx, out_next_tx, KEY);
                             sess->tx_seq++;
-                            if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
+                            /* Cover timer NOT reset on real sends — schedule runs independently
+                             * so real messages blend into the cover traffic pattern. */
                             out_active = 0;
                             tui_msg_add(TUI_ME, out_text);
                             crypto_wipe(out_frame, sizeof out_frame);

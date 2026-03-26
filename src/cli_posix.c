@@ -281,7 +281,8 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                 /* Write succeeded -- commit the chain advance. */
                 memcpy(sess->tx, next_tx, KEY);
                 sess->tx_seq++;
-                if (cover) next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+                /* Cover timer NOT reset on real sends — schedule runs independently
+                 * so real messages blend into the cover traffic pattern. */
 
                 /* Print our own message, then redraw prompt for next input. */
                 secure_chat_print(" me", line);
@@ -439,7 +440,8 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
             /* Write succeeded -- now commit the chain advance. */
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
-            if (cover) next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+            /* Cover timer NOT reset on real sends — schedule runs independently
+             * so real messages blend into the cover traffic pattern. */
 
             secure_chat_print(" me", line);
 

@@ -911,7 +911,8 @@ static void *session_thread(void *arg) {
                     /* Commit chain advance after successful send */
                     memcpy(sess.tx, next_tx, KEY);
                     sess.tx_seq++;
-                    if (cover) next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+                    /* Cover timer NOT reset on real sends — schedule runs independently
+                     * so real messages blend into the cover traffic pattern. */
 
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(next_tx, sizeof next_tx);
