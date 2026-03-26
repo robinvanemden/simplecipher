@@ -31,6 +31,15 @@ jobs:
             src/cli.c src/cli_posix.c lib/monocypher.c
           build/native/test_p2p_harden
 
+      - name: Build and run SOCKS5 proxy loopback test
+        run: |
+          gcc -std=c2x -DCIPHER_HARDEN -DNDEBUG -pthread -Isrc -Ilib -O2 \
+            -o build/native/test_socks5_proxy \
+            tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
+            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/cli.c src/cli_posix.c lib/monocypher.c
+          build/native/test_socks5_proxy
+
   test-tui:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
