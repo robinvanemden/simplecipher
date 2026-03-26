@@ -650,7 +650,7 @@ void sandbox(void) {}
  * is observed within one timeout period even without signal interruption. */
 void on_sig(int sig) {
     (void)sig;
-    g_running = 0;
+    atomic_store(&g_running, 0);
 }
 
 #if defined(_WIN32) || defined(_WIN64)

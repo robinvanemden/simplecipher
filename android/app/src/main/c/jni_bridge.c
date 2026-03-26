@@ -542,6 +542,10 @@ static void *session_thread(void *arg) {
         we_init = 0;
     }
 
+    /* Capture SOCKS5 state BEFORE freeing the strings — needed for
+     * cover traffic decision in the event loop. */
+    int used_socks5 = (socks5_host != NULL);
+
     if (host)       { crypto_wipe(host, strlen(host)); free(host); host = NULL; }
     if (socks5_host){ crypto_wipe(socks5_host, strlen(socks5_host)); free(socks5_host); socks5_host = NULL; }
     if (socks5_port){ crypto_wipe(socks5_port, strlen(socks5_port)); free(socks5_port); socks5_port = NULL; }
@@ -744,7 +748,7 @@ static void *session_thread(void *arg) {
     /* Cover traffic: when connecting through SOCKS5 (Tor), send encrypted
      * dummy frames at random intervals to defeat timing correlation.
      * Same mechanism as the desktop --socks5 / --cover-traffic flag. */
-    int      cover      = (socks5_host != NULL);
+    int      cover      = used_socks5;
     uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
 
     {
