@@ -242,12 +242,22 @@ int main(int argc, char *argv[]) {
     if (we_init && argc < 3) {
         printf("  Host: ");
         fflush(stdout);
-        if (!fgets(prompt_host, sizeof prompt_host, stdin) || !prompt_host[0]) {
-            fprintf(stderr, "  No host provided.\n");
-            return 1;
+        /* read() instead of fgets() so the destination address never passes
+         * through libc's internal ~4KB FILE* buffer (which is never wiped).
+         * In canonical mode, read() returns a complete line from the kernel. */
+        {
+#if defined(_WIN32) || defined(_WIN64)
+            int rn = _read(0, prompt_host, (unsigned)(sizeof prompt_host - 1));
+#else
+            ssize_t rn = read(STDIN_FILENO, prompt_host, sizeof prompt_host - 1);
+#endif
+            if (rn <= 0 || prompt_host[0] == '\n') {
+                fprintf(stderr, "  No host provided.\n");
+                return 1;
+            }
+            prompt_host[rn] = '\0';
+            if (rn > 0 && prompt_host[rn - 1] == '\n') prompt_host[rn - 1] = '\0';
         }
-        size_t hl = strlen(prompt_host);
-        if (hl > 0 && prompt_host[hl - 1] == '\n') prompt_host[hl - 1] = '\0';
         if (!prompt_host[0]) {
             fprintf(stderr, "  No host provided.\n");
             return 1;
@@ -256,10 +266,17 @@ int main(int argc, char *argv[]) {
 
         printf("  Port [7777]: ");
         fflush(stdout);
-        if (fgets(prompt_port, sizeof prompt_port, stdin) && prompt_port[0] != '\n' && prompt_port[0] != '\0') {
-            size_t pl = strlen(prompt_port);
-            if (pl > 0 && prompt_port[pl - 1] == '\n') prompt_port[pl - 1] = '\0';
-            if (prompt_port[0]) port = prompt_port;
+        {
+#if defined(_WIN32) || defined(_WIN64)
+            int rn = _read(0, prompt_port, (unsigned)(sizeof prompt_port - 1));
+#else
+            ssize_t rn = read(STDIN_FILENO, prompt_port, sizeof prompt_port - 1);
+#endif
+            if (rn > 0) {
+                prompt_port[rn] = '\0';
+                if (rn > 0 && prompt_port[rn - 1] == '\n') prompt_port[rn - 1] = '\0';
+                if (prompt_port[0]) port = prompt_port;
+            }
         }
     } else if (we_init) {
         host = argv[2];
