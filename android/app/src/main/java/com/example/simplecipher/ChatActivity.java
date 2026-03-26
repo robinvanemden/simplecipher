@@ -213,9 +213,14 @@ public class ChatActivity extends Activity implements NativeCallback {
        * The native thread might still reject it (e.g., frame_build fails
        * because the message exceeds MAX_MSG_RATCHET after a ratchet step).
        * The message is shown later when onSendResult(true) arrives.
-       * Store it as pending so onSendResult can display it. */
+       *
+       * Disable input until onSendResult returns to prevent the user from
+       * queuing a second message that would overwrite pendingSendMsg.
+       * This ensures exactly one in-flight message at a time. */
       if (ok) {
         pendingSendMsg = msg;
+        sendBtn.setEnabled(false);
+        chatInput.setEnabled(false);
       } else {
         appendChat("system", "[send failed — pipe full, try again]");
       }
@@ -348,6 +353,9 @@ public class ChatActivity extends Activity implements NativeCallback {
         appendChat("system", "[send failed]");
       }
       pendingSendMsg = null;
+      /* Re-enable input — one message confirmed, user can send the next. */
+      sendBtn.setEnabled(true);
+      chatInput.setEnabled(true);
     });
   }
 

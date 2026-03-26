@@ -914,7 +914,7 @@ static void *session_thread(void *arg) {
                             remaining -= (uint16_t)chunk;
                         }
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        jni_callback_ok(env);
+                        if (jni_callback_ok(env) != 0) { running = 0; break; }
                         continue;
                     }
 
@@ -933,7 +933,7 @@ static void *session_thread(void *arg) {
                         crypto_wipe(next_tx, sizeof next_tx);
                         crypto_wipe(msg_buf, plen);
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        jni_callback_ok(env);
+                        if (jni_callback_ok(env) != 0) { running = 0; break; }
                         continue;
                     }
 
@@ -943,7 +943,7 @@ static void *session_thread(void *arg) {
                         crypto_wipe(next_tx, sizeof next_tx);
                         crypto_wipe(msg_buf, plen);
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        jni_callback_ok(env);
+                        if (jni_callback_ok(env) != 0) { running = 0; continue; }
                         jni_call_str(env, cb, mid_onDisconnected, "Send failed (connection lost)", "send_fail");
                         running = 0;
                         continue;
