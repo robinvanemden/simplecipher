@@ -114,7 +114,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             if (remain <= 0) wait_ms = 0;
             else if ((uint64_t)remain < wait_ms) wait_ms = (DWORD)remain;
         }
-        DWORD  wr       = WaitForMultipleObjects(2, waits, FALSE, wait_ms);
+        DWORD wr = WaitForMultipleObjects(2, waits, FALSE, wait_ms);
         if (!g_running) break;
         if (wr == WAIT_FAILED) break;
 
@@ -200,8 +200,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                         in_have += (size_t)r;
                         if (in_have == FRAME_SZ) {
                             uint8_t  plain[MAX_MSG + 1];
-                            uint16_t plen = 0;
-                            int fo_rc = frame_open(sess, in_frame, plain, &plen);
+                            uint16_t plen  = 0;
+                            int      fo_rc = frame_open(sess, in_frame, plain, &plen);
                             if (fo_rc != 0) {
                                 crypto_wipe(plain, sizeof plain);
                                 crypto_wipe(in_frame, sizeof in_frame);
@@ -272,8 +272,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
         /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
         if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
             if (frame_build(sess, NULL, 0, out_frame, out_next_tx) != 0) break;
-            out_off    = 0;
-            out_active = 1;
+            out_off     = 0;
+            out_active  = 1;
             out_text[0] = '\0'; /* mark as cover frame */
             {
                 int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);

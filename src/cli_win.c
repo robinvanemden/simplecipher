@@ -217,7 +217,10 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                     out_text[0] = '\0'; /* mark as cover frame */
                     {
                         int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
-                        if (send_rc < 0) { loop_error = 1; break; }
+                        if (send_rc < 0) {
+                            loop_error = 1;
+                            break;
+                        }
                         if (send_rc == 0) {
                             memcpy(sess->tx, out_next_tx, KEY);
                             sess->tx_seq++;

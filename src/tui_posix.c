@@ -140,7 +140,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 tui_draw_screen(status, line, line_len);
                 break;
             }
-            plen = 0;
+            plen      = 0;
             int fo_rc = frame_open(sess, frame, plain, &plen);
             if (fo_rc != 0) {
                 crypto_wipe(frame, sizeof frame);

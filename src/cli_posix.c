@@ -171,7 +171,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                 }
                 break;
             }
-            plen = 0;
+            plen      = 0;
             int fo_rc = frame_open(sess, frame, plain, &plen);
             if (fo_rc != 0) {
                 crypto_wipe(plain, sizeof plain);
@@ -375,7 +375,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 printf("\n  [peer disconnected]\n");
                 break;
             }
-            plen = 0;
+            plen      = 0;
             int fo_rc = frame_open(sess, frame, plain, &plen);
             if (fo_rc != 0) {
                 crypto_wipe(frame, sizeof frame);
