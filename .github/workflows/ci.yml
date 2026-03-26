@@ -601,4 +601,41 @@ jobs:
           # Clean up SSH key
           rm -f ~/.ssh/openbsd_key
 
+  test-arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Run tests on Linux ARM64 (bare-metal via SSH)
+        env:
+          SSH_KEY: ${{ secrets.ARM64_SSH_KEY }}
+          HOST: ${{ secrets.ARM64_HOST }}
+        run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$HOST" ]; then
+            echo "SKIP: ARM64_SSH_KEY or ARM64_HOST not set"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/arm64_key
+          chmod 600 ~/.ssh/arm64_key
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          SSH="ssh -i ~/.ssh/arm64_key ci@$HOST"
+          $SSH "
+            set -e
+            if [ -d simplecipher ]; then
+              cd simplecipher && git fetch origin && git reset --hard origin/master
+            else
+              git clone https://github.com/${{ github.repository }}.git simplecipher
+              cd simplecipher
+            fi
+            git checkout ${{ github.sha }}
+            echo '=== Linux ARM64' \$(uname -srm) '==='
+            make CC=gcc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG' LDFLAGS='-s' clean simplecipher
+            make CC=gcc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' tests/test_p2p tests/test_socks5_proxy
+            ulimit -l unlimited 2>/dev/null || true
+            ./tests/test_p2p
+            echo '=== SOCKS5 proxy test ==='
+            ./tests/test_socks5_proxy
+          "
+          rm -f ~/.ssh/arm64_key
+
   # BSD testing uses bare-metal Vultr servers via SSH (test-freebsd, test-openbsd above).
