@@ -181,11 +181,12 @@ int main(int argc, char *argv[]) {
     if (socks5_host) cover_traffic = 1;
 
     if (argc < 2) usage(prog);
+    harden(); /* First: lock memory, disable dumps, block ptrace — before
+               * any key material exists.  Closes the pre-harden ptrace window. */
     if (plat_init() != 0) {
         fprintf(stderr, "platform init failed\n");
         return 1;
     }
-    harden();
 
     /* Install signal handlers.
      *
