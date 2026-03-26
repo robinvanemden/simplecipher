@@ -275,9 +275,11 @@ if [ -f "$PROXY_BIN" ] && [ -f "$PEER_BIN" ]; then
     adb shell chmod 755 /data/local/tmp/mini_socks5
     adb shell chmod 755 /data/local/tmp/simplecipher
 
-    # Start SOCKS5 proxy on 9050 and simplecipher peer on 7777
-    adb shell "/data/local/tmp/mini_socks5 &"
-    adb shell "/data/local/tmp/simplecipher listen 7777 &"
+    # Start SOCKS5 proxy on 9050 and simplecipher peer on 7777.
+    # Redirect stdout/stderr to /dev/null so adb shell returns immediately
+    # instead of waiting for the backgrounded process's output streams.
+    adb shell "/data/local/tmp/mini_socks5 >/dev/null 2>&1 &"
+    adb shell "/data/local/tmp/simplecipher listen 7777 >/dev/null 2>&1 &"
     sleep 2
 
     # Verify both are running
