@@ -479,7 +479,7 @@ jobs:
             echo '=== Valgrind memory check (core) ==='
             timeout 300 valgrind --error-exitcode=42 ./tests/test_p2p
             echo '=== Real Tor SOCKS5 test ==='
-            bash tests/test_arm64_tor.sh
+            bash tests/test_arm64_tor.sh --require-tools
           "
           rm -f ~/.ssh/arm64_key
 

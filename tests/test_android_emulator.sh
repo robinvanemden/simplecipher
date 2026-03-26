@@ -333,9 +333,11 @@ if [ -f "$PROXY_BIN" ] && [ -f "$PEER_BIN" ]; then
             elif echo "$UI_DUMP" | grep -qi "Connected\|handshake\|Performing"; then
                 pass "App SOCKS5 path: reached connected/handshake state"
             elif echo "$UI_DUMP" | grep -qi "SOCKS5\|proxy.*fail\|proxy.*error\|Connection failed\|connect failed"; then
-                # SOCKS5 path was invoked but no real proxy available in emulator CI.
-                # Not a positive success, but not a regression either.
-                echo "  SKIP  App SOCKS5 path: proxy invoked, no real proxy in CI (non-fatal)"
+                # The harness started a real proxy (mini_socks5_daemon) and a
+                # real peer on the emulator.  A SOCKS5-labeled failure means
+                # the app's proxy path is broken — not a skip, a real failure.
+                fail "App SOCKS5 path: proxy-specific failure (proxy and peer were running)"
+                echo "  UI dump: $(echo "$UI_DUMP" | head -5)"
             elif echo "$UI_DUMP" | grep -qi "failed\|error\|disconnect"; then
                 # Generic failure — might not be SOCKS5-related
                 fail "App SOCKS5 path: generic error in UI (not clearly SOCKS5-related)"

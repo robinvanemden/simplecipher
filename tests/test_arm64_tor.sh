@@ -11,9 +11,24 @@
 
 set -euo pipefail
 
-PASS=0; FAIL=0
+# --require-tools: SKIPs become FAILs.  Use in release workflows where
+# missing prerequisites (Tor, valgrind) mean the gate is meaningless.
+REQUIRE_TOOLS=0
+if [ "${1:-}" = "--require-tools" ]; then
+    REQUIRE_TOOLS=1
+fi
+
+PASS=0; FAIL=0; SKIP=0
 pass() { PASS=$((PASS + 1)); printf '  \033[32mPASS\033[0m  %s\n' "$1"; }
 fail() { FAIL=$((FAIL + 1)); printf '  \033[31mFAIL\033[0m  %s\n' "$1"; }
+skip() {
+    if [ $REQUIRE_TOOLS -eq 1 ]; then
+        fail "REQUIRED: $1"
+    else
+        SKIP=$((SKIP + 1))
+        printf '  \033[33mSKIP\033[0m  %s\n' "$1"
+    fi
+}
 
 BIN="./simplecipher"
 TEST_P2P="./tests/test_p2p"
@@ -78,7 +93,7 @@ if ss -tln | grep -q ':9050'; then
     kill $CONNECT_PID 2>/dev/null || true
     wait 2>/dev/null
 else
-    echo "  SKIP: Tor not running on 9050"
+    skip "Tor not running on 9050"
 fi
 
 # ------------------------------------------------------------------
@@ -111,7 +126,7 @@ if command -v valgrind &>/dev/null && [ -x "$TEST_SOCKS5" ]; then
         fi
     fi
 else
-    echo "  SKIP: valgrind or test binary not available"
+    skip "valgrind or SOCKS5 test binary not available"
 fi
 
 # ------------------------------------------------------------------
@@ -138,12 +153,12 @@ if command -v valgrind &>/dev/null && [ -x "$TEST_P2P" ]; then
         fail "Valgrind: core tests exited $VG_RC (test failure, not memory error)"
     fi
 else
-    echo "  SKIP: valgrind or test binary not available"
+    skip "valgrind or core test binary not available"
 fi
 
 # ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 echo ""
-echo "=== Results: $PASS passed, $FAIL failed ==="
+echo "=== Results: $PASS passed, $FAIL failed, $SKIP skipped ==="
 exit $FAIL
