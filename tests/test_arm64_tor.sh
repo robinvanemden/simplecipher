@@ -48,10 +48,12 @@ if ss -tln | grep -q ':9050'; then
 
     # Check for SOCKS5-specific output proving negotiation happened.
     # NOTE: this is a non-crash / SOCKS5-exercised test, not a positive
-    # Tor-success assertion.  Tor cannot route loopback traffic, so the
-    # best we can prove is that the SOCKS5 code path ran without crashing
-    # and produced SOCKS5-related output.  A true Tor-success test would
-    # require a reachable .onion endpoint.
+    # Tor-success assertion.  Why we can't do better: Tor exits refuse
+    # to route traffic to 127.0.0.1 (loopback is not a valid exit
+    # destination), so the SOCKS5 CONNECT will always be rejected by the
+    # Tor network.  A true Tor-success test would require a reachable
+    # .onion endpoint, which introduces external flakiness that is
+    # inappropriate for a release gate.
     if kill -0 $CONNECT_PID 2>/dev/null; then
         # Still running — require SOCKS5 evidence to pass
         if grep -qi "SOCKS5\|Connecting.*9050\|proxy" "$CONNECT_LOG"; then
