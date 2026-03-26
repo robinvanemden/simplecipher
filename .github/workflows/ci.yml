@@ -396,6 +396,18 @@ jobs:
             src/cli.c src/cli_posix.c lib/monocypher.c -lm
           file tests/test_socks5_proxy_android
 
+      - name: Cross-compile SOCKS5 daemon + simplecipher peer for emulator
+        run: |
+          NDK=$ANDROID_HOME/ndk/28.0.13004108
+          CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android28-clang"
+          $CC -Os -static -o tests/mini_socks5_daemon_android \
+            tests/mini_socks5_daemon.c
+          $CC -std=c23 -Os -Isrc -Ilib -DNDEBUG -DCIPHER_HARDEN -static \
+            -o tests/simplecipher_android \
+            src/main.c src/platform.c src/crypto.c src/protocol.c \
+            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/cli.c src/cli_posix.c lib/monocypher.c -lm
+
       - name: Emulator smoke test (full flavor)
         uses: reactivecircus/android-emulator-runner@70f4dee990796918b78d040e3278474bdbd348a7 # v2
         with:
