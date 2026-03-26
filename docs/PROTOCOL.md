@@ -231,9 +231,9 @@ Nothing is stored to disk, ever.
 
 In addition to [SAS](#sas) comparison, peers can exchange fingerprints out-of-band before connecting. A fingerprint is the first 8 bytes of [BLAKE2b](#blake2b)`_keyed(label="cipher fingerprint v2", pub_key)` formatted as `XXXX-XXXX-XXXX-XXXX`. The domain label ensures the fingerprint hash is distinct from all other hashes in the protocol. Since the fingerprint is derived from the public key (which is exchanged openly during the handshake), it has zero secret value — sharing it on paper, QR code, or any channel carries no risk.
 
-After the commitment and key exchange phases, the native layer compares the received peer public key's fingerprint against the pre-shared value using a constant-time comparison. If they match, the SAS step is skipped. If they don't match, the connection is aborted immediately.
+After the commitment and key exchange phases, the native layer compares the received peer public key's fingerprint against the pre-shared value using a constant-time comparison. If they match, the connection proceeds to the SAS verification step (defence in depth — both layers verify). If they don't match, the connection is aborted immediately.
 
-This provides 64 bits of entropy (vs 32 for SAS) and removes the human comparison step, making it stronger when pre-arrangement is possible.
+This provides 64 bits of entropy (vs 32 for SAS). Combined with SAS confirmation, both automated and human verification must pass before the session begins.
 
 ### What it does NOT provide
 

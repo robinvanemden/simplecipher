@@ -937,11 +937,13 @@ static void *session_thread(void *arg) {
                 if (frame_build(&sess, NULL, 0, frame, next_tx) != 0) {
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(next_tx, sizeof next_tx);
+                    jni_call_str(env, cb, mid_onDisconnected, "Internal error", "cover_build");
                     break;
                 }
                 if (write_exact(fd, frame, FRAME_SZ) != 0) {
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(next_tx, sizeof next_tx);
+                    jni_call_str(env, cb, mid_onDisconnected, "Connection lost", "cover_send");
                     break;
                 }
                 memcpy(sess.tx, next_tx, KEY);
@@ -1380,8 +1382,10 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
  *   3. Close the listen socket → select()/accept() return -1
  *
  * The session thread detects these errors, breaks out of whatever phase
- * it is in, and exits via cleanup.  This guarantees the thread unblocks
- * promptly regardless of peer behavior or network conditions.
+ * it is in, and exits via cleanup.  For direct connects and the chat
+ * loop this provides prompt unblocking.  The SOCKS5 handshake path uses
+ * deadline-aware I/O (30-second absolute limit) but is not cancelable
+ * mid-syscall — a stuck proxy can delay teardown up to that deadline.
  *
  * Called from ChatActivity.onStop(), onBackPressed(), and onDestroy().
  */

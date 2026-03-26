@@ -91,6 +91,50 @@ void set_sock_opts(socket_t fd) {
     return 0;
 }
 
+/* Deadline-aware read: same as read_exact but returns -1 if the
+ * monotonic clock exceeds deadline_ms between partial recv() calls.
+ * Pass deadline_ms=0 to disable the check (behaves like read_exact). */
+[[nodiscard]] int read_exact_dl(socket_t fd, void *buf, size_t n, uint64_t deadline_ms) {
+    size_t done = 0;
+    while (done < n) {
+        if (deadline_ms && monotonic_ms() > deadline_ms) return -1;
+#ifdef _WIN32
+        int r = recv(fd, (char *)buf + done, (int)(n - done), 0);
+        if (r <= 0) return -1;
+#else
+        ssize_t r = recv(fd, (char *)buf + done, n - done, 0);
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (r == 0) return -1;
+#endif
+        done += (size_t)r;
+    }
+    return 0;
+}
+
+/* Deadline-aware write: same as write_exact but checks deadline. */
+[[nodiscard]] int write_exact_dl(socket_t fd, const void *buf, size_t n, uint64_t deadline_ms) {
+    size_t done = 0;
+    while (done < n) {
+        if (deadline_ms && monotonic_ms() > deadline_ms) return -1;
+#ifdef _WIN32
+        int r = send(fd, (const char *)buf + done, (int)(n - done), 0);
+        if (r <= 0) return -1;
+#else
+        ssize_t r = send(fd, (const char *)buf + done, n - done, MSG_NOSIGNAL);
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (r == 0) return -1;
+#endif
+        done += (size_t)r;
+    }
+    return 0;
+}
+
 /* Exchange one value simultaneously with the peer.
  * The initiator sends first to avoid both sides waiting for each other. */
 [[nodiscard]] int exchange(socket_t fd, int we_init, const uint8_t *out, size_t out_n, uint8_t *in, size_t in_n) {
@@ -307,19 +351,22 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     socket_t fd = connect_socket(proxy_host, proxy_port);
     if (fd == INVALID_SOCK) return INVALID_SOCK;
 
-    /* Temporary timeout so a stuck proxy doesn't block forever.
-     * 30 seconds matches the handshake timeout in protocol.h. */
-    set_sock_timeout(fd, 30);
+    /* Absolute 30-second deadline for the entire SOCKS5 handshake.
+     * SO_RCVTIMEO alone is per-recv(), so a byte-dribble attack (one byte
+     * just under the timeout) can keep the connection alive indefinitely.
+     * The deadline catches this: total wall-clock time is bounded. */
+    uint64_t dl = monotonic_ms() + 30000;
+    set_sock_timeout(fd, 5); /* short per-call timeout complements the deadline */
 
     /* Phase 1: SOCKS5 greeting — offer "no authentication" (method 0x00). */
     uint8_t greeting[3] = {0x05, 0x01, 0x00};
-    if (write_exact(fd, greeting, 3) != 0) {
+    if (write_exact_dl(fd, greeting, 3, dl) != 0) {
         close_sock(fd);
         return INVALID_SOCK;
     }
 
     uint8_t greet_reply[2];
-    if (read_exact(fd, greet_reply, 2) != 0 || greet_reply[0] != 0x05 || greet_reply[1] != 0x00) {
+    if (read_exact_dl(fd, greet_reply, 2, dl) != 0 || greet_reply[0] != 0x05 || greet_reply[1] != 0x00) {
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -331,7 +378,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
         close_sock(fd);
         return INVALID_SOCK;
     }
-    if (write_exact(fd, req, (size_t)req_len) != 0) {
+    if (write_exact_dl(fd, req, (size_t)req_len, dl) != 0) {
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -339,7 +386,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     /* Phase 3: Read and parse CONNECT reply.
      * Validate version (0x05), status (0x00 = success), and reserved (0x00). */
     uint8_t reply[4];
-    if (read_exact(fd, reply, 4) != 0 || reply[0] != 0x05 || reply[1] != 0x00 || reply[2] != 0x00) {
+    if (read_exact_dl(fd, reply, 4, dl) != 0 || reply[0] != 0x05 || reply[1] != 0x00 || reply[2] != 0x00) {
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -348,7 +395,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     int skip;
     if (reply[3] == 0x03) {
         uint8_t dlen;
-        if (read_exact(fd, &dlen, 1) != 0) {
+        if (read_exact_dl(fd, &dlen, 1, dl) != 0) {
             close_sock(fd);
             return INVALID_SOCK;
         }
@@ -363,7 +410,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
 
     /* Drain the bound-address bytes. */
     uint8_t drain[256 + 2];
-    if ((size_t)skip > sizeof drain || read_exact(fd, drain, (size_t)skip) != 0) {
+    if ((size_t)skip > sizeof drain || read_exact_dl(fd, drain, (size_t)skip, dl) != 0) {
         close_sock(fd);
         return INVALID_SOCK;
     }

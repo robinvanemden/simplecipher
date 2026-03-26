@@ -68,7 +68,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | TIOCSTI blocked in seccomp | `platform.c:sandbox_phase1()`, `platform.c:sandbox_phase2()` — BPF blocks ioctl 0x5412 | Source-level check |
 | Windows process mitigations | `platform.c:harden()` — SetProcessMitigationPolicy | Windows runtime check |
 | Sandbox failure warnings | `platform.c:apply_seccomp()`, `platform.c:capsicum_phase1()` | stderr output on failure |
-| MAC failure tolerance | `MAX_AUTH_FAILURES` in protocol.h, all 6 chat loops | — (needs test coverage) |
+| MAC failure tolerance | `MAX_AUTH_FAILURES` in protocol.h, all 6 chat loops | `test_mac_failure_tolerance()` in test_p2p.c |
 
 ## Fuzzing coverage
 
@@ -97,4 +97,4 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | Terminal scrollback may retain messages | OS-level, outside app control | `PROTOCOL.md:What it does NOT provide` |
 | Syscall sandbox is Linux/FreeBSD/OpenBSD only | Seccomp (Linux), Capsicum (FreeBSD), pledge (OpenBSD). No equivalent on Windows/macOS | `HARDENING.md` platform table |
 | No cross-session recovery | Ephemeral by design | `PROTOCOL.md:What it does NOT provide` |
-| MAC failure tolerance not yet tested | New feature, test coverage pending | This file |
+| MAC failure tolerance | Tested: forged frames tolerated below threshold, real frames still decrypt | `test_p2p.c:test_mac_failure_tolerance()` |

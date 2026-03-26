@@ -11,7 +11,8 @@
 
 /* ---- global state ------------------------------------------------------- */
 
-_Atomic volatile sig_atomic_t g_running = 1;
+_Atomic volatile sig_atomic_t g_running         = 1;
+int                           g_require_sandbox = 0;
 
 #if defined(_WIN32) || defined(_WIN64)
 _Atomic volatile SOCKET g_interrupt_sock = INVALID_SOCKET;
@@ -214,10 +215,18 @@ static void apply_seccomp(struct sock_filter *f, unsigned short len) {
      * (setuid bits are ignored after this point). */
     if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
         fprintf(stderr, "warning: seccomp unavailable (PR_SET_NO_NEW_PRIVS failed)\n");
+        if (g_require_sandbox) {
+            fprintf(stderr, "FATAL: --require-sandbox is set\n");
+            _exit(1);
+        }
         return;
     }
     if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) != 0) {
         fprintf(stderr, "warning: seccomp filter installation failed\n");
+        if (g_require_sandbox) {
+            fprintf(stderr, "FATAL: --require-sandbox is set\n");
+            _exit(1);
+        }
     }
 }
 
@@ -533,6 +542,10 @@ static void capsicum_phase1(int sock_fd) {
      * still works (just without the sandbox), and the test SKIPs. */
     if (cap_enter() != 0) {
         fprintf(stderr, "warning: Capsicum cap_enter() failed — running unsandboxed\n");
+        if (g_require_sandbox) {
+            fprintf(stderr, "FATAL: --require-sandbox is set\n");
+            _exit(1);
+        }
         return;
     }
 

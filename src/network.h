@@ -35,6 +35,13 @@ void set_sock_opts(socket_t fd);
  * MSG_NOSIGNAL suppresses SIGPIPE on Linux when the peer closes. */
 [[nodiscard]] int write_exact(socket_t fd, const void *buf, size_t n);
 
+/* Deadline-aware variants: return -1 if monotonic_ms() exceeds
+ * deadline_ms between partial reads/writes.  Defeats byte-dribble
+ * attacks where an adversary sends one byte just under SO_RCVTIMEO
+ * to keep the connection alive indefinitely.  Pass 0 for no deadline. */
+[[nodiscard]] int read_exact_dl(socket_t fd, void *buf, size_t n, uint64_t deadline_ms);
+[[nodiscard]] int write_exact_dl(socket_t fd, const void *buf, size_t n, uint64_t deadline_ms);
+
 /* Exchange one value simultaneously with the peer.
  * The initiator sends first to avoid both sides waiting for each other. */
 [[nodiscard]] int exchange(socket_t fd, int we_init, const uint8_t *out, size_t out_n, uint8_t *in, size_t in_n);

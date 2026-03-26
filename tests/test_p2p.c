@@ -5044,6 +5044,63 @@ static void test_ratchet_receive_atomic(void) {
     crypto_wipe(plain, sizeof plain);
 }
 
+/* ---- test: MAC failure tolerance ---------------------------------------- */
+
+static void test_mac_failure_tolerance(void) {
+    printf("\n=== MAC failure tolerance (MAX_AUTH_FAILURES) ===\n");
+
+    uint8_t priv_a[KEY], pub_a[KEY], priv_b[KEY], pub_b[KEY];
+    uint8_t sas_a[KEY], sas_b[KEY];
+    session_t alice, bob;
+
+    gen_keypair(priv_a, pub_a);
+    gen_keypair(priv_b, pub_b);
+    session_init(&alice, 1, priv_a, pub_a, pub_b, sas_a);
+    session_init(&bob,   0, priv_b, pub_b, pub_a, sas_b);
+
+    /* Send a real message to establish the session */
+    uint8_t frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
+    uint16_t plen;
+    int rc = frame_build(&alice, (const uint8_t *)"hello", 5, frame, next_tx);
+    TEST("setup: alice builds frame", rc == 0);
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("setup: bob opens frame", rc == 0);
+
+    /* Send MAX_AUTH_FAILURES-1 forged frames — session should survive */
+    uint8_t forged[FRAME_SZ];
+    for (int i = 0; i < MAX_AUTH_FAILURES - 1; i++) {
+        memset(forged, 0xAA ^ (uint8_t)i, FRAME_SZ);
+        /* Set a plausible sequence number to pass the cheap check */
+        le64_store(forged, bob.rx_seq);
+        rc = frame_open(&bob, forged, plain, &plen);
+        TEST("forged frame rejected", rc == -1);
+    }
+
+    /* Bob's state should be untouched — next real frame still works */
+    rc = frame_build(&alice, (const uint8_t *)"still here", 10, frame, next_tx);
+    TEST("alice builds after forged frames", rc == 0);
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+    plen = 0;
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("bob opens real frame after forged tolerance", rc == 0);
+    plain[plen] = '\0';
+    TEST("message correct after forged tolerance", strcmp((char *)plain, "still here") == 0);
+
+    /* Verify the -2 return for ratchet DH failure is distinct from -1 */
+    TEST("frame_open auth fail returns -1 (not -2)", frame_open(&bob, forged, plain, &plen) == -1);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(priv_a, sizeof priv_a);
+    crypto_wipe(priv_b, sizeof priv_b);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next_tx, sizeof next_tx);
+    crypto_wipe(plain, sizeof plain);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -5128,6 +5185,7 @@ int main(void) {
     test_socks5_reply_skip();
     test_cover_traffic();
     test_ratchet_receive_atomic();
+    test_mac_failure_tolerance();
 
     printf("\n=======================================\n");
     printf("Total: %d passed, %d failed\n", g_pass, g_fail);

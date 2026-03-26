@@ -90,6 +90,7 @@ static void usage(const char *prog) {
             "    --cover-traffic      hide when you type by sending constant\n"
             "                         encrypted noise (auto with --socks5;\n"
             "                         add manually when listening behind Tor)\n"
+            "    --require-sandbox    abort if syscall sandbox fails to install\n"
             "    --peer-fingerprint   verify the peer's public key fingerprint\n"
             "    port                 default: 7777\n"
             "\n"
@@ -145,6 +146,8 @@ int main(int argc, char *argv[]) {
                 tui_mode = 1;
             } else if (strcmp(argv[i], "--cover-traffic") == 0) {
                 cover_traffic = 1;
+            } else if (strcmp(argv[i], "--require-sandbox") == 0) {
+                g_require_sandbox = 1;
             } else if (strcmp(argv[i], "--socks5") == 0 && i + 1 < argc) {
                 const char *arg   = argv[++i];
                 const char *colon = strrchr(arg, ':');

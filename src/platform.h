@@ -158,6 +158,10 @@ void sock_shutdown_both(socket_t s);
  * Enabled by compiling with -DCIPHER_HARDEN. No-op otherwise. */
 void harden(void);
 
+/* If non-zero, sandbox installation failure is fatal (exit instead of warn).
+ * Set by --require-sandbox before any sandbox call. */
+extern int g_require_sandbox;
+
 /* Two-phase syscall sandboxing.
  *
  * sandbox_phase1(sock_fd) — call AFTER the TCP connection is established,
