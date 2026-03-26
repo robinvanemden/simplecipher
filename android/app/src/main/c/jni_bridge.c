@@ -344,7 +344,7 @@ static void *session_thread(void *arg) {
     /* Attach this thread to the JVM so we can make JNI callbacks. */
     JNIEnv *env = NULL;
     if ((*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL) != JNI_OK) {
-        LOGE("AttachCurrentThread failed");
+        LOGE("AttachCurrentThread failed — JVM broken, clearing session state");
         crypto_wipe(prekey_priv, sizeof prekey_priv);
         crypto_wipe(prekey_pub,  sizeof prekey_pub);
         crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
@@ -352,6 +352,10 @@ static void *session_thread(void *arg) {
         if (socks5_host){ crypto_wipe(socks5_host, strlen(socks5_host)); free(socks5_host); }
         if (socks5_port){ crypto_wipe(socks5_port, strlen(socks5_port)); free(socks5_port); }
         close(pipe_rd);
+        /* Cannot DeleteGlobalRef(cb) without a JNI env — accept the leak.
+         * Clear g_session_active so nativeStart() doesn't wait forever. */
+        if (g_session_gen == my_gen)
+            g_session_active = 0;
         return NULL;
     }
 
