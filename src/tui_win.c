@@ -82,6 +82,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     int         out_active         = 0;
     uint64_t    out_frame_start_ms = 0;
     char        out_text[MAX_MSG + 1];
+    uint8_t     plain[MAX_MSG + 1]; /* function-scope so it is wiped at exit */
     WSAEVENT    net_ev;
     const char *status     = "Secure session active  |  Ctrl+C to quit";
     int         auth_fails = 0;
@@ -225,8 +226,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                         if (in_have == 0) in_frame_start_ms = GetTickCount64();
                         in_have += (size_t)r;
                         if (in_have == FRAME_SZ) {
-                            uint8_t  plain[MAX_MSG + 1];
-                            uint16_t plen  = 0;
+                            uint16_t plen = 0;
                             int      fo_rc = frame_open(sess, in_frame, plain, &plen);
                             if (fo_rc != 0) {
                                 crypto_wipe(plain, sizeof plain);
@@ -341,6 +341,7 @@ win_tui_done:
     crypto_wipe(out_next_tx, sizeof out_next_tx);
     crypto_wipe(out_text, sizeof out_text);
     crypto_wipe(line, sizeof line);
+    crypto_wipe(plain, sizeof plain);
     tui_msg_wipe();
 }
 

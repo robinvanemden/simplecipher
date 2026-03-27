@@ -109,6 +109,7 @@ static void cli_redraw_input(const char *line, size_t line_len) {
 
     ssize_t r;
     do { r = write(STDOUT_FILENO, buf, total); } while (r < 0 && errno == EINTR);
+    crypto_wipe(buf, sizeof buf);
 }
 
 /* ---- Raw-mode chat loop -------------------------------------------------

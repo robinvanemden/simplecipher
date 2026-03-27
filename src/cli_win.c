@@ -168,6 +168,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
         int      out_active         = 0;
         uint64_t out_frame_start_ms = 0;
         char     out_text[MAX_MSG + 1];
+        uint8_t  plain[MAX_MSG + 1]; /* function-scope so it is wiped at exit */
         char     line[MAX_MSG + 1];
         size_t   line_len   = 0;
         int      loop_error = 0;
@@ -389,7 +390,6 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                             if (in_have == 0) in_frame_start_ms = GetTickCount64();
                             in_have += (size_t)r;
                             if (in_have == FRAME_SZ) {
-                                uint8_t  plain[MAX_MSG + 1];
                                 uint16_t plen = 0;
 
                                 int fo_rc = frame_open(sess, in_frame, plain, &plen);
@@ -479,6 +479,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
         crypto_wipe(out_next_tx, sizeof out_next_tx);
         crypto_wipe(out_text, sizeof out_text);
         crypto_wipe(line, sizeof line);
+        crypto_wipe(plain, sizeof plain);
     }
 
     if (fd != INVALID_SOCK) WSAEventSelect(fd, nullptr, 0);

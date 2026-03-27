@@ -421,6 +421,7 @@ int main(int argc, char *argv[]) {
             char msg[80];
             snprintf(msg, sizeof msg, "Connecting to %s:%s ...", host, port);
             tui_status_screen(msg, "Ctrl+C to cancel");
+            crypto_wipe(msg, sizeof msg); /* contains peer address */
         } else {
             printf("  Connecting to %s:%s ...", host, port);
             fflush(stdout);
@@ -686,7 +687,16 @@ int main(int argc, char *argv[]) {
         printf("  +----------------------------------------------+\n");
         printf("  |                                              |\n");
         printf("  |              SAFETY CODE                     |\n");
-        printf("  |              %-9s                        |\n", sas);
+        /* write() instead of printf to keep SAS out of libc's stdio buffer */
+        {
+            char sas_line[64];
+            int  sn = snprintf(sas_line, sizeof sas_line, "  |              %-9s                        |\n", sas);
+            if (sn > 0) {
+                fflush(stdout);
+                (void)write(STDOUT_FILENO, sas_line, (size_t)sn);
+                crypto_wipe(sas_line, sizeof sas_line);
+            }
+        }
         printf("  |                                              |\n");
         printf("  |  Compare this code with your peer over a     |\n");
         printf("  |  separate channel (phone call, in person).   |\n");

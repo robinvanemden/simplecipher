@@ -444,7 +444,8 @@ int tui_sas_screen(const char *sas) {
     }
 
     TUI_GOTO(cy + 2, (tui_w - (int)strlen(sas)) / 2);
-    printf("%s%s%s", TUI_COLOR_BCYAN, sas, TUI_COLOR_RESET);
+    fflush(stdout); /* flush cursor positioning before secure write */
+    tui_secure_printf("%s%s%s", TUI_COLOR_BCYAN, sas, TUI_COLOR_RESET);
 
     {
         const char *l1 = "Call or meet your peer and compare this code.";
@@ -508,8 +509,18 @@ int tui_sas_screen(const char *sas) {
         if ((ch == '\r' || ch == '\n') && pos >= 4) break;
         if (ch >= 0x20 && ch <= 0x7E) {
             typed[pos++] = (char)ch;
-            putchar(ch);
+            /* write() instead of putchar() to keep typed SAS characters
+             * out of libc's internal stdio buffer (never wiped). */
             fflush(stdout);
+            {
+                char c = (char)ch;
+#ifdef _WIN32
+                DWORD w;
+                WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), &c, 1, &w, NULL);
+#else
+                (void)write(STDOUT_FILENO, &c, 1);
+#endif
+            }
         }
     }
     typed[pos] = '\0';
