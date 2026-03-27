@@ -371,9 +371,12 @@ public class ChatActivity extends Activity implements NativeCallback {
             appendChat("system", "[send failed]");
           }
           pendingSendMsg = null;
-          /* Re-enable input — one message confirmed, user can send the next. */
-          sendBtn.setEnabled(true);
-          chatInput.setEnabled(true);
+          /* Re-enable input only if session is still alive — onDisconnected
+           * may have already disabled input and set sessionLive=false. */
+          if (sessionLive) {
+            sendBtn.setEnabled(true);
+            chatInput.setEnabled(true);
+          }
         });
   }
 

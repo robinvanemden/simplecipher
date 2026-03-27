@@ -468,6 +468,15 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
         return INVALID_SOCK;
     }
 
+    /* Wipe SOCKS5 buffers — req contains the target hostname (possibly
+     * a .onion address), drain contains the proxy's bound address.
+     * Use volatile memset since network.c doesn't include crypto.h. */
+    {
+        volatile uint8_t *p;
+        for (p = req; p < req + sizeof req; p++) *p = 0;
+        for (p = drain; p < drain + sizeof drain; p++) *p = 0;
+    }
+
     /* Clear the temporary timeout — the caller sets its own. */
     set_sock_timeout(fd, 0);
     return fd;
@@ -610,16 +619,21 @@ static socket_t connect_socket_flags(const char *host, const char *port, int ai_
      * SIGINT for Ctrl+C).  On Windows, g_interrupt_sock lets the console
      * handler break us out of select() by closing the socket. */
     while (g_running) {
+        int sr;
+#ifndef _WIN32
+        /* poll() instead of select() — no FD_SETSIZE limit.
+         * select() overflows its fd_set bitmap if srv >= FD_SETSIZE (typically 1024). */
+        struct pollfd pfd = {srv, POLLIN, 0};
+        sr                = poll(&pfd, 1, 250);
+#else
         fd_set         rfds;
         struct timeval tv;
-        int            sr;
-
         FD_ZERO(&rfds);
         FD_SET(srv, &rfds);
         tv.tv_sec  = 0;
-        tv.tv_usec = 250000; /* 250ms */
-
-        sr = select((int)(srv + 1), &rfds, nullptr, nullptr, &tv);
+        tv.tv_usec = 250000;
+        sr         = select((int)(srv + 1), &rfds, nullptr, nullptr, &tv);
+#endif
         if (sr < 0) {
 #ifndef _WIN32
             if (errno == EINTR) {

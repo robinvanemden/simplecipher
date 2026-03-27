@@ -381,6 +381,7 @@ void tui_listen_screen(const char *port, const char *ips) {
             snprintf(cmd, sizeof cmd, "simplecipher connect %.*s %s", (int)(nl - p), p, port);
             TUI_GOTO(cy, (tui_w - (int)strlen(cmd)) / 2);
             printf("%s%s%s", TUI_COLOR_CYAN, cmd, TUI_COLOR_RESET);
+            crypto_wipe(cmd, sizeof cmd); /* contains local IP + port */
             cy++;
             p = *nl ? nl + 1 : nl;
         }
