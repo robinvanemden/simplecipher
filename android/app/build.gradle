@@ -93,6 +93,7 @@ android {
         fatal 'MutableImplicitPendingIntent'
     }
 
+
     externalNativeBuild {
         cmake {
             path 'src/main/c/CMakeLists.txt'
@@ -106,4 +107,10 @@ dependencies {
      * embedded = QR code scanning with camera */
     fullImplementation 'com.google.zxing:core:3.5.3'
     fullImplementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+
+    /* Android-specific regression tests (onSendResult ordering, port
+     * regression) are verified via the emulator integration test in
+     * tests/test_android_emulator.sh.  Robolectric was evaluated but
+     * requires AndroidX migration + 40+ dependency verification hashes,
+     * which is disproportionate to the 2 tests it enables. */
 }
