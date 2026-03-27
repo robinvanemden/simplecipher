@@ -221,8 +221,12 @@ static void test_tcp_loopback(void) {
 
     plat_init();
 
-    /* Use a high ephemeral port to avoid conflicts */
-    const char *port = "19753";
+    /* Use a random high port to avoid TIME_WAIT conflicts on bare-metal CI */
+    uint8_t rport[2];
+    fill_random(rport, 2);
+    int  port_num = 20000 + (((int)rport[0] | ((int)rport[1] << 8)) % 40000);
+    char port[8];
+    snprintf(port, sizeof port, "%d", port_num);
 
     peer_ctx listener  = {.is_initiator = 0, .port = port};
     peer_ctx initiator = {.is_initiator = 1, .port = port};
