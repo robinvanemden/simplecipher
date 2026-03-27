@@ -226,7 +226,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                         if (in_have == 0) in_frame_start_ms = GetTickCount64();
                         in_have += (size_t)r;
                         if (in_have == FRAME_SZ) {
-                            uint16_t plen = 0;
+                            uint16_t plen  = 0;
                             int      fo_rc = frame_open(sess, in_frame, plain, &plen);
                             if (fo_rc != 0) {
                                 crypto_wipe(plain, sizeof plain);
