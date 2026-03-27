@@ -2,6 +2,8 @@
 
 > **Audience:** Security auditors, students, and anyone who wants to verify that each security claim is backed by code and tests.
 
+> This is the evidence map — it shows exactly how each security claim is verified (tests, fuzzing, formal proofs, manual review). **If you want to trust SimpleCipher's claims, this is the receipt.** For definitions of technical terms, see the [Glossary](GLOSSARY.md).
+
 Every security property claimed in the README and PROTOCOL.md is listed here with the exact code that implements it and the exact test that verifies it. If a claim has no test, it is noted.
 
 ## Cryptographic properties

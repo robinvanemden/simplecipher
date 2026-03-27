@@ -9,6 +9,8 @@ Run the program, compare a short code over the phone to make sure nobody's liste
 
 > **Security notice:** SimpleCipher has not been independently audited. Do not rely on it in situations where a security failure could put anyone at risk without first commissioning a professional review of the code and your deployment environment.
 
+> **New to cryptography?** You don't need to understand any of the technical details to use SimpleCipher — just follow the steps below. If you're curious about how it works or want to learn, the [Walkthrough](docs/WALKTHROUGH.md) explains the protocol step by step, and the [Glossary](docs/GLOSSARY.md) defines every technical term.
+
 SimpleCipher is a single tiny binary (~80 KB) with zero dependencies. The protocol is implemented in a handful of focused C modules, designed to be audited in an afternoon — built for privacy and for teaching.
 
 **Step 1 — Alice starts listening:**

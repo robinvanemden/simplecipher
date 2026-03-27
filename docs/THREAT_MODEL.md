@@ -2,6 +2,8 @@
 
 > **Audience:** Security auditors, high-risk users, and anyone evaluating SimpleCipher's guarantees.
 
+> Every security tool has limits. This document honestly states what SimpleCipher protects against, what it doesn't, and why. **If you're evaluating whether SimpleCipher is right for your situation**, start here. For definitions of technical terms, see the [Glossary](GLOSSARY.md).
+
 ## What SimpleCipher defends against
 
 | Attacker | Protection | Mechanism |

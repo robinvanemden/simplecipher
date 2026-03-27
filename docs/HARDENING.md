@@ -2,6 +2,8 @@
 
 > **Audience:** Security auditors, penetration testers, and developers verifying the security posture of SimpleCipher binaries.
 
+> SimpleCipher ships with many layers of protection built in — you don't need to configure anything. This document lists every security measure in detail, for auditors and developers who want to verify what's under the hood. **If you just want to chat securely, you don't need to read this** — see the [README](../README.md) to get started. For definitions of technical terms, see the [Glossary](GLOSSARY.md).
+
 ## Security notes
 
 - **Keys are ephemeral.** If your device is seized after a session, past messages cannot be decrypted because the private key is already gone.
@@ -135,4 +137,4 @@ taskset -c 0 ./test_ct
 | Windows aarch64 | windows-11-arm |
 | FreeBSD x86_64 | Vultr bare-metal FreeBSD 14.3 (via SSH from GitHub Actions; when bare-metal hosts are configured) |
 | OpenBSD x86_64 | Vultr bare-metal OpenBSD 7.7 (via SSH from GitHub Actions; when bare-metal hosts are configured) |
-| Android APK | ubuntu-24.04 (structural validation + emulator smoke test) |
+| Android APK | ubuntu-24.04 (structural validation + emulator smoke test: install, launch, UI navigation through listen/connect/fingerprint flows, pending-connect teardown, cold restart, native SOCKS5 loopback, and native P2P loopback — all checked for crashes via logcat) |
