@@ -70,7 +70,7 @@ static void win_redraw_input(const char *line, size_t len) {
     char buf[MAX_MSG + 8];
     int  n = snprintf(buf, sizeof buf, "> %.*s", (int)len, line);
     if (n < 0) n = 0;
-    if (n > (int)sizeof buf) n = (int)sizeof buf;
+    if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
     win_write_wipe(buf, (size_t)n);
 }
 
@@ -90,7 +90,7 @@ static void win_print_status(const char *msg, const char *line, size_t line_len)
     win_clear_input_line(line_len);
     n = snprintf(buf, sizeof buf, "%s\n", msg);
     if (n < 0) n = 0;
-    if (n > (int)sizeof buf) n = (int)sizeof buf;
+    if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
     win_write_wipe(buf, (size_t)n);
     win_redraw_input(line, line_len);
 }

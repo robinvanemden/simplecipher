@@ -45,7 +45,7 @@ static void tui_secure_printf(const char *fmt, ...) {
     int n = vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
     if (n < 0) n = 0;
-    if (n > (int)sizeof buf) n = (int)sizeof buf;
+    if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
 #ifdef _WIN32
     DWORD written;
     WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buf, (DWORD)n, &written, NULL);

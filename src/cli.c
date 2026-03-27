@@ -24,7 +24,7 @@ void secure_chat_print(const char *label, const char *msg) {
     ts(t, sizeof t);
     n = snprintf(buf, sizeof buf, "[%s] %s: %s\n", t, label, msg);
     if (n < 0) n = 0;
-    if (n > (int)sizeof buf) n = (int)sizeof buf;
+    if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
 #if defined(_WIN32) || defined(_WIN64)
     {
         DWORD w;
