@@ -160,20 +160,69 @@ void set_sock_opts(socket_t fd) {
 /* Exchange one value simultaneously with the peer.
  * The initiator sends first to avoid both sides waiting for each other.
  * Uses deadline-aware I/O to defeat byte-dribble attacks. */
+/* Send a padded exchange message: [total_le16][payload][random_padding].
+ * Random padding (0-128 bytes) makes handshake message sizes variable,
+ * defeating DPI rules that match on fixed 33+33+32+32 byte counts.
+ * The payload and padding are indistinguishable from random (commitments,
+ * X25519 keys, and CSPRNG output all look like uniform random bytes). */
+static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t dl) {
+    uint8_t pad_rand[1];
+    fill_random(pad_rand, 1);
+    size_t  pad_len = pad_rand[0] >> 1; /* 0-127 bytes of random padding */
+    size_t  total   = payload_n + pad_len;
+    uint8_t hdr[2]  = {(uint8_t)(total & 0xFF), (uint8_t)(total >> 8)};
+
+    if (write_exact_dl(fd, hdr, 2, dl) != 0) return -1;
+    if (write_exact_dl(fd, payload, payload_n, dl) != 0) return -1;
+    if (pad_len > 0) {
+        uint8_t pad[128];
+        fill_random(pad, pad_len);
+        int rc = write_exact_dl(fd, pad, pad_len, dl);
+        {
+            volatile uint8_t *p;
+            for (p = pad; p < pad + sizeof pad; p++) *p = 0;
+        }
+        if (rc != 0) return -1;
+    }
+    return 0;
+}
+
+/* Receive a padded exchange message.  Reads [total_le16], then total bytes,
+ * extracts the first expected_n bytes as payload, discards padding. */
+static int exchange_recv(socket_t fd, uint8_t *payload, size_t expected_n, uint64_t dl) {
+    uint8_t hdr[2];
+    if (read_exact_dl(fd, hdr, 2, dl) != 0) return -1;
+    size_t total = (size_t)hdr[0] | ((size_t)hdr[1] << 8);
+    if (total < expected_n || total > expected_n + 128) return -1;
+
+    if (read_exact_dl(fd, payload, expected_n, dl) != 0) return -1;
+
+    /* Drain padding */
+    size_t pad_len = total - expected_n;
+    if (pad_len > 0) {
+        uint8_t drain[128];
+        if (read_exact_dl(fd, drain, pad_len, dl) != 0) return -1;
+        {
+            volatile uint8_t *p;
+            for (p = drain; p < drain + sizeof drain; p++) *p = 0;
+        }
+    }
+    return 0;
+}
+
 [[nodiscard]] int exchange(socket_t fd, int we_init, const uint8_t *out, size_t out_n, uint8_t *in, size_t in_n) {
     /* Absolute deadline for this exchange round.  Combined with
      * set_sock_timeout (per-syscall), this bounds total wall-clock time
      * even if an adversary dribbles one byte just under the per-call
-     * timeout.  15 seconds is generous for a single handshake round
-     * (33 or 32 bytes over any real network). */
+     * timeout.  15 seconds is generous for a padded handshake round. */
     enum { EXCHANGE_DEADLINE_MS = 15000 };
     uint64_t dl = monotonic_ms() + EXCHANGE_DEADLINE_MS;
     if (we_init) {
-        if (write_exact_dl(fd, out, out_n, dl) != 0) return -1;
-        if (read_exact_dl(fd, in, in_n, dl) != 0) return -1;
+        if (exchange_send(fd, out, out_n, dl) != 0) return -1;
+        if (exchange_recv(fd, in, in_n, dl) != 0) return -1;
     } else {
-        if (read_exact_dl(fd, in, in_n, dl) != 0) return -1;
-        if (write_exact_dl(fd, out, out_n, dl) != 0) return -1;
+        if (exchange_recv(fd, in, in_n, dl) != 0) return -1;
+        if (exchange_send(fd, out, out_n, dl) != 0) return -1;
     }
     return 0;
 }

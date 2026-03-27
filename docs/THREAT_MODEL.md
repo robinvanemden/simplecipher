@@ -32,7 +32,7 @@
 |-----------|--------|-----------|
 | No PIE on static musl binaries | No ASLR for code/data segments | musl toolchain lacks rcrt1.o; upgrade pending |
 | 32-bit SAS | 1-in-4-billion chance of MITM per session | Commitment scheme prevents brute-force; adequate for interactive verification |
-| Protocol fingerprint (33+33+32+32+512 pattern) | Traffic identifiable as SimpleCipher by DPI | Fixed frames prevent length leakage. The handshake byte counts (33+33+32+32) followed by 512-byte frames form a unique signature that no other protocol shares. A future protocol version could randomize handshake padding or wrap in TLS to defeat DPI, but this requires a version bump. For now, use `--socks5` with Tor to wrap the traffic in the Tor protocol, making it indistinguishable from other Tor usage. |
+| Protocol fingerprint (512-byte chat frames) | Chat frames are fixed 512 bytes (intentional for length hiding) | Handshake messages now have randomized padding (0-127 bytes CSPRNG), making initial byte counts variable and defeating static DPI rules. Chat frames remain fixed-size for traffic analysis resistance. Use `--socks5` with Tor for full anonymity. |
 | Cover traffic minimum 500ms interval | Frames arriving <500ms apart are distinguishable from cover | Delaying real sends to cover boundaries would add latency |
 | No sandbox on Windows | Code execution vuln has full system access on Windows | Windows has no equivalent to seccomp/Capsicum/pledge; process mitigation policies provide partial defense |
 | mlockall may fail silently | Key material can be swapped to disk | Fails on systems with low RLIMIT_MEMLOCK; warning printed |
