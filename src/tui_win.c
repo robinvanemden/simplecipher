@@ -343,6 +343,7 @@ win_tui_done:
     crypto_wipe(out_text, sizeof out_text);
     crypto_wipe(line, sizeof line);
     crypto_wipe(plain, sizeof plain);
+    win_console_restore(h_in, h_in_mode); /* restore console input mode */
     tui_msg_wipe();
 }
 

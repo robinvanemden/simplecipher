@@ -226,9 +226,9 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                 break;
             }
 
-            if (wr == WAIT_TIMEOUT) {
-                /* Cover traffic: send encrypted dummy frame on schedule. */
-                if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
+            /* Cover traffic: check on EVERY iteration, not just WAIT_TIMEOUT.
+             * Otherwise sustained keyboard/socket events suppress cover frames. */
+            if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
                     if (frame_build(sess, NULL, 0, out_frame, out_next_tx) != 0) {
                         win_print_status("[cover traffic error -- session ended]", line, line_len);
                         loop_error = 1;
@@ -255,8 +255,9 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                         }
                     }
                 }
-                continue;
             }
+
+            if (wr == WAIT_TIMEOUT) continue;
 
             /* ----- Local keyboard input ----- */
             if (wr == WAIT_OBJECT_0) {
