@@ -84,9 +84,9 @@ check "network.c uses poll() for listen_socket_cb on POSIX (no FD_SET overflow)"
     "grep -q 'poll(&pfd' '$PROJECT_DIR/src/network.c'"
 
 # Verify CFLAGS override can't remove hardening: run dry-run from project dir
-MAKE_DRY=$(cd "$PROJECT_DIR" && make -n CFLAGS="-O0" simplecipher 2>&1)
+MAKE_CHECK=$(make -n -B -C "$PROJECT_DIR" CFLAGS="-O0" simplecipher 2>&1 || true)
 check "make CFLAGS override cannot drop CIPHER_HARDEN" \
-    "echo '$MAKE_DRY' | grep -q 'CIPHER_HARDEN'"
+    "echo \"$MAKE_CHECK\" | grep -q CIPHER_HARDEN"
 
 echo ""
 echo "=== Vendored library integrity ==="
