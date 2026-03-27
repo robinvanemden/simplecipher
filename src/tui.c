@@ -474,6 +474,12 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
     printf("\033[1 q"); /* block cursor */
     fflush(stdout);
 
+#ifdef _WIN32
+    HANDLE   h_in_sas   = GetStdHandle(STD_INPUT_HANDLE);
+    WSAEVENT sas_ev_win = WSACreateEvent();
+    WSAEventSelect(sas_fd, sas_ev_win, FD_READ | FD_CLOSE);
+#endif
+
     while (pos < (int)sizeof(typed) - 1 && g_running) {
 #ifndef _WIN32
         struct pollfd pfd[2] = {{STDIN_FILENO, POLLIN, 0}, {(int)sas_fd, POLLIN | POLLHUP, 0}};
@@ -488,25 +494,26 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
         if (read(STDIN_FILENO, &ch, 1) != 1) continue;
 #else
         INPUT_RECORD rec;
-        DWORD        nread  = 0;
-        HANDLE       h_in   = GetStdHandle(STD_INPUT_HANDLE);
-        WSAEVENT     sas_ev = WSACreateEvent();
-        WSAEventSelect(sas_fd, sas_ev, FD_READ | FD_CLOSE);
-        HANDLE sas_waits[2] = {h_in, sas_ev};
-        DWORD  wr           = WaitForMultipleObjects(2, sas_waits, FALSE, 250);
-        WSAEventSelect(sas_fd, sas_ev, 0);
-        WSACloseEvent(sas_ev);
+        DWORD        nread        = 0;
+        HANDLE       sas_waits[2] = {h_in_sas, sas_ev_win};
+        DWORD        wr           = WaitForMultipleObjects(2, sas_waits, FALSE, 250);
         if (wr == WAIT_OBJECT_0 + 1) {
+            WSAEventSelect(sas_fd, sas_ev_win, 0);
+            WSACloseEvent(sas_ev_win);
             crypto_wipe(typed, sizeof typed);
             return 0; /* peer disconnected — abort */
         }
         if (wr != WAIT_OBJECT_0) continue;
-        if (!ReadConsoleInputA(h_in, &rec, 1, &nread)) continue;
+        if (!ReadConsoleInputA(h_in_sas, &rec, 1, &nread)) continue;
         if (rec.EventType != KEY_EVENT || !rec.Event.KeyEvent.bKeyDown) continue;
         unsigned char ch = (unsigned char)rec.Event.KeyEvent.uChar.AsciiChar;
 #endif
         if (ch == 0x03 || ch == 0x04) {
             crypto_wipe(typed, sizeof typed);
+#ifdef _WIN32
+            WSAEventSelect(sas_fd, sas_ev_win, 0);
+            WSACloseEvent(sas_ev_win);
+#endif
             return 0;
         }
         if (ch == 0x7F || ch == 0x08) {
@@ -538,6 +545,11 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
         }
     }
     typed[pos] = '\0';
+
+#ifdef _WIN32
+    WSAEventSelect(sas_fd, sas_ev_win, 0);
+    WSACloseEvent(sas_ev_win);
+#endif
 
     if (!g_running) {
         crypto_wipe(typed, sizeof typed);
