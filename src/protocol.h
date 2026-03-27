@@ -37,12 +37,12 @@
 /* ---- frame constants ---------------------------------------------------- */
 
 enum {
-    FRAME_SZ            = 512,
-    AD_SZ               = 8,
-    CT_SZ               = FRAME_SZ - AD_SZ - MAC_SZ,
-    HEADER_SZ           = 1,                     /* flags byte in plaintext slot  */
-    MAX_MSG             = CT_SZ - 2 - HEADER_SZ, /* 485 bytes       */
-    MAX_MSG_RATCHET     = MAX_MSG - KEY,         /* 453 bytes       */
+    FRAME_SZ         = 512,
+    AD_SZ            = 8,
+    CT_SZ            = FRAME_SZ - AD_SZ - MAC_SZ,
+    HEADER_SZ        = 1,                     /* flags byte in plaintext slot  */
+    MAX_MSG          = CT_SZ - 2 - HEADER_SZ, /* 485 bytes       */
+    MAX_MSG_RATCHET  = MAX_MSG - KEY,         /* 453 bytes       */
     PROTOCOL_VERSION = 3,
     FRAME_TIMEOUT_S  = 30,
     /* Maximum consecutive frame_open failures before session teardown.
