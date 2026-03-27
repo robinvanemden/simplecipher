@@ -300,10 +300,10 @@ void tui_draw_input(const char *line, size_t len) {
  * at the input position when done. */
 void tui_draw_screen(const char *status, const char *line, size_t line_len) {
     tui_get_size(&tui_w, &tui_h);
-    if (tui_w < 40 || tui_h < 10) {
+    if (tui_w < 40 || tui_h < 14) {
         printf("\033[2J");
         TUI_GOTO(1, 1);
-        printf("Terminal too small (need 40x10)");
+        printf("Terminal too small (need 40x14)");
         fflush(stdout);
         return;
     }
@@ -388,8 +388,8 @@ void tui_listen_screen(const char *port, const char *ips) {
             const char *nl = p;
             while (*nl && *nl != '\n') nl++;
             char cmd[128];
-            int  cmdlen = snprintf(cmd, sizeof cmd, "simplecipher connect %.*s %s", (int)(nl - p), p, port);
-            TUI_GOTO(cy, (tui_w - cmdlen) / 2);
+            snprintf(cmd, sizeof cmd, "simplecipher connect %.*s %s", (int)(nl - p), p, port);
+            TUI_GOTO(cy, (tui_w - (int)strlen(cmd)) / 2);
             printf("%s%s%s", TUI_COLOR_CYAN, cmd, TUI_COLOR_RESET);
             cy++;
             p = *nl ? nl + 1 : nl;

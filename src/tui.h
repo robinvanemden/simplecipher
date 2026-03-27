@@ -82,7 +82,7 @@
  * The display code reads the most recent N messages (where N = visible
  * rows) by indexing from (start + total - N) % TUI_MSG_MAX. */
 #define TUI_MSG_MAX 1000
-#define TUI_MSG_TEXT 486
+#define TUI_MSG_TEXT (MAX_MSG + 1) /* must hold null-terminated message */
 
 enum tui_sender { TUI_ME, TUI_PEER, TUI_SYSTEM };
 

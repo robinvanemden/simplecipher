@@ -483,7 +483,7 @@ int main(int argc, char *argv[]) {
             g_fd = listen_socket(port);
         }
         if (g_fd == INVALID_SOCK) {
-            if (tui_mode) tui_status_screen("Connection failed", "");
+            if (tui_mode) tui_status_screen("Listen failed", "");
             else fprintf(stderr, "\n  Listen failed. Is port %s already in use?\n", port);
             rc = EXIT_NET;
             goto out;
@@ -629,6 +629,7 @@ int main(int argc, char *argv[]) {
             crypto_wipe(ne, sizeof ne);
             crypto_wipe(np, sizeof np);
             if (mismatch) {
+                if (tui_mode) tui_restore_term(); /* exit alternate screen so error is visible */
                 fprintf(stderr,
                         "\n  [!] Peer fingerprint mismatch!\n"
                         "  Expected: %s\n"
@@ -665,12 +666,12 @@ int main(int argc, char *argv[]) {
         crypto_wipe(sas_key, sizeof sas_key);
         crypto_wipe(sas, sizeof sas);
         if (sas_ok <= 0) {
-            printf("\033[2J\033[H");
+            tui_restore_term(); /* exit alternate screen NOW so error is visible */
             if (sas_ok < 0) {
-                printf("Code mismatch -- aborted.\n");
+                fprintf(stderr, "Code mismatch -- aborted.\n");
                 rc = EXIT_MITM;
             } else {
-                printf("Aborted.\n");
+                fprintf(stderr, "Aborted.\n");
                 rc = EXIT_ABORT;
             }
             goto out;
@@ -727,6 +728,16 @@ int main(int argc, char *argv[]) {
             alarm(300); /* 5-minute SAS verification timeout */
 #endif
 #if defined(_WIN32) || defined(_WIN64)
+            /* 5-minute timeout for SAS verification (no alarm() on Windows) */
+            {
+                HANDLE h_stdin = GetStdHandle(STD_INPUT_HANDLE);
+                DWORD  wr      = WaitForSingleObject(h_stdin, 300000);
+                if (wr == WAIT_TIMEOUT) {
+                    printf("SAS verification timed out.\n");
+                    rc = EXIT_ABORT;
+                    goto out;
+                }
+            }
             int rn = _read(0, typed_sas, (unsigned)(sizeof typed_sas - 1));
 #else
             ssize_t rn = read(STDIN_FILENO, typed_sas, sizeof typed_sas - 1);
