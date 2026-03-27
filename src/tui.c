@@ -178,17 +178,6 @@ void tui_draw_messages(void) {
 
     if (max_text < 1) max_text = 1;
 
-    /* First pass: count how many screen rows all messages need so we can
-     * figure out which message to start from (bottom-aligned). */
-    int total_rows = 0;
-    for (i = 0; i < total; i++) {
-        int idx      = (tui_msg_start + i) % TUI_MSG_MAX;
-        int text_len = (int)strlen(tui_msgs[idx].text);
-        int lines    = (text_len + max_text - 1) / max_text;
-        if (lines < 1) lines = 1;
-        total_rows += lines;
-    }
-
     int msg_rows  = max_row - 4 + 1; /* available screen rows for messages */
     int start_msg = 0;
     /* Find the first message to display so that the last messages fit */

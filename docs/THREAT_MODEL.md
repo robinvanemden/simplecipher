@@ -33,7 +33,7 @@
 | 32-bit SAS | 1-in-4-billion chance of MITM per session | Commitment scheme prevents brute-force; adequate for interactive verification |
 | Protocol fingerprint (33+33+32+32+512 pattern) | Traffic identifiable as SimpleCipher | Fixed frames prevent length leakage; use Tor for anonymity |
 | Cover traffic minimum 500ms interval | Frames arriving <500ms apart are distinguishable from cover | Delaying real sends to cover boundaries would add latency |
-| No sandbox on Windows/macOS | Code execution vuln has full system access | No portable syscall sandbox API exists |
+| No sandbox on Windows | Code execution vuln has full system access on Windows | Windows has no equivalent to seccomp/Capsicum/pledge; process mitigation policies provide partial defense |
 | mlockall may fail silently | Key material can be swapped to disk | Fails on systems with low RLIMIT_MEMLOCK; warning printed |
 | X25519 is not post-quantum | Vulnerable to future quantum computers (Shor's algorithm) | Symmetric layer (BLAKE2b, XChaCha20) provides 128-bit quantum security; X25519 is the single quantum-vulnerable component. Practical quantum threat is 2035-2045 (requires millions of physical qubits). A hybrid X25519 + ML-KEM-768 handshake (following Signal's PQXDH model) will be added when quantum computing advances warrant it. |
 
@@ -78,5 +78,5 @@ An authenticated peer who completes the handshake legitimately can:
 - ASan + UBSan + MSan in CI
 - 5 libFuzzer targets (frame_open, sanitize, validate_port, socks5, fingerprint)
 - dudect statistical timing tests (ct_compare, is_zero32)
-- CI on 8 platforms: Linux/Windows x86_64+aarch64, FreeBSD, OpenBSD (bare-metal)
+- CI on 6 platform/arch combinations: Linux x86_64+aarch64, Windows x86_64+aarch64, FreeBSD, OpenBSD (bare-metal)
 - Release builds fail-closed on missing bare-metal verification

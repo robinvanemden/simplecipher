@@ -627,14 +627,6 @@ int sandbox_phase2(int sock_fd) {
     return failed ? -1 : 0;
 }
 
-void sandbox(void) {
-    /* Legacy entry point — equivalent to phase 2 (chat-loop restriction).
-     * Callers that have not been updated to the two-phase API still get the
-     * full post-handshake restriction.  Pass -1 since Capsicum callers
-     * should use sandbox_phase2(fd) directly. */
-    (void)sandbox_phase2(-1);
-}
-
 #else
 void harden(void) {} /* no-op when CIPHER_HARDEN is not set */
 int  sandbox_phase1(int sock_fd) {
@@ -649,7 +641,6 @@ int sandbox_phase2(int sock_fd) {
     (void)sock_fd;
     return 0;
 }
-void sandbox(void) {}
 #endif
 
 /* ---- signal handling ---------------------------------------------------- */

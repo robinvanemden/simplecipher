@@ -43,9 +43,8 @@ enum {
     HEADER_SZ           = 1,                     /* flags byte in plaintext slot  */
     MAX_MSG             = CT_SZ - 2 - HEADER_SZ, /* 485 bytes       */
     MAX_MSG_RATCHET     = MAX_MSG - KEY,         /* 453 bytes       */
-    PROTOCOL_VERSION    = 3,
-    HANDSHAKE_TIMEOUT_S = 30,
-    FRAME_TIMEOUT_S     = 30,
+    PROTOCOL_VERSION = 3,
+    FRAME_TIMEOUT_S  = 30,
     /* Maximum consecutive frame_open failures before session teardown.
      *
      * frame_open does NOT mutate session state on failure (chain, seq, root

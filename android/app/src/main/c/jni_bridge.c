@@ -98,6 +98,7 @@
 #define CMD_SEND 0x01
 #define CMD_CONFIRM_SAS 0x02
 #define CMD_QUIT 0x03
+#define HANDSHAKE_TIMEOUT_S 30 /* Android-only; desktop uses FRAME_TIMEOUT_S */
 
 /* ---- Globals ------------------------------------------------------------ */
 

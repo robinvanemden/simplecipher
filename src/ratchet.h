@@ -60,13 +60,12 @@
  * Called by session_init after deriving the root key.  Sets up the DH
  * keypair and peer's public key for the first ratchet step.
  *
- * The initiator does one immediate ratchet step: generates a fresh keypair,
- * mixes a new DH secret into the root key, and derives the sending chain.
- * This ensures the first message always carries a ratchet key, and both
- * sides start synchronized.
- *
- * The responder starts with need_send_ratchet=1, expecting the initiator's
- * ratchet key in the first frame.
+ * Both sides start identically: the handshake keypair is copied in, and
+ * need_send_ratchet is set to 1.  The first frame_build on either side
+ * triggers ratchet_send, which generates a fresh keypair, performs the
+ * DH ratchet step, and includes the new public key in the frame
+ * (FLAG_RATCHET).  The we_init parameter is accepted for API symmetry
+ * with session_init but is currently unused (both roles are identical).
  *
  * self_priv/self_pub are the HANDSHAKE keypair — copied into s->dh_priv
  * and s->dh_pub for use in the first ratchet step.  The handshake private
