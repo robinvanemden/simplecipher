@@ -123,6 +123,12 @@ if(NOT CMAKE_CROSSCOMPILING)
     target_include_directories(test_p2p PRIVATE src lib)
     target_link_libraries(test_p2p pthread)
     add_test(NAME p2p COMMAND test_p2p)
+
+    add_executable(test_socks5_proxy tests/test_socks5_proxy.c ${CORE_SRC} ${PLATFORM_SRC})
+    target_include_directories(test_socks5_proxy PRIVATE src lib)
+    target_link_libraries(test_socks5_proxy pthread)
+    add_test(NAME socks5_proxy COMMAND test_socks5_proxy)
+
     enable_testing()
 endif()
 
