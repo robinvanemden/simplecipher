@@ -423,7 +423,8 @@ jobs:
             fi
             git checkout ${{ github.sha }}
             echo '=== FreeBSD' \$(uname -sr) '==='
-            gmake -j1 CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' clean simplecipher tests/test_p2p tests/test_socks5_proxy
+            gmake clean
+            gmake -j1 CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
             ./tests/test_socks5_proxy
@@ -459,7 +460,8 @@ jobs:
             fi
             git checkout ${{ github.sha }}
             echo '=== OpenBSD' \$(uname -sr) '==='
-            gmake -j1 CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' clean simplecipher tests/test_p2p tests/test_socks5_proxy
+            gmake clean
+            gmake -j1 CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
             ./tests/test_socks5_proxy
@@ -495,7 +497,8 @@ jobs:
             fi
             git checkout ${{ github.sha }}
             echo '=== Linux ARM64' \$(uname -srm) '==='
-            make -j1 CC=gcc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' clean simplecipher tests/test_p2p tests/test_socks5_proxy
+            make clean
+            make -j1 CC=gcc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
             ./tests/test_socks5_proxy
