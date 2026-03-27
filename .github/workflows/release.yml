@@ -485,11 +485,7 @@ jobs:
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
             ./tests/test_socks5_proxy
-            echo '=== Valgrind memory check (SOCKS5) ==='
-            valgrind --leak-check=full --error-exitcode=42 ./tests/test_socks5_proxy
-            echo '=== Valgrind memory check (core) ==='
-            timeout 300 valgrind --error-exitcode=42 ./tests/test_p2p
-            echo '=== Real Tor SOCKS5 test ==='
+            echo '=== Extended ARM64 tests (valgrind + Tor) ==='
             bash tests/test_arm64_tor.sh --require-tools
           "
           rm -f ~/.ssh/arm64_key

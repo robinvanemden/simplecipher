@@ -79,6 +79,8 @@ public class ChatActivity extends Activity implements NativeCallback {
   private String pendingSendMsg = null;
   /* True after onConnected, false after onDisconnected/onStop. */
   private boolean sessionLive = false;
+  /* Port saved from Intent before extras are wiped (for getLocalIps). */
+  private int sessionPort = 7777;
 
   /**
    * True if the peer fingerprint was pre-verified by native during handshake. Set from native
@@ -167,6 +169,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     String host = getIntent().getStringExtra("host");
     int port = getIntent().getIntExtra("port", 7777);
     String socks5Proxy = getIntent().getStringExtra("socks5_proxy");
+    sessionPort = port; /* save before wipe — getLocalIps() needs it */
 
     /* Scrub connection metadata from the Intent so it does not linger
      * in the Activity's state.  The values have been copied to locals. */
@@ -421,7 +424,7 @@ public class ChatActivity extends Activity implements NativeCallback {
   /* ---- Local IPs ------------------------------------------------------ */
 
   private String getLocalIps() {
-    int port = getIntent().getIntExtra("port", 7777);
+    int port = sessionPort; /* use saved value, not wiped Intent */
     List<String> ipv4 = new ArrayList<>();
     List<String> ipv6 = new ArrayList<>();
     try {
