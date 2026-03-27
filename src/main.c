@@ -734,7 +734,7 @@ int main(int argc, char *argv[]) {
              * watches the peer socket for disconnect — no gap. */
             HANDLE   h_stdin = GetStdHandle(STD_INPUT_HANDLE);
             WSAEVENT sas_ev  = WSACreateEvent();
-            WSAEventSelect(g_fd, sas_ev, FD_READ | FD_CLOSE);
+            WSAEventSelect(g_fd, sas_ev, FD_CLOSE); /* only disconnect, not data */
             HANDLE sas_waits[2] = {h_stdin, sas_ev};
             DWORD  wr           = WaitForMultipleObjects(2, sas_waits, FALSE, 300000);
             WSAEventSelect(g_fd, sas_ev, 0); /* clear before closing */
@@ -767,7 +767,7 @@ int main(int argc, char *argv[]) {
                     int pr      = poll(sas_fds, 2, poll_ms);
                     if (pr < 0 && errno == EINTR) continue;
                     if (pr < 0) break;
-                    if (sas_fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
+                    if (sas_fds[1].revents & (POLLHUP | POLLERR)) {
                         fprintf(stderr, "Peer disconnected during SAS verification.\n");
                         rc = EXIT_NET;
                         goto out;
@@ -865,11 +865,14 @@ int main(int argc, char *argv[]) {
         cli_chat_loop(g_fd, &g_sess, cover_traffic);
     } /* end else (CLI mode) */
 
-    g_running = 0;
     sock_shutdown_both(g_fd);
     close_sock(g_fd);
     g_fd = INVALID_SOCK;
-    rc   = EXIT_OK;
+    /* EXIT_OK only if the user chose to quit (Ctrl+C set g_running=0).
+     * If the loop broke for another reason (peer disconnect, auth failure,
+     * send error), g_running is still 1 — report as network error. */
+    rc        = g_running ? EXIT_NET : EXIT_OK;
+    g_running = 0;
 
 out:
     /* Always reached.  Wiping uninitialised or already-zero variables is safe. */

@@ -317,6 +317,7 @@ public class SimpleKeyboard extends LinearLayout {
     btn.setAllCaps(false);
     btn.setPadding(0, 0, 0, 0);
     btn.setMinWidth(0);
+    btn.setFilterTouchesWhenObscured(true); /* prevent tapjacking via overlay */
     btn.setMinimumWidth(0);
     btn.setMinHeight(0);
     btn.setMinimumHeight(0);

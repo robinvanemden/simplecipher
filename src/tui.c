@@ -468,7 +468,7 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
 #ifdef _WIN32
     HANDLE   h_in_sas   = GetStdHandle(STD_INPUT_HANDLE);
     WSAEVENT sas_ev_win = WSACreateEvent();
-    WSAEventSelect(sas_fd, sas_ev_win, FD_READ | FD_CLOSE);
+    WSAEventSelect(sas_fd, sas_ev_win, FD_CLOSE); /* only disconnect, not data */
 #endif
 
     while (pos < (int)sizeof(typed) - 1 && g_running) {
@@ -476,7 +476,7 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
         struct pollfd pfd[2] = {{STDIN_FILENO, POLLIN, 0}, {(int)sas_fd, POLLIN | POLLHUP, 0}};
         int           pr     = poll(pfd, 2, 250);
         if (pr <= 0) continue;
-        if (pfd[1].revents & (POLLIN | POLLHUP | POLLERR)) {
+        if (pfd[1].revents & (POLLHUP | POLLERR)) {
             crypto_wipe(typed, sizeof typed);
             return 0; /* peer disconnected — abort */
         }

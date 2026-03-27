@@ -769,11 +769,11 @@ static void *session_thread(void *arg) {
          * the user tapped Confirm or Back. */
         uint8_t hdr[3];
         for (;;) {
-            struct pollfd sas_fds[2] = {{pipe_rd, POLLIN, 0}, {(int)fd, POLLIN | POLLHUP, 0}};
+            struct pollfd sas_fds[2] = {{pipe_rd, POLLIN, 0}, {(int)fd, POLLHUP, 0}};
             int           pr         = poll(sas_fds, 2, 1000); /* 1-second poll */
             if (pr < 0 && errno == EINTR) continue;
             if (pr < 0) break;
-            if (sas_fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
+            if (sas_fds[1].revents & (POLLHUP | POLLERR)) {
                 LOGE("peer disconnected during SAS verification");
                 jni_call_str(env, cb, mid_onHandshakeFailed, "Peer disconnected during verification", "sas_peer_dc");
                 goto cleanup_session;
