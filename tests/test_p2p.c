@@ -2016,8 +2016,10 @@ static void test_handshake_failure_paths(void) {
     /* Test 1: Wrong version → listener detects mismatch.
      * honest_listener starts first (binds+accepts), bad_version_peer connects. */
     {
-        peer_ctx  listener  = {.is_initiator = 0, .port = "17782"};
-        peer_ctx  connector = {.is_initiator = 1, .port = "17782"};
+        char p1[8];
+        random_port(p1);
+        peer_ctx  listener  = {.is_initiator = 0, .port = p1};
+        peer_ctx  connector = {.is_initiator = 1, .port = p1};
         pthread_t lt, ct;
 
         /* Listener thread first (it blocks on accept) */
@@ -2036,8 +2038,10 @@ static void test_handshake_failure_paths(void) {
 
     /* Test 2: Wrong commitment → listener detects MITM */
     {
-        peer_ctx  listener  = {.is_initiator = 0, .port = "17783"};
-        peer_ctx  connector = {.is_initiator = 1, .port = "17783"};
+        char p2[8];
+        random_port(p2);
+        peer_ctx  listener  = {.is_initiator = 0, .port = p2};
+        peer_ctx  connector = {.is_initiator = 1, .port = p2};
         pthread_t lt, ct;
 
         pthread_create(&lt, nullptr, honest_listener, &listener);
@@ -2055,14 +2059,16 @@ static void test_handshake_failure_paths(void) {
     /* Test 3: Peer disconnects mid-handshake (after version, before commit).
      * Use a thread for the truncating connector since listen_socket blocks. */
     {
-        peer_ctx  listener = {.is_initiator = 0, .port = "17784"};
+        char p3[8];
+        random_port(p3);
+        peer_ctx  listener = {.is_initiator = 0, .port = p3};
         pthread_t lt;
         pthread_create(&lt, nullptr, honest_listener, &listener);
 
         /* Connect, complete round 1, then close without round 2 */
         struct timespec ts_delay = {0, 100000000}; /* 100ms */
         nanosleep(&ts_delay, nullptr);
-        socket_t fd = connect_socket("127.0.0.1", "17784");
+        socket_t fd = connect_socket("127.0.0.1", p3);
         if (fd != INVALID_SOCK) {
             set_sock_timeout(fd, 5);
             uint8_t out1[1 + KEY], in1[1 + KEY];
@@ -2207,6 +2213,9 @@ static void test_signal_handler(void) {
      * SIGINT should interrupt accept() (EINTR) and the child should exit. */
     g_running = 1;
 
+    char sig_port[8];
+    random_port(sig_port);
+
     pid_t pid = fork();
     if (pid == 0) {
         /* Child: install handler, try to listen (will block on accept) */
@@ -2221,7 +2230,7 @@ static void test_signal_handler(void) {
         hints.ai_family   = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_flags    = AI_PASSIVE;
-        if (getaddrinfo(nullptr, "17790", &hints, &res) != 0) _exit(99);
+        if (getaddrinfo(nullptr, sig_port, &hints, &res) != 0) _exit(99);
 
         socket_t fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
         if (fd == INVALID_SOCK) {
