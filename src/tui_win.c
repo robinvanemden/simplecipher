@@ -75,7 +75,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     size_t      line_len = 0;
     uint8_t     in_wire[WIRE_MAX];
     size_t      in_have           = 0;
-    size_t      in_need           = WIRE_HDR;   /* bytes needed for current phase */
+    size_t      in_need           = WIRE_HDR; /* bytes needed for current phase */
     uint64_t    in_frame_start_ms = 0;
     uint8_t     out_frame[FRAME_SZ];
     uint8_t     out_wire[WIRE_MAX];
@@ -324,7 +324,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 tui_draw_screen(status, line, line_len);
                 break;
             }
-            out_wire_len       = frame_wire_build(out_wire, out_frame);
+            out_wire_len = frame_wire_build(out_wire, out_frame);
             crypto_wipe(out_frame, sizeof out_frame);
             out_off            = 0;
             out_active         = 1;

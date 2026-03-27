@@ -159,8 +159,8 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
     {
         uint8_t  in_wire[WIRE_MAX];
         size_t   in_have           = 0;
-        size_t   in_need           = WIRE_HDR;   /* bytes needed for current phase */
-        uint64_t in_frame_start_ms = 0; /* GetTickCount64 when first byte of
+        size_t   in_need           = WIRE_HDR; /* bytes needed for current phase */
+        uint64_t in_frame_start_ms = 0;        /* GetTickCount64 when first byte of
                                              * current incomplete frame arrived;
                                              * 0 means no frame in progress     */
         uint8_t  out_frame[FRAME_SZ];
@@ -238,7 +238,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                     loop_error = 1;
                     break;
                 }
-                out_wire_len       = frame_wire_build(out_wire, out_frame);
+                out_wire_len = frame_wire_build(out_wire, out_frame);
                 crypto_wipe(out_frame, sizeof out_frame);
                 out_off            = 0;
                 out_active         = 1;

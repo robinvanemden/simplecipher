@@ -230,7 +230,7 @@ size_t frame_wire_build(uint8_t *wire, const uint8_t *frame) {
     size_t  wire_len = frame_wire_build(wire, frame);
     int     rc;
     if (deadline_ms) rc = write_exact_dl(fd, wire, wire_len, deadline_ms);
-    else             rc = write_exact(fd, wire, wire_len);
+    else rc = write_exact(fd, wire, wire_len);
     crypto_wipe(wire, sizeof wire);
     return rc;
 }
@@ -241,17 +241,17 @@ size_t frame_wire_build(uint8_t *wire, const uint8_t *frame) {
     uint8_t pad_len;
     int     rc;
     if (deadline_ms) rc = read_exact_dl(fd, &pad_len, 1, deadline_ms);
-    else             rc = read_exact(fd, &pad_len, 1);
+    else rc = read_exact(fd, &pad_len, 1);
     if (rc != 0) return -1;
 
     if (deadline_ms) rc = read_exact_dl(fd, frame, FRAME_SZ, deadline_ms);
-    else             rc = read_exact(fd, frame, FRAME_SZ);
+    else rc = read_exact(fd, frame, FRAME_SZ);
     if (rc != 0) return -1;
 
     if (pad_len > 0) {
         uint8_t drain[WIRE_PAD_MAX];
         if (deadline_ms) rc = read_exact_dl(fd, drain, pad_len, deadline_ms);
-        else             rc = read_exact(fd, drain, pad_len);
+        else rc = read_exact(fd, drain, pad_len);
         crypto_wipe(drain, sizeof drain);
         if (rc != 0) return -1;
     }

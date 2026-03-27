@@ -63,9 +63,9 @@ enum {
     MAX_AUTH_FAILURES = 3,
     /* Wire padding: each chat frame is sent as [pad_len(1)][frame][random_pad].
      * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
-    WIRE_HDR         = 1,                        /* pad_len byte            */
-    WIRE_PAD_MAX     = 255,                      /* max random padding      */
-    WIRE_MAX         = WIRE_HDR + FRAME_SZ + WIRE_PAD_MAX  /* 768 bytes    */
+    WIRE_HDR     = 1,                                 /* pad_len byte            */
+    WIRE_PAD_MAX = 255,                               /* max random padding      */
+    WIRE_MAX     = WIRE_HDR + FRAME_SZ + WIRE_PAD_MAX /* 768 bytes    */
 };
 static const uint8_t FLAG_RATCHET = 0x01; /* bit 0: ratchet key follows */
 

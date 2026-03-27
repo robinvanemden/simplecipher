@@ -23,26 +23,30 @@
 
 #include <pthread.h>
 /* REQUIRE() is disabled by -DNDEBUG; use a fatal check instead. */
-#define REQUIRE(expr)                                                     \
-    do {                                                                  \
-        if (!(expr)) {                                                    \
-            fprintf(stderr, "FATAL: %s failed at %s:%d\n", #expr,        \
-                    __FILE__, __LINE__);                                   \
-            _exit(1);                                                     \
-        }                                                                 \
+#define REQUIRE(expr)                                                                                                  \
+    do {                                                                                                               \
+        if (!(expr)) {                                                                                                 \
+            fprintf(stderr, "FATAL: %s failed at %s:%d\n", #expr, __FILE__, __LINE__);                                 \
+            _exit(1);                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
 static int g_pass = 0, g_fail = 0;
-#define TEST(desc, expr)                                          \
-    do {                                                          \
-        if (expr) { printf("  PASS: %s\n", desc); g_pass++; }    \
-        else      { printf("  FAIL: %s\n", desc); g_fail++; }    \
+#define TEST(desc, expr)                                                                                               \
+    do {                                                                                                               \
+        if (expr) {                                                                                                    \
+            printf("  PASS: %s\n", desc);                                                                              \
+            g_pass++;                                                                                                  \
+        } else {                                                                                                       \
+            printf("  FAIL: %s\n", desc);                                                                              \
+            g_fail++;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
 /* ---- Mini SOCKS5 proxy -------------------------------------------------- */
 
 static void *mini_socks5_proxy(void *arg) {
-    int srv = *(int *)arg;
+    int srv    = *(int *)arg;
     int client = accept(srv, NULL, NULL);
     if (client < 0) return NULL;
 
@@ -89,7 +93,7 @@ static void *mini_socks5_proxy(void *arg) {
             goto done;
         }
         target_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-        int rc = (target_fd >= 0) ? connect(target_fd, res->ai_addr, (socklen_t)res->ai_addrlen) : -1;
+        int rc    = (target_fd >= 0) ? connect(target_fd, res->ai_addr, (socklen_t)res->ai_addrlen) : -1;
         freeaddrinfo(res);
         if (rc != 0) {
             char fail[10] = {0x05, 0x05};
@@ -143,8 +147,8 @@ typedef struct {
 
 static void *server_thread(void *arg) {
     server_ctx *ctx = (server_ctx *)arg;
-    ctx->ok = 0;
-    ctx->fd = accept(ctx->listen_fd, NULL, NULL);
+    ctx->ok         = 0;
+    ctx->fd         = accept(ctx->listen_fd, NULL, NULL);
     if (ctx->fd == INVALID_SOCK) return NULL;
     set_sock_opts(ctx->fd);
     set_sock_timeout(ctx->fd, 10);
@@ -210,7 +214,7 @@ int main(void) {
 
     /* Server handshake thread */
     server_ctx srv = {.listen_fd = target_srv, .fd = INVALID_SOCK, .ok = 0};
-    pthread_t srv_tid;
+    pthread_t  srv_tid;
     pthread_create(&srv_tid, NULL, server_thread, &srv);
 
     /* Small delay for threads to enter accept() */
@@ -255,12 +259,12 @@ int main(void) {
 
     if (hs_ok && srv.ok) {
         session_t sess_c;
-        uint8_t sas_c[KEY];
+        uint8_t   sas_c[KEY];
         TEST("session_init", session_init(&sess_c, 1, priv, pub, peer_pub, sas_c) == 0);
         TEST("SAS match", memcmp(sas_c, srv.sas_key, KEY) == 0);
 
         /* Exchange a message through the proxy */
-        uint8_t frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
+        uint8_t  frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
         uint16_t plen;
         TEST("frame_build", frame_build(&sess_c, (const uint8_t *)"via socks5 proxy", 16, frame, next_tx) == 0);
         memcpy(sess_c.tx, next_tx, KEY);

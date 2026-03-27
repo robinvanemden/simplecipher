@@ -834,8 +834,8 @@ static void *session_thread(void *arg) {
         fds[1].fd     = pipe_rd;
         fds[1].events = POLLIN;
 
-        int      running    = 1;
-        int      auth_fails = 0;
+        int running    = 1;
+        int auth_fails = 0;
         /* Rate-limit incoming messages to prevent handler queue flooding.
          * A malicious authenticated peer sending faster than this threshold
          * would grow the Java handler queue and cause ANR/OOM. */
