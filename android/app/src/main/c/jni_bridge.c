@@ -834,8 +834,13 @@ static void *session_thread(void *arg) {
         fds[1].fd     = pipe_rd;
         fds[1].events = POLLIN;
 
-        int running    = 1;
-        int auth_fails = 0;
+        int      running    = 1;
+        int      auth_fails = 0;
+        /* Rate-limit incoming messages to prevent handler queue flooding.
+         * A malicious authenticated peer sending faster than this threshold
+         * would grow the Java handler queue and cause ANR/OOM. */
+        int      msg_count_window = 0;
+        uint64_t msg_window_start = monotonic_ms();
         while (running) {
             int timeout_ms = 250;
             if (cover) {
@@ -885,6 +890,20 @@ static void *session_thread(void *arg) {
                 if (plen > 0) { /* len==0 is a cover-traffic dummy — silently discard */
                     plain[plen] = '\0';
                     sanitize_peer_text(plain, plen);
+
+                    /* Rate-limit: max 50 messages per second to prevent
+                     * handler queue flooding from a malicious peer. */
+                    msg_count_window++;
+                    uint64_t now_rl = monotonic_ms();
+                    if (now_rl - msg_window_start >= 1000) {
+                        msg_count_window = 1;
+                        msg_window_start = now_rl;
+                    } else if (msg_count_window > 50) {
+                        /* Drop silently — the peer is flooding. */
+                        crypto_wipe(frame, sizeof frame);
+                        crypto_wipe(plain, sizeof plain);
+                        continue;
+                    }
 
                     jstring text = (*env)->NewStringUTF(env, (char *)plain);
                     if (!text) {
