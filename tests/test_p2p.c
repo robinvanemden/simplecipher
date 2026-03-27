@@ -5808,6 +5808,158 @@ static void test_frame_build_wipe_on_ratchet_fail(void) {
     crypto_wipe(next_tx, sizeof next_tx);
 }
 
+/* ---- regression: peer sends frame during SAS — must not abort ----------- */
+
+/* Thread: complete handshake, then immediately send a chat frame.
+ * This simulates the "fast peer" that confirms SAS before the slow peer. */
+static void *fast_peer_thread(void *arg) {
+    peer_ctx *ctx = (peer_ctx *)arg;
+    uint8_t priv[KEY], pub[KEY], peer_pub[KEY];
+    uint8_t commit_self[KEY], commit_peer[KEY];
+    ctx->ok = 0;
+
+    struct timespec ts_delay = {0, 50000000};
+    nanosleep(&ts_delay, nullptr);
+    ctx->fd = connect_socket("127.0.0.1", ctx->port);
+    if (ctx->fd == INVALID_SOCK) return nullptr;
+    set_sock_timeout(ctx->fd, 10);
+
+    gen_keypair(priv, pub);
+    make_commit(commit_self, pub);
+
+    uint8_t out1[1 + KEY], in1[1 + KEY];
+    out1[0] = (uint8_t)PROTOCOL_VERSION;
+    memcpy(out1 + 1, commit_self, KEY);
+    if (exchange(ctx->fd, 1, out1, sizeof out1, in1, sizeof in1) != 0) return nullptr;
+    memcpy(commit_peer, in1 + 1, KEY);
+    if (exchange(ctx->fd, 1, pub, KEY, peer_pub, KEY) != 0) return nullptr;
+    if (!verify_commit(commit_peer, peer_pub)) return nullptr;
+    if (session_init(&ctx->sess, 1, priv, pub, peer_pub, ctx->sas_key) != 0) return nullptr;
+
+    /* Immediately send a chat frame — this is what the "fast peer" does
+     * after confirming SAS while the slow peer is still at the SAS prompt. */
+    uint8_t frame[FRAME_SZ], next_tx[KEY];
+    if (frame_build(&ctx->sess, (const uint8_t *)"hello", 5, frame, next_tx) == 0) {
+        write_exact(ctx->fd, frame, FRAME_SZ);
+        memcpy(ctx->sess.tx, next_tx, KEY);
+        ctx->sess.tx_seq++;
+    }
+
+    crypto_wipe(priv, sizeof priv);
+    crypto_wipe(commit_self, sizeof commit_self);
+    crypto_wipe(commit_peer, sizeof commit_peer);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next_tx, sizeof next_tx);
+    ctx->ok = 1;
+    return nullptr;
+}
+
+static void test_peer_sends_during_sas(void) {
+    printf("\n=== Peer sends frame during SAS (must not abort slow peer) ===\n");
+
+    plat_init();
+    const char *port = "19760";
+
+    peer_ctx listener = {.is_initiator = 0, .port = port};
+    peer_ctx sender   = {.is_initiator = 1, .port = port};
+    pthread_t lt, st;
+
+    /* Listener does normal handshake */
+    pthread_create(&lt, nullptr, peer_thread, &listener);
+    /* Fast peer does handshake + immediate frame send */
+    pthread_create(&st, nullptr, fast_peer_thread, &sender);
+
+    pthread_join(lt, nullptr);
+    pthread_join(st, nullptr);
+
+    TEST("listener handshake OK", listener.ok);
+    TEST("fast peer handshake + send OK", sender.ok);
+
+    if (listener.ok && sender.ok) {
+        /* The listener now has a pending frame on its socket.
+         * Verify it can still read and decrypt it (not aborted). */
+        uint8_t frame[FRAME_SZ], plain[MAX_MSG + 1];
+        uint16_t plen = 0;
+        set_sock_timeout(listener.fd, 3);
+        int rr = read_exact(listener.fd, frame, FRAME_SZ);
+        TEST("listener can read the pending frame", rr == 0);
+        if (rr == 0) {
+            int fo = frame_open(&listener.sess, frame, plain, &plen);
+            TEST("frame_open succeeds on fast peer's frame", fo == 0);
+            TEST("message content is 'hello'", plen == 5 && memcmp(plain, "hello", 5) == 0);
+            crypto_wipe(plain, sizeof plain);
+        }
+        crypto_wipe(frame, sizeof frame);
+    }
+
+    if (listener.fd != INVALID_SOCK) close_sock(listener.fd);
+    if (sender.fd != INVALID_SOCK) close_sock(sender.fd);
+    session_wipe(&listener.sess);
+    session_wipe(&sender.sess);
+}
+
+/* ---- regression: peer disconnect produces non-zero exit status ---------- */
+
+static void test_peer_disconnect_detection(void) {
+    printf("\n=== Peer disconnect detection ===\n");
+
+    plat_init();
+    const char *port = "19761";
+
+    peer_ctx listener = {.is_initiator = 0, .port = port};
+    peer_ctx connector = {.is_initiator = 1, .port = port};
+    pthread_t lt, ct;
+
+    pthread_create(&lt, nullptr, peer_thread, &listener);
+    pthread_create(&ct, nullptr, peer_thread, &connector);
+    pthread_join(lt, nullptr);
+    pthread_join(ct, nullptr);
+
+    TEST("listener handshake OK", listener.ok);
+    TEST("connector handshake OK", connector.ok);
+
+    if (listener.ok && connector.ok) {
+        /* Connector sends one message then disconnects */
+        uint8_t frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
+        uint16_t plen = 0;
+        int rc = frame_build(&connector.sess, (const uint8_t *)"bye", 3, frame, next_tx);
+        TEST("connector builds frame", rc == 0);
+        if (rc == 0) {
+            write_exact(connector.fd, frame, FRAME_SZ);
+            memcpy(connector.sess.tx, next_tx, KEY);
+            connector.sess.tx_seq++;
+        }
+
+        /* Connector closes connection */
+        sock_shutdown_both(connector.fd);
+        close_sock(connector.fd);
+        connector.fd = INVALID_SOCK;
+
+        /* Listener reads the message */
+        set_sock_timeout(listener.fd, 3);
+        int rr = read_exact(listener.fd, frame, FRAME_SZ);
+        TEST("listener reads connector's last frame", rr == 0);
+        if (rr == 0) {
+            int fo = frame_open(&listener.sess, frame, plain, &plen);
+            TEST("frame_open succeeds", fo == 0);
+            TEST("message is 'bye'", plen == 3 && memcmp(plain, "bye", 3) == 0);
+        }
+
+        /* Next read should fail (peer disconnected) */
+        rr = read_exact(listener.fd, frame, FRAME_SZ);
+        TEST("next read fails (peer disconnected)", rr != 0);
+
+        crypto_wipe(frame, sizeof frame);
+        crypto_wipe(next_tx, sizeof next_tx);
+        crypto_wipe(plain, sizeof plain);
+    }
+
+    if (listener.fd != INVALID_SOCK) close_sock(listener.fd);
+    if (connector.fd != INVALID_SOCK) close_sock(connector.fd);
+    session_wipe(&listener.sess);
+    session_wipe(&connector.sess);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -5904,6 +6056,8 @@ int main(void) {
     test_cover_ratchet_interleave();
     test_snprintf_boundary();
     test_frame_build_wipe_on_ratchet_fail();
+    test_peer_sends_during_sas();
+    test_peer_disconnect_detection();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();
     test_dudect_is_zero32();
