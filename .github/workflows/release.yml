@@ -559,7 +559,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease -PextraAbi=x86_64
       - name: Emulator smoke test (release full flavor)
-        uses: reactivecircus/android-emulator-runner@70f4dee990796918b78d040e3278474bdbd348a7 # v2
+        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
         with:
           api-level: 28
           arch: x86_64
