@@ -565,13 +565,7 @@ jobs:
           arch: x86_64
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
-            # Find the release APK (signed)
-            APK=$(ls android/app/build/outputs/apk/full/release/app-full-release*.apk 2>/dev/null | head -1)
-            if [ -z "$APK" ]; then
-              echo "::error::Release APK not found for emulator test"
-              exit 1
-            fi
-            bash tests/test_android_emulator.sh "$APK"
+            APK=$(ls android/app/build/outputs/apk/full/release/app-full-release*.apk 2>/dev/null | head -1) && [ -n "$APK" ] && bash tests/test_android_emulator.sh "$APK" || { echo "::error::Release APK not found for emulator test"; exit 1; }
 
   release:
     needs: [test-p2p, test-linux, test-linux-aarch64, test-windows, test-windows-aarch64, build-android, test-asan-ubsan, static-analysis, fuzz, test-android-emulator, test-freebsd, test-openbsd, test-arm64]
