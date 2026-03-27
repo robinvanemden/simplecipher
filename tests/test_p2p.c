@@ -33,6 +33,14 @@
 
 /* ---- test helpers ------------------------------------------------------- */
 
+/* Random port in [20000, 60000) to avoid TIME_WAIT conflicts on bare-metal CI */
+static void random_port(char buf[8]) {
+    uint8_t r[2];
+    fill_random(r, 2);
+    int port = 20000 + (((int)r[0] | ((int)r[1] << 8)) % 40000);
+    snprintf(buf, 8, "%d", port);
+}
+
 static int g_pass = 0;
 static int g_fail = 0;
 
@@ -221,12 +229,8 @@ static void test_tcp_loopback(void) {
 
     plat_init();
 
-    /* Use a random high port to avoid TIME_WAIT conflicts on bare-metal CI */
-    uint8_t rport[2];
-    fill_random(rport, 2);
-    int  port_num = 20000 + (((int)rport[0] | ((int)rport[1] << 8)) % 40000);
     char port[8];
-    snprintf(port, sizeof port, "%d", port_num);
+    random_port(port);
 
     peer_ctx listener  = {.is_initiator = 0, .port = port};
     peer_ctx initiator = {.is_initiator = 1, .port = port};
@@ -348,7 +352,9 @@ static void test_tcp_loopback_ipv6(void) {
 
     plat_init();
 
-    const char *port = "19770";
+    char port[8];
+
+    random_port(port);
 
     /* We test at the socket level: verify connect_socket("::1", port) succeeds
      * when a listener is bound.  If IPv6 is not available on the test host,
@@ -1845,9 +1851,11 @@ static void test_socket_timeout(void) {
 
     plat_init();
 
-    const char *port     = "17781";
-    peer_ctx    listener = {.is_initiator = 0, .port = port};
-    pthread_t   lt;
+    char port[8];
+
+    random_port(port);
+    peer_ctx  listener = {.is_initiator = 0, .port = port};
+    pthread_t lt;
     pthread_create(&lt, nullptr, stalling_listener, &listener);
 
     /* Small delay to let listener accept */
@@ -2157,7 +2165,9 @@ static void test_partial_frame_rejection(void) {
 
     plat_init();
 
-    const char *port = "17785";
+    char port[8];
+
+    random_port(port);
 
     /* Listener reads in a thread; sender sends half a frame then disconnects */
     peer_ctx  listener = {.is_initiator = 0, .port = port};
@@ -2987,7 +2997,9 @@ static void test_dh_ratchet_tcp_loopback(void) {
 
     plat_init();
 
-    const char *port = "19761";
+    char port[8];
+
+    random_port(port);
 
     peer_ctx listener  = {.is_initiator = 0, .port = port};
     peer_ctx initiator = {.is_initiator = 1, .port = port};
@@ -4304,7 +4316,8 @@ static void test_fingerprint_handshake_verification(void) {
 
     /* --- Test A: correct fingerprint → handshake succeeds --- */
     {
-        const char *port      = "19757";
+        char port[8];
+        random_port(port);
         fp_peer_ctx listener  = {.is_initiator = 0, .port = port, .expected_peer_fp = NULL};
         fp_peer_ctx initiator = {.is_initiator = 1, .port = port, .expected_peer_fp = NULL};
 
@@ -4331,7 +4344,8 @@ static void test_fingerprint_handshake_verification(void) {
         session_wipe(&initiator.sess);
 
         /* Second run: initiator verifies listener's fingerprint */
-        const char *port2      = "19758";
+        char port2[8];
+        random_port(port2);
         fp_peer_ctx listener2  = {.is_initiator = 0, .port = port2, .expected_peer_fp = NULL};
         fp_peer_ctx initiator2 = {.is_initiator = 1, .port = port2, .expected_peer_fp = NULL};
 
@@ -4371,7 +4385,8 @@ static void test_fingerprint_handshake_verification(void) {
 
     /* --- Test B: wrong fingerprint → handshake aborted --- */
     {
-        const char *port     = "19759";
+        char port[8];
+        random_port(port);
         fp_peer_ctx listener = {.is_initiator = 0, .port = port, .expected_peer_fp = NULL};
         /* Initiator expects a specific fingerprint that won't match */
         fp_peer_ctx initiator = {.is_initiator = 1, .port = port, .expected_peer_fp = "0000-0000-0000-0000"};
@@ -4406,7 +4421,8 @@ static void test_fingerprint_handshake_verification(void) {
         /* Run handshake where initiator knows the correct fingerprint.
          * We achieve this by running the handshake, capturing the peer's
          * pub key, then verifying the fingerprint post-hoc. */
-        const char *port      = "19760";
+        char port[8];
+        random_port(port);
         fp_peer_ctx listener  = {.is_initiator = 0, .port = port, .expected_peer_fp = NULL};
         fp_peer_ctx initiator = {.is_initiator = 1, .port = port, .expected_peer_fp = NULL};
 
@@ -4427,7 +4443,9 @@ static void test_fingerprint_handshake_verification(void) {
         session_wipe(&listener.sess);
         session_wipe(&initiator.sess);
 
-        const char *port2     = "19761";
+        char port2[8];
+
+        random_port(port2);
         fp_peer_ctx listener3 = {.is_initiator = 0, .port = port2, .expected_peer_fp = NULL};
         /* NOTE: We can't pre-set the correct fp because the listener generates
          * a fresh key each time. Instead, this test verifies the MECHANISM:
@@ -4477,7 +4495,8 @@ static void test_fingerprint_handshake_verification(void) {
      * pre-sets BOTH the key AND the expected fingerprint BEFORE
      * the handshake threads start. */
     {
-        const char *port = "19762";
+        char port[8];
+        random_port(port);
 
         /* Step 1: Listener pre-generates its keypair (like nativeGenerateKey) */
         fp_peer_ctx listener = {.is_initiator = 0, .port = port, .expected_peer_fp = NULL, .has_prekey = 1};
@@ -4532,7 +4551,8 @@ static void test_fingerprint_handshake_verification(void) {
      * Both sides pre-generate keys and exchange fingerprints before
      * connecting.  Both sides verify the other's fingerprint. */
     {
-        const char *port = "19763";
+        char port[8];
+        random_port(port);
 
         /* Both sides pre-generate keys */
         fp_peer_ctx listener  = {.is_initiator = 0, .port = port, .has_prekey = 1};
@@ -4576,7 +4596,8 @@ static void test_fingerprint_handshake_verification(void) {
      * is actually a MITM with a different key.  Fingerprint check must
      * catch this. */
     {
-        const char *port = "19764";
+        char port[8];
+        random_port(port);
 
         /* The "real" listener generates a key and shares fingerprint */
         uint8_t real_priv[KEY], real_pub[KEY];
@@ -4620,7 +4641,8 @@ static void test_fingerprint_handshake_verification(void) {
      * be used for the handshake, and SAS verification should proceed
      * normally (no auto-skip). */
     {
-        const char *port = "19765";
+        char port[8];
+        random_port(port);
 
         /* Listener pre-generates key but sets no expected peer fingerprint */
         fp_peer_ctx listener = {.is_initiator = 0, .port = port, .expected_peer_fp = NULL, .has_prekey = 1};
@@ -5614,7 +5636,8 @@ static void test_peer_sends_during_sas(void) {
     printf("\n=== Peer sends frame during SAS (must not abort slow peer) ===\n");
 
     plat_init();
-    const char *port = "19760";
+    char port[8];
+    random_port(port);
 
     peer_ctx  listener = {.is_initiator = 0, .port = port};
     peer_ctx  sender   = {.is_initiator = 1, .port = port};
@@ -5660,7 +5683,8 @@ static void test_peer_disconnect_detection(void) {
     printf("\n=== Peer disconnect detection ===\n");
 
     plat_init();
-    const char *port = "19761";
+    char port[8];
+    random_port(port);
 
     peer_ctx  listener  = {.is_initiator = 0, .port = port};
     peer_ctx  connector = {.is_initiator = 1, .port = port};
