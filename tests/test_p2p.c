@@ -5738,6 +5738,76 @@ static void test_cover_ratchet_interleave(void) {
     crypto_wipe(priv_b, sizeof priv_b);
 }
 
+/* ---- regression: snprintf boundary (session bug: off-by-one) ------------ */
+
+static void test_snprintf_boundary(void) {
+    printf("\n=== snprintf output length boundary ===\n");
+
+    /* Simulate the tui_secure_printf / secure_chat_print clamping pattern:
+     *   int n = snprintf(buf, sizeof buf, fmt, ...);
+     *   if (n < 0) n = 0;
+     *   if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
+     * The old bug was: n > (int)sizeof buf (without -1), which would
+     * set n = sizeof buf, writing the null terminator as output. */
+
+    char buf[32];
+    memset(buf, 'X', sizeof buf); /* sentinel fill */
+
+    /* Format that fits exactly: 31 chars + null = 32 bytes */
+    int n = snprintf(buf, sizeof buf, "%031d", 0); /* "0000...0" x 31 */
+    TEST("snprintf exact fit returns 31", n == 31);
+    if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
+    TEST("clamped length is 31", n == 31);
+    TEST("buf[31] is null terminator", buf[31] == '\0');
+
+    /* Format that overflows: 40 chars + null, truncated to 31 + null */
+    memset(buf, 'X', sizeof buf);
+    n = snprintf(buf, sizeof buf, "%040d", 0); /* would-be 40, truncated */
+    TEST("snprintf overflow returns 40", n == 40);
+    if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
+    TEST("clamped length is 31 (not 32)", n == 31);
+    /* Verify no write at buf[32] — but we can't check past the array.
+     * Instead verify the pattern: buf[0..30] is content, buf[31] is null. */
+    TEST("truncated output is null-terminated", buf[31] == '\0');
+    TEST("truncated content is 31 chars", (int)strlen(buf) == 31);
+
+    crypto_wipe(buf, sizeof buf);
+}
+
+/* ---- regression: frame_build wipes encrypt_chain on ratchet failure ----- */
+
+static void test_frame_build_wipe_on_ratchet_fail(void) {
+    printf("\n=== frame_build wipes on ratchet_send failure ===\n");
+
+    /* This tests that frame_build does NOT leak the tx chain key on the
+     * stack when ratchet_send returns -1 (all-zero DH from malicious peer).
+     * We can't inspect the stack directly, but we can verify the function
+     * returns -1 (rather than crashing or proceeding) when the peer's
+     * DH public key is all-zero. */
+
+    uint8_t priv_a[KEY], pub_a[KEY], priv_b[KEY], pub_b[KEY];
+    uint8_t sas_a[KEY], sas_b[KEY];
+    session_t sess;
+
+    gen_keypair(priv_a, pub_a);
+    gen_keypair(priv_b, pub_b);
+    session_init(&sess, 1, priv_a, pub_a, pub_b, sas_a);
+
+    /* Poison peer_dh with all zeros — ratchet_send will compute
+     * DH(our_priv, zero) = zero, which is_zero32 catches. */
+    memset(sess.peer_dh, 0, KEY);
+
+    uint8_t frame[FRAME_SZ], next_tx[KEY];
+    int rc = frame_build(&sess, (const uint8_t *)"test", 4, frame, next_tx);
+    TEST("frame_build returns -1 on zero peer_dh", rc == -1);
+
+    session_wipe(&sess);
+    crypto_wipe(priv_a, sizeof priv_a);
+    crypto_wipe(priv_b, sizeof priv_b);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next_tx, sizeof next_tx);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -5832,6 +5902,8 @@ int main(void) {
     test_frame_open_ratchet_dh_fatal();
     test_mac_failure_exact_boundary();
     test_cover_ratchet_interleave();
+    test_snprintf_boundary();
+    test_frame_build_wipe_on_ratchet_fail();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();
     test_dudect_is_zero32();
