@@ -116,7 +116,7 @@ Message Authentication Code. A short tag appended to each message that proves it
 
 ### Monocypher
 
-The sole cryptographic library used by SimpleCipher, vendored as `lib/monocypher.c`. It provides [X25519](#x25519), [XChaCha20-Poly1305](#xchacha20-poly1305), [BLAKE2b](#blake2b), and secure memory wipe. Public domain (BSD-2-Clause / CC0), audited by Cure53, constant-time throughout. *See [PROTOCOL.md](PROTOCOL.md#cryptographic-library)*
+The sole cryptographic library used by SimpleCipher, vendored as `lib/monocypher.c`. It provides [X25519](#x25519), [XChaCha20-Poly1305](#xchacha20-poly1305), [BLAKE2b](#blake2b), and secure memory wipe. Dual-licensed BSD-2-Clause or CC0-1.0, audited by Cure53, constant-time throughout. *See [PROTOCOL.md](PROTOCOL.md#cryptographic-library)*
 
 ### Nonce
 
