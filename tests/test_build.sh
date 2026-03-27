@@ -60,6 +60,30 @@ check "windows aarch64 build uses C23 flag" \
     "grep -q '$C23_PAT' '$BUILD_WIN_ARM/CMakeFiles/simplecipher.dir/flags.make'"
 
 echo ""
+echo "=== Build: CIPHER_HARDEN requirement ==="
+
+# All builds must define CIPHER_HARDEN for runtime hardening (mlockall,
+# RLIMIT_CORE, PR_SET_DUMPABLE, seccomp).  The Android CMakeLists.txt
+# was missing this — a test catches the regression.
+check "linux x86_64 build uses CIPHER_HARDEN" \
+    "grep -q 'CIPHER_HARDEN' '$BUILD_LINUX/CMakeFiles/simplecipher.dir/flags.make'"
+check "linux aarch64 build uses CIPHER_HARDEN" \
+    "grep -q 'CIPHER_HARDEN' '$BUILD_LINUX_ARM/CMakeFiles/simplecipher.dir/flags.make'"
+check "Android build uses CIPHER_HARDEN" \
+    "grep -q 'CIPHER_HARDEN' '$PROJECT_DIR/android/app/src/main/c/CMakeLists.txt'"
+check "Makefile has non-overridable SECURITY_CFLAGS with CIPHER_HARDEN" \
+    "grep 'SECURITY_CFLAGS' '$PROJECT_DIR/Makefile' | grep -q 'CIPHER_HARDEN'"
+
+echo ""
+echo "=== Build: safety checks ==="
+
+# listen_socket_cb must use poll() on POSIX (not select/FD_SET which
+# overflows when fd >= FD_SETSIZE).  The Windows path retains select()
+# which is safe (Windows fd_set is a handle array, not a bitmap).
+check "network.c uses poll() for listen_socket_cb on POSIX (no FD_SET overflow)" \
+    "grep -q 'poll(&pfd' '$PROJECT_DIR/src/network.c'"
+
+echo ""
 echo "=== Vendored library integrity ==="
 
 # Verify monocypher.c and monocypher.h have not been accidentally modified.
