@@ -166,7 +166,11 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     uint8_t encrypt_chain[KEY];
     memcpy(encrypt_chain, s->tx, KEY);
     int ratcheting = ratchet_send(s, ratchet_pub);
-    if (ratcheting < 0) return -1; /* all-zero DH — malicious peer */
+    if (ratcheting < 0) {
+        crypto_wipe(encrypt_chain, sizeof encrypt_chain);
+        crypto_wipe(ratchet_pub, sizeof ratchet_pub);
+        return -1; /* all-zero DH — malicious peer */
+    }
 
     uint8_t mk[KEY], ad[AD_SZ], nonce[NONCE_SZ], pt[CT_SZ];
     if (ratcheting) {

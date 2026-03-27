@@ -23,8 +23,8 @@
  * flag and let the main loop redraw on its next iteration rather than
  * drawing from the signal handler (which is not safe -- printf is not
  * async-signal-safe). */
-static struct termios tui_orig_termios;
-static volatile int   tui_resize_flag = 0;
+static struct termios        tui_orig_termios;
+static volatile sig_atomic_t tui_resize_flag = 0;
 
 static void tui_sigwinch(int sig) {
     (void)sig;
