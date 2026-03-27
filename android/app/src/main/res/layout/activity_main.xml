@@ -51,6 +51,7 @@
             android:gravity="center"
             android:background="@drawable/bg_radio_button"
             android:filterTouchesWhenObscured="true"
+            android:saveEnabled="false"
             android:checked="true" />
 
         <RadioButton
@@ -65,6 +66,7 @@
             android:gravity="center"
             android:background="@drawable/bg_radio_button"
             android:filterTouchesWhenObscured="true"
+            android:saveEnabled="false"
             android:layout_marginStart="4dp" />
     </RadioGroup>
 

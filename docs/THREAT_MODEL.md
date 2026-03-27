@@ -24,6 +24,7 @@
 | Java Strings are immutable — GC doesn't wipe | Message plaintext lingers in JVM heap | Android |
 | Root/kernel attacker bypasses PR_SET_DUMPABLE | Full memory read | All (root is omnipotent) |
 | Terminal emulator scrollback | May retain chat history (mitigated by alternate screen buffer in TUI, purge_terminal in CLI) | Desktop |
+| Malicious accessibility service | Can read all on-screen text (SAS, chat, fingerprint). FLAG_SECURE does not block accessibility. Blocking accessibility would break screen readers for visually impaired users. | Android |
 
 ### Design tradeoffs (fixable but at a cost)
 

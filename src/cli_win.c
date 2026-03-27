@@ -349,6 +349,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                         continue;
                     }
                 }
+                crypto_wipe(recs, sizeof recs); /* wipe raw keystrokes */
                 if (loop_error) break;
                 continue;
             }

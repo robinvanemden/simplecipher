@@ -753,9 +753,17 @@ int main(int argc, char *argv[]) {
 #else
             ssize_t rn = -1;
             {
-                struct pollfd sas_fds[2] = {{STDIN_FILENO, POLLIN, 0}, {g_fd, POLLIN | POLLHUP, 0}};
+                struct pollfd sas_fds[2]   = {{STDIN_FILENO, POLLIN, 0}, {g_fd, POLLIN | POLLHUP, 0}};
+                uint64_t      sas_deadline = monotonic_ms() + 300000; /* 5-minute timeout */
                 while (g_running) {
-                    int pr = poll(sas_fds, 2, 1000); /* 1-second poll */
+                    int64_t remain = (int64_t)(sas_deadline - monotonic_ms());
+                    if (remain <= 0) {
+                        printf("SAS verification timed out.\n");
+                        rc = EXIT_ABORT;
+                        goto out;
+                    }
+                    int poll_ms = remain > 1000 ? 1000 : (int)remain;
+                    int pr      = poll(sas_fds, 2, poll_ms);
                     if (pr < 0 && errno == EINTR) continue;
                     if (pr < 0) break;
                     if (sas_fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
