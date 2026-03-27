@@ -12,13 +12,27 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build and run P2P integration tests
+      - name: Build and run P2P integration tests (Debug)
         run: |
           mkdir -p build/native
           cd build/native
           cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-g -O0" ../..
           make -j$(nproc) test_p2p
           ./test_p2p
+
+      - name: Build and run P2P integration tests (CIPHER_HARDEN)
+        run: |
+          mkdir -p build/hardened
+          cd build/hardened
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-O2 -DCIPHER_HARDEN" ../..
+          make -j$(nproc) test_p2p
+          ./test_p2p
+
+      - name: Run SOCKS5 proxy tests
+        run: |
+          cd build/native
+          make -j$(nproc) test_socks5_proxy
+          ./test_socks5_proxy
 
   build:
     runs-on: ubuntu-24.04

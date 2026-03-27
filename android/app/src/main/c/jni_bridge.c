@@ -1463,6 +1463,7 @@ JNIEXPORT jboolean JNICALL Java_com_example_simplecipher_ChatActivity_nativePost
         }
     }
 
+    crypto_wipe(buf, sizeof buf); /* wipe plaintext message from stack */
     if (payload) (*env)->ReleaseByteArrayElements(env, payload, pbuf, JNI_ABORT);
     return ok;
 }

@@ -471,6 +471,7 @@ int main(int argc, char *argv[]) {
             tui_listen_screen(port, ipbuf);
             struct listen_ctx lc = {port, ipbuf};
             g_fd                 = listen_socket_cb(port, tui_listen_idle, &lc);
+            crypto_wipe(ipbuf, sizeof ipbuf); /* wipe local IP addresses */
         } else {
             printf("  Listening on port %s\n\n", port);
             printf("  Tell your peer to run:\n\n");
