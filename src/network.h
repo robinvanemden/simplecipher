@@ -43,8 +43,14 @@ void set_sock_opts(socket_t fd);
 [[nodiscard]] int write_exact_dl(socket_t fd, const void *buf, size_t n, uint64_t deadline_ms);
 
 /* Exchange one value simultaneously with the peer.
- * The initiator sends first to avoid both sides waiting for each other. */
+ * The initiator sends first to avoid both sides waiting for each other.
+ * Each message is padded with 0-127 random bytes (DPI resistance). */
 [[nodiscard]] int exchange(socket_t fd, int we_init, const uint8_t *out, size_t out_n, uint8_t *in, size_t in_n);
+
+/* Note: chat frames are sent as raw FRAME_SZ bytes (no padding) for
+ * compatibility with the Windows non-blocking event loop.  Only the
+ * handshake (via exchange()) uses randomized padding for DPI resistance.
+ * The fixed 512-byte chat frames are intentional for message-length hiding. */
 
 /* Connect to host:port, trying all addresses getaddrinfo returns.
  * Returns the connected socket, or INVALID_SOCK on failure. */
