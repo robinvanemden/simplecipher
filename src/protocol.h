@@ -8,6 +8,11 @@
  *   [ seq : 8 ][ ciphertext : 488 ][ mac : 16 ]
  *   seq is authenticated additional data (not encrypted, but tamper-proof).
  *
+ * Wire format (randomized padding defeats DPI fingerprinting):
+ *   [ pad_len : 1 ][ frame : 512 ][ random_pad : 0-255 ]
+ *   pad_len is a raw CSPRNG byte (uniform random, no detectable pattern).
+ *   Total wire size per message varies from 513 to 768 bytes.
+ *
  * Plaintext slot:
  *   Normal:  [ flags(1) | len(2) | message(≤485) | zero padding ]
  *   Ratchet: [ flags(1) | ratchet_pub(32) | len(2) | message(≤453) | zero padding ]
@@ -43,7 +48,7 @@ enum {
     HEADER_SZ        = 1,                     /* flags byte in plaintext slot  */
     MAX_MSG          = CT_SZ - 2 - HEADER_SZ, /* 485 bytes       */
     MAX_MSG_RATCHET  = MAX_MSG - KEY,         /* 453 bytes       */
-    PROTOCOL_VERSION = 1,                     /* v1: randomized handshake padding (DPI resistance) */
+    PROTOCOL_VERSION = 1,
     FRAME_TIMEOUT_S  = 30,
     /* Maximum consecutive frame_open failures before session teardown.
      *
@@ -55,7 +60,12 @@ enum {
      * After MAX_AUTH_FAILURES consecutive failures with no valid frame in
      * between, the session is torn down — either the peer is misbehaving
      * or the TCP stream is permanently corrupted by injection. */
-    MAX_AUTH_FAILURES = 3
+    MAX_AUTH_FAILURES = 3,
+    /* Wire padding: each chat frame is sent as [pad_len(1)][frame][random_pad].
+     * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
+    WIRE_HDR         = 1,                        /* pad_len byte            */
+    WIRE_PAD_MAX     = 255,                      /* max random padding      */
+    WIRE_MAX         = WIRE_HDR + FRAME_SZ + WIRE_PAD_MAX  /* 768 bytes    */
 };
 static const uint8_t FLAG_RATCHET = 0x01; /* bit 0: ratchet key follows */
 

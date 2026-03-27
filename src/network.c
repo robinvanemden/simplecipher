@@ -7,6 +7,7 @@
  */
 
 #include "network.h"
+#include "protocol.h"
 
 /* ---- network I/O -------------------------------------------------------- */
 
@@ -39,9 +40,9 @@ void set_sock_timeout(socket_t fd, int secs) {
  * the socket if there is no response, waking poll() for a clean exit.
  *
  * TCP_NODELAY: disables Nagle's algorithm, which would otherwise buffer
- * small writes for up to ~200ms waiting to coalesce them.  Our frames are
- * always exactly 512 bytes so Nagle rarely fires, but disabling it removes
- * any latency on the rare case it does and is standard for interactive tools. */
+ * small writes for up to ~200ms waiting to coalesce them.  Our padded
+ * wire messages are 514-769 bytes so Nagle rarely fires, but disabling
+ * it removes any latency and is standard for interactive tools. */
 void set_sock_opts(socket_t fd) {
     int one = 1;
     setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (const char *)&one, sizeof one);
@@ -160,52 +161,33 @@ void set_sock_opts(socket_t fd) {
 /* Exchange one value simultaneously with the peer.
  * The initiator sends first to avoid both sides waiting for each other.
  * Uses deadline-aware I/O to defeat byte-dribble attacks. */
-/* Send a padded exchange message: [total_le16][payload][random_padding].
- * Random padding (0-128 bytes) makes handshake message sizes variable,
- * defeating DPI rules that match on fixed 33+33+32+32 byte counts.
- * The payload and padding are indistinguishable from random (commitments,
- * X25519 keys, and CSPRNG output all look like uniform random bytes). */
+/* Send a padded exchange message as a single write.
+ * Wire format: [pad_len(1)][payload][random_padding].
+ * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
 static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t dl) {
-    uint8_t pad_rand[1];
-    fill_random(pad_rand, 1);
-    size_t  pad_len = pad_rand[0] >> 1; /* 0-127 bytes of random padding */
-    size_t  total   = payload_n + pad_len;
-    uint8_t hdr[2]  = {(uint8_t)(total & 0xFF), (uint8_t)(total >> 8)};
+    uint8_t buf[1 + 33 + 255]; /* max: hdr(1) + largest payload(33) + pad(255) */
+    uint8_t r;
+    fill_random(&r, 1);
+    buf[0] = r;
+    memcpy(buf + 1, payload, payload_n);
+    if (r > 0) fill_random(buf + 1 + payload_n, r);
 
-    if (write_exact_dl(fd, hdr, 2, dl) != 0) return -1;
-    if (write_exact_dl(fd, payload, payload_n, dl) != 0) return -1;
-    if (pad_len > 0) {
-        uint8_t pad[128];
-        fill_random(pad, pad_len);
-        int rc = write_exact_dl(fd, pad, pad_len, dl);
-        {
-            volatile uint8_t *p;
-            for (p = pad; p < pad + sizeof pad; p++) *p = 0;
-        }
-        if (rc != 0) return -1;
-    }
-    return 0;
+    int rc = write_exact_dl(fd, buf, 1 + payload_n + (size_t)r, dl);
+    crypto_wipe(buf, sizeof buf);
+    return rc;
 }
 
-/* Receive a padded exchange message.  Reads [total_le16], then total bytes,
- * extracts the first expected_n bytes as payload, discards padding. */
+/* Receive a padded exchange message.  Reads 1-byte pad_len, then
+ * expected_n bytes of payload, then drains pad_len bytes of padding. */
 static int exchange_recv(socket_t fd, uint8_t *payload, size_t expected_n, uint64_t dl) {
-    uint8_t hdr[2];
-    if (read_exact_dl(fd, hdr, 2, dl) != 0) return -1;
-    size_t total = (size_t)hdr[0] | ((size_t)hdr[1] << 8);
-    if (total < expected_n || total > expected_n + 128) return -1;
-
+    uint8_t pad_len;
+    if (read_exact_dl(fd, &pad_len, 1, dl) != 0) return -1;
     if (read_exact_dl(fd, payload, expected_n, dl) != 0) return -1;
 
-    /* Drain padding */
-    size_t pad_len = total - expected_n;
     if (pad_len > 0) {
-        uint8_t drain[128];
+        uint8_t drain[255];
         if (read_exact_dl(fd, drain, pad_len, dl) != 0) return -1;
-        {
-            volatile uint8_t *p;
-            for (p = drain; p < drain + sizeof drain; p++) *p = 0;
-        }
+        crypto_wipe(drain, sizeof drain);
     }
     return 0;
 }
@@ -223,6 +205,55 @@ static int exchange_recv(socket_t fd, uint8_t *payload, size_t expected_n, uint6
     } else {
         if (exchange_recv(fd, in, in_n, dl) != 0) return -1;
         if (exchange_send(fd, out, out_n, dl) != 0) return -1;
+    }
+    return 0;
+}
+
+/* ---- padded frame I/O --------------------------------------------------- */
+
+/* Build a padded wire message: [pad_len(1)][frame][random_pad].
+ * pad_len is a raw CSPRNG byte — uniform random 0-255, indistinguishable
+ * from ciphertext.  Returns the total wire length. */
+size_t frame_wire_build(uint8_t *wire, const uint8_t *frame) {
+    uint8_t r;
+    fill_random(&r, 1);
+    wire[0] = r;
+    memcpy(wire + WIRE_HDR, frame, FRAME_SZ);
+    if (r > 0) fill_random(wire + WIRE_HDR + FRAME_SZ, r);
+    return WIRE_HDR + FRAME_SZ + (size_t)r;
+}
+
+/* Send one frame with random padding (blocking).
+ * Wire format: [pad_len(1)][frame][random_pad]. */
+[[nodiscard]] int frame_send(socket_t fd, const uint8_t *frame, uint64_t deadline_ms) {
+    uint8_t wire[WIRE_MAX];
+    size_t  wire_len = frame_wire_build(wire, frame);
+    int     rc;
+    if (deadline_ms) rc = write_exact_dl(fd, wire, wire_len, deadline_ms);
+    else             rc = write_exact(fd, wire, wire_len);
+    crypto_wipe(wire, sizeof wire);
+    return rc;
+}
+
+/* Receive one padded frame (blocking).
+ * Reads 1-byte pad_len, then the frame, then drains padding. */
+[[nodiscard]] int frame_recv(socket_t fd, uint8_t *frame, uint64_t deadline_ms) {
+    uint8_t pad_len;
+    int     rc;
+    if (deadline_ms) rc = read_exact_dl(fd, &pad_len, 1, deadline_ms);
+    else             rc = read_exact(fd, &pad_len, 1);
+    if (rc != 0) return -1;
+
+    if (deadline_ms) rc = read_exact_dl(fd, frame, FRAME_SZ, deadline_ms);
+    else             rc = read_exact(fd, frame, FRAME_SZ);
+    if (rc != 0) return -1;
+
+    if (pad_len > 0) {
+        uint8_t drain[WIRE_PAD_MAX];
+        if (deadline_ms) rc = read_exact_dl(fd, drain, pad_len, deadline_ms);
+        else             rc = read_exact(fd, drain, pad_len);
+        crypto_wipe(drain, sizeof drain);
+        if (rc != 0) return -1;
     }
     return 0;
 }

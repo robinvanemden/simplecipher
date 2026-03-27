@@ -534,7 +534,7 @@ int main(int argc, char *argv[]) {
      * screen for pre-sharing.
      * ------------------------------------------------------------------ */
 
-    /* Two-round handshake (v3):
+    /* Two-round handshake:
      *   Round 1: version || commitment  (33 bytes each way)
      *   Round 2: public key             (32 bytes each way)
      *

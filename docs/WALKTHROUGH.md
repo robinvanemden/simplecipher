@@ -86,7 +86,7 @@ protocol.c → frame_build(session, plaintext, len, frame_out, next_chain)
 4. Encrypt with XChaCha20-Poly1305: `crypto_aead_lock(plaintext → ciphertext + MAC)`
 5. Output: exactly 512 bytes — always, regardless of message length
 
-The caller sends the frame over TCP, then commits the chain advance (`tx = next_chain; tx_seq++`). If the send fails, the chain is not advanced — both sides stay in sync.
+The caller sends the frame via `frame_send()`, which wraps it in random padding on the wire (514-769 bytes total), then commits the chain advance (`tx = next_chain; tx_seq++`). If the send fails, the chain is not advanced — both sides stay in sync.
 
 ### Decrypting a message
 
@@ -139,11 +139,11 @@ The attacker's stolen chain key is now useless — the new chain depends on a DH
 **Files:** `network.h/c`
 
 The network layer is simple:
-- `read_exact(fd, buf, n)` — read exactly n bytes, looping on partial reads
-- `write_exact(fd, buf, n)` — write exactly n bytes, looping on partial writes
-- `exchange(fd, initiator, out, in)` — send then read (or read then send)
+- `frame_send(fd, frame, deadline)` — send one 512-byte frame with random wire padding
+- `frame_recv(fd, frame, deadline)` — receive one padded frame, strip padding
+- `exchange(fd, initiator, out, in)` — handshake exchange (also padded)
 
-The deadline-aware variants (`read_exact_dl`, `write_exact_dl`) add a monotonic-clock check between syscalls to bound total time. This is hardening — skip on first reading.
+Each frame goes over the wire as `[pad_len(1)][frame(512)][random_pad(0-255)]`, so the wire size varies from 513 to 768 bytes. The `pad_len` byte is raw CSPRNG output — uniform random, indistinguishable from ciphertext. This defeats DPI rules that match on fixed byte counts. The low-level helpers (`read_exact`, `write_exact`, `read_exact_dl`, `write_exact_dl`) handle partial reads/writes and deadline enforcement — skip on first reading.
 
 ---
 

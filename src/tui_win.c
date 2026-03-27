@@ -73,11 +73,14 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     DWORD       h_in_mode;
     char        line[MAX_MSG + 1];
     size_t      line_len = 0;
-    uint8_t     in_frame[FRAME_SZ];
+    uint8_t     in_wire[WIRE_MAX];
     size_t      in_have           = 0;
+    size_t      in_need           = WIRE_HDR;   /* bytes needed for current phase */
     uint64_t    in_frame_start_ms = 0;
     uint8_t     out_frame[FRAME_SZ];
+    uint8_t     out_wire[WIRE_MAX];
     uint8_t     out_next_tx[KEY];
+    size_t      out_wire_len       = 0;
     size_t      out_off            = 0;
     int         out_active         = 0;
     uint64_t    out_frame_start_ms = 0;
@@ -92,8 +95,9 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     win_console_prepare(h_in, h_in_mode);
 
     memset(line, 0, sizeof line);
-    memset(in_frame, 0, sizeof in_frame);
+    memset(in_wire, 0, sizeof in_wire);
     memset(out_frame, 0, sizeof out_frame);
+    memset(out_wire, 0, sizeof out_wire);
     memset(out_next_tx, 0, sizeof out_next_tx);
     memset(out_text, 0, sizeof out_text);
 
@@ -175,6 +179,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                         crypto_wipe(line, sizeof line);
                         break;
                     }
+                    out_wire_len = frame_wire_build(out_wire, out_frame);
+                    crypto_wipe(out_frame, sizeof out_frame);
 
                     memcpy(out_text, line, line_len);
                     out_text[line_len] = '\0';
@@ -185,7 +191,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                     out_frame_start_ms = GetTickCount64();
 
                     {
-                        int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
+                        int send_rc = win_try_send(fd, out_wire, out_wire_len, &out_off);
                         if (send_rc < 0) break;
                         if (send_rc == 0) {
                             memcpy(sess->tx, out_next_tx, KEY);
@@ -194,7 +200,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                              * so real messages blend into the cover traffic pattern. */
                             out_active = 0;
                             tui_msg_add(TUI_ME, out_text);
-                            crypto_wipe(out_frame, sizeof out_frame);
+                            crypto_wipe(out_wire, sizeof out_wire);
                             crypto_wipe(out_next_tx, sizeof out_next_tx);
                             crypto_wipe(out_text, sizeof out_text);
                         }
@@ -222,17 +228,24 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 if (in_have > 0 && (GetTickCount64() - in_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) break;
 
                 for (;;) {
-                    int r = recv(fd, (char *)in_frame + in_have, (int)(FRAME_SZ - in_have), 0);
+                    int r = recv(fd, (char *)in_wire + in_have, (int)(in_need - in_have), 0);
                     if (r > 0) {
                         if (in_have == 0) in_frame_start_ms = GetTickCount64();
                         in_have += (size_t)r;
-                        if (in_have == FRAME_SZ) {
+                        if (in_have == in_need && in_need == WIRE_HDR) {
+                            /* pad_len byte received: body = frame + padding */
+                            in_need = WIRE_HDR + FRAME_SZ + (size_t)in_wire[0];
+                            continue; /* read body */
+                        }
+                        if (in_have == in_need) {
+                            /* Full wire message: frame is at in_wire[WIRE_HDR] */
                             uint16_t plen  = 0;
-                            int      fo_rc = frame_open(sess, in_frame, plain, &plen);
+                            int      fo_rc = frame_open(sess, in_wire + WIRE_HDR, plain, &plen);
                             if (fo_rc != 0) {
                                 crypto_wipe(plain, sizeof plain);
-                                crypto_wipe(in_frame, sizeof in_frame);
+                                crypto_wipe(in_wire, sizeof in_wire);
                                 in_have           = 0;
+                                in_need           = WIRE_HDR;
                                 in_frame_start_ms = 0;
                                 if (fo_rc == -2 || ++auth_fails >= MAX_AUTH_FAILURES) {
                                     tui_msg_add(TUI_SYSTEM, "[session error]");
@@ -251,8 +264,9 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                                 tui_draw_input(line, line_len);
                             }
                             crypto_wipe(plain, sizeof plain);
-                            crypto_wipe(in_frame, sizeof in_frame);
+                            crypto_wipe(in_wire, sizeof in_wire);
                             in_have           = 0;
+                            in_need           = WIRE_HDR;
                             in_frame_start_ms = 0;
                             continue;
                         }
@@ -273,7 +287,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             if (out_active && (ne.lNetworkEvents & FD_WRITE)) {
                 /* Deadline: abort if a partial send has been pending too long. */
                 if ((GetTickCount64() - out_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) break;
-                int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
+                int send_rc = win_try_send(fd, out_wire, out_wire_len, &out_off);
                 if (send_rc < 0) break;
                 if (send_rc == 0) {
                     memcpy(sess->tx, out_next_tx, KEY);
@@ -290,7 +304,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                         tui_draw_messages();
                         tui_draw_input(line, line_len);
                     }
-                    crypto_wipe(out_frame, sizeof out_frame);
+                    crypto_wipe(out_wire, sizeof out_wire);
                     crypto_wipe(out_next_tx, sizeof out_next_tx);
                     crypto_wipe(out_text, sizeof out_text);
                 }
@@ -310,12 +324,14 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 tui_draw_screen(status, line, line_len);
                 break;
             }
+            out_wire_len       = frame_wire_build(out_wire, out_frame);
+            crypto_wipe(out_frame, sizeof out_frame);
             out_off            = 0;
             out_active         = 1;
             out_frame_start_ms = GetTickCount64();
             out_text[0]        = '\0'; /* mark as cover frame */
             {
-                int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
+                int send_rc = win_try_send(fd, out_wire, out_wire_len, &out_off);
                 if (send_rc < 0) {
                     tui_msg_add(TUI_SYSTEM, "cover traffic error -- session ended");
                     tui_draw_screen(status, line, line_len);
@@ -325,7 +341,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                     memcpy(sess->tx, out_next_tx, KEY);
                     sess->tx_seq++;
                     out_active = 0;
-                    crypto_wipe(out_frame, sizeof out_frame);
+                    crypto_wipe(out_wire, sizeof out_wire);
                     crypto_wipe(out_next_tx, sizeof out_next_tx);
                     next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                 }
@@ -337,8 +353,9 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
 win_tui_done:
     if (fd != INVALID_SOCK) WSAEventSelect(fd, nullptr, 0);
     WSACloseEvent(net_ev);
-    crypto_wipe(in_frame, sizeof in_frame);
+    crypto_wipe(in_wire, sizeof in_wire);
     crypto_wipe(out_frame, sizeof out_frame);
+    crypto_wipe(out_wire, sizeof out_wire);
     crypto_wipe(out_next_tx, sizeof out_next_tx);
     crypto_wipe(out_text, sizeof out_text);
     crypto_wipe(line, sizeof line);

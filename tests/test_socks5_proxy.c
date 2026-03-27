@@ -265,8 +265,8 @@ int main(void) {
         TEST("frame_build", frame_build(&sess_c, (const uint8_t *)"via socks5 proxy", 16, frame, next_tx) == 0);
         memcpy(sess_c.tx, next_tx, KEY);
         sess_c.tx_seq++;
-        TEST("write through proxy", write_exact(client, frame, FRAME_SZ) == 0);
-        TEST("read through proxy", read_exact(srv.fd, frame, FRAME_SZ) == 0);
+        TEST("write through proxy", frame_send(client, frame, 0) == 0);
+        TEST("read through proxy", frame_recv(srv.fd, frame, 0) == 0);
         plen = 0;
         TEST("frame_open", frame_open(&srv.sess, frame, plain, &plen) == 0);
         plain[plen] = '\0';

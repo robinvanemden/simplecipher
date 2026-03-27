@@ -632,7 +632,7 @@ static void *session_thread(void *arg) {
 
         set_sock_timeout(fd, HANDSHAKE_TIMEOUT_S);
 
-        /* Two-round handshake (v3): version+commitment, then keys.
+        /* Two-round handshake: version+commitment, then keys.
          * Both rounds complete before any verification — timing-
          * indistinguishable failure modes from the wire. */
         uint8_t peer_ver;
@@ -861,7 +861,7 @@ static void *session_thread(void *arg) {
                 uint8_t  plain[MAX_MSG + 1];
                 uint16_t plen = 0;
 
-                if (read_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                if (frame_recv(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                     LOGI("peer disconnected (frame read failed)");
                     crypto_wipe(frame, sizeof frame);
                     jni_call_str(env, cb, mid_onDisconnected, "Peer disconnected", "peer_dc");
@@ -996,7 +996,7 @@ static void *session_thread(void *arg) {
                         continue;
                     }
 
-                    if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                    if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                         LOGE("write_exact failed");
                         crypto_wipe(frame, sizeof frame);
                         crypto_wipe(next_tx, sizeof next_tx);
@@ -1047,7 +1047,7 @@ static void *session_thread(void *arg) {
                     jni_call_str(env, cb, mid_onDisconnected, "Internal error", "cover_build");
                     break;
                 }
-                if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(next_tx, sizeof next_tx);
                     jni_call_str(env, cb, mid_onDisconnected, "Connection lost", "cover_send");

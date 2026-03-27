@@ -32,7 +32,7 @@
 |-----------|--------|-----------|
 | No PIE on static musl binaries | No ASLR for code/data segments | musl toolchain lacks rcrt1.o; upgrade pending |
 | 32-bit SAS | 1-in-4-billion chance of MITM per session | Commitment scheme prevents brute-force; adequate for interactive verification |
-| Protocol fingerprint (512-byte chat frames) | Chat frames are fixed 512 bytes (intentional for length hiding) | Handshake messages now have randomized padding (0-127 bytes CSPRNG), making initial byte counts variable and defeating static DPI rules. Chat frames remain fixed-size for traffic analysis resistance. Use `--socks5` with Tor for full anonymity. |
+| Protocol fingerprint | All wire messages use a 1-byte CSPRNG pad_len header + random padding, coalesced into single writes. The entire stream is indistinguishable from uniform random data — no fixed block sizes, no detectable header bytes, no split TCP segments. | Frames are 512 bytes internally (message-length hiding); the wire encoding wraps each with random padding. Use `--socks5` with Tor for full anonymity. |
 | Cover traffic minimum 500ms interval | Frames arriving <500ms apart are distinguishable from cover | Delaying real sends to cover boundaries would add latency |
 | No sandbox on Windows | Code execution vuln has full system access on Windows | Windows has no equivalent to seccomp/Capsicum/pledge; process mitigation policies provide partial defense |
 | mlockall may fail silently | Key material can be swapped to disk | Fails on systems with low RLIMIT_MEMLOCK; warning printed |

@@ -88,7 +88,7 @@ Verify:   H(revealed_key) == commitment                                (both sid
 
 ### Full handshake sequence
 
-This is exactly what goes over the wire. Each arrow is one TCP write.
+This is what goes over the wire. Each arrow is one exchange round. Payload sizes are shown; actual wire bytes are larger due to random padding (see [Wire padding](#6-wire-padding-dpi-resistance)).
 
 ```
         Alice                              Bob
@@ -162,6 +162,18 @@ Every frame is exactly 512 bytes regardless of message length:
 
 This hides message length from network observers. The sequence number is authenticated (tamper-proof) but not encrypted, enabling replay and reorder detection before any crypto work.
 
+### 6. Wire padding (DPI resistance)
+
+On the wire, every message (handshake and chat) is wrapped with random padding:
+
+```
+[ pad_len: 1 byte | payload | random_pad: 0-255 bytes ]
+```
+
+`pad_len` is a raw CSPRNG byte — uniformly distributed 0-255, indistinguishable from ciphertext. The padding bytes are also CSPRNG output. The entire wire stream looks like uniform random data with no fixed block size, no detectable header pattern, and no repeating byte positions.
+
+Chat frames produce 513-768 bytes per message. Handshake exchanges produce 34-289 bytes (commit) or 33-288 bytes (key reveal). All sizes vary randomly.
+
 ## Threat model
 
 SimpleCipher protects the contents and authenticity of a conversation between two people who can verify each other's identity through a trusted channel (video call, voice call, or pre-shared fingerprint).
@@ -204,6 +216,7 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 | **[Forward secrecy](#forward-secrecy)** | Chain-key [ratchet](#ratchet); each message key is used once then wiped |
 | **Integrity** | Poly1305 [MAC](#mac) detects any tampering; sequence numbers reject replays |
 | **Message-length hiding** | Fixed 512-byte frames prevent length-based analysis |
+| **DPI resistance** | 1-byte CSPRNG pad_len header + random padding; entire wire stream indistinguishable from random |
 | **Terminal safety** | Peer messages are sanitized (non-printable bytes replaced with `.`) |
 | **[Post-compromise security](#post-compromise-security)** | DH [ratchet](#ratchet) mixes fresh [X25519](#x25519) entropy on each direction switch |
 | **Frame injection resistance** | [MAC](#mac) failures are tolerated (up to 3); a single forged frame does not kill the session |

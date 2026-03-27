@@ -202,7 +202,7 @@ static void *peer_thread(void *arg) {
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    /* v3 two-round handshake: version+commitment, then keys */
+    /* Two-round handshake: version+commitment, then keys */
     uint8_t out1[1 + KEY], in1[1 + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
@@ -272,14 +272,14 @@ static void test_tcp_loopback(void) {
                          (const uint8_t *)msg, (uint16_t)strlen(msg),
                          frame, next_tx) == 0);
         TEST("initiator write_exact",
-             write_exact(initiator.fd, frame, FRAME_SZ) == 0);
+             frame_send(initiator.fd, frame, 0) == 0);
         memcpy(initiator.sess.tx, next_tx, KEY);
         initiator.sess.tx_seq++;
 
         /* Listener receives */
         uint8_t recv_frame[FRAME_SZ];
         TEST("listener read_exact",
-             read_exact(listener.fd, recv_frame, FRAME_SZ) == 0);
+             frame_recv(listener.fd, recv_frame, 0) == 0);
         uint8_t plain[MAX_MSG + 1];
         uint16_t plen = 0;
         TEST("listener frame_open",
@@ -298,14 +298,14 @@ static void test_tcp_loopback(void) {
                          (const uint8_t *)msg, (uint16_t)strlen(msg),
                          frame, next_tx) == 0);
         TEST("listener write_exact",
-             write_exact(listener.fd, frame, FRAME_SZ) == 0);
+             frame_send(listener.fd, frame, 0) == 0);
         memcpy(listener.sess.tx, next_tx, KEY);
         listener.sess.tx_seq++;
 
         /* Initiator receives */
         uint8_t recv_frame[FRAME_SZ];
         TEST("initiator read_exact",
-             read_exact(initiator.fd, recv_frame, FRAME_SZ) == 0);
+             frame_recv(initiator.fd, recv_frame, 0) == 0);
         uint8_t plain[MAX_MSG + 1];
         uint16_t plen = 0;
         TEST("initiator frame_open",
@@ -327,7 +327,7 @@ static void test_tcp_loopback(void) {
             int build_ok = frame_build(&initiator.sess,
                                        (const uint8_t *)msg, (uint16_t)strlen(msg),
                                        frame, next_tx) == 0;
-            int write_ok = build_ok && write_exact(initiator.fd, frame, FRAME_SZ) == 0;
+            int write_ok = build_ok && frame_send(initiator.fd, frame, 0) == 0;
             if (write_ok) {
                 memcpy(initiator.sess.tx, next_tx, KEY);
                 initiator.sess.tx_seq++;
@@ -336,7 +336,7 @@ static void test_tcp_loopback(void) {
             uint8_t recv_frame[FRAME_SZ];
             uint8_t plain[MAX_MSG + 1];
             uint16_t plen = 0;
-            int read_ok = write_ok && read_exact(listener.fd, recv_frame, FRAME_SZ) == 0;
+            int read_ok = write_ok && frame_recv(listener.fd, recv_frame, 0) == 0;
             int open_ok = read_ok && frame_open(&listener.sess, recv_frame, plain, &plen) == 0;
 
             if (open_ok) {
@@ -1963,7 +1963,7 @@ static void *bad_version_peer(void *arg) {
 
     set_sock_timeout(ctx->fd, 5);
 
-    /* Send wrong version byte bundled with a dummy commitment (v3 format) */
+    /* Send wrong version byte bundled with a dummy commitment */
     uint8_t out1[1 + KEY], in1[1 + KEY];
     out1[0] = 255; /* bad version */
     fill_random(out1 + 1, KEY); /* dummy commitment */
@@ -1997,7 +1997,7 @@ static void *bad_commit_peer(void *arg) {
     gen_keypair(priv, pub);
     fill_random(fake_commit, KEY);  /* not derived from pub */
 
-    /* v3: bundle version + fake commitment in round 1 */
+    /* Bundle version + fake commitment in round 1 */
     uint8_t out1[1 + KEY], in1[1 + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, fake_commit, KEY);
@@ -2031,7 +2031,7 @@ static void *honest_listener(void *arg) {
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    /* v3 two-round handshake */
+    /* Two-round handshake */
     uint8_t out1[1 + KEY], in1[1 + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
@@ -2221,7 +2221,7 @@ static void *frame_reader_listener(void *arg) {
     if (ctx->fd == INVALID_SOCK) return nullptr;
     set_sock_timeout(ctx->fd, 3);
     uint8_t frame[FRAME_SZ];
-    int rc = read_exact(ctx->fd, frame, FRAME_SZ);
+    int rc = frame_recv(ctx->fd, frame, 0);
     /* ok = -1 means read failed (expected), 1 means read succeeded */
     ctx->ok = (rc != 0) ? -1 : 1;
     return nullptr;
@@ -3160,13 +3160,13 @@ static void test_dh_ratchet_tcp_loopback(void) {
                          (const uint8_t *)msg, (uint16_t)strlen(msg),
                          frame, next_tx) == 0);
         TEST("ratchet tcp: initiator write_exact msg1",
-             write_exact(initiator.fd, frame, FRAME_SZ) == 0);
+             frame_send(initiator.fd, frame, 0) == 0);
         memcpy(initiator.sess.tx, next_tx, KEY);
         initiator.sess.tx_seq++;
 
         uint8_t recv_frame[FRAME_SZ];
         TEST("ratchet tcp: listener read_exact msg1",
-             read_exact(listener.fd, recv_frame, FRAME_SZ) == 0);
+             frame_recv(listener.fd, recv_frame, 0) == 0);
         uint8_t plain[MAX_MSG + 1];
         uint16_t plen = 0;
         TEST("ratchet tcp: listener frame_open msg1",
@@ -3185,13 +3185,13 @@ static void test_dh_ratchet_tcp_loopback(void) {
                          (const uint8_t *)msg, (uint16_t)strlen(msg),
                          frame, next_tx) == 0);
         TEST("ratchet tcp: listener write_exact msg2",
-             write_exact(listener.fd, frame, FRAME_SZ) == 0);
+             frame_send(listener.fd, frame, 0) == 0);
         memcpy(listener.sess.tx, next_tx, KEY);
         listener.sess.tx_seq++;
 
         uint8_t recv_frame[FRAME_SZ];
         TEST("ratchet tcp: initiator read_exact msg2",
-             read_exact(initiator.fd, recv_frame, FRAME_SZ) == 0);
+             frame_recv(initiator.fd, recv_frame, 0) == 0);
         uint8_t plain[MAX_MSG + 1];
         uint16_t plen = 0;
         TEST("ratchet tcp: initiator frame_open msg2",
@@ -3210,13 +3210,13 @@ static void test_dh_ratchet_tcp_loopback(void) {
                          (const uint8_t *)msg, (uint16_t)strlen(msg),
                          frame, next_tx) == 0);
         TEST("ratchet tcp: initiator write_exact msg3",
-             write_exact(initiator.fd, frame, FRAME_SZ) == 0);
+             frame_send(initiator.fd, frame, 0) == 0);
         memcpy(initiator.sess.tx, next_tx, KEY);
         initiator.sess.tx_seq++;
 
         uint8_t recv_frame[FRAME_SZ];
         TEST("ratchet tcp: listener read_exact msg3",
-             read_exact(listener.fd, recv_frame, FRAME_SZ) == 0);
+             frame_recv(listener.fd, recv_frame, 0) == 0);
         uint8_t plain[MAX_MSG + 1];
         uint16_t plen = 0;
         TEST("ratchet tcp: listener frame_open msg3",
@@ -4434,7 +4434,7 @@ static void *fp_peer_thread(void *arg) {
     memcpy(ctx->self_pub, pub, KEY);
     make_commit(commit_self, pub);
 
-    /* v3 two-round handshake */
+    /* Two-round handshake */
     uint8_t out1[1 + KEY], in1[1 + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
@@ -5245,8 +5245,8 @@ static void test_socks5_loopback(void) {
         TEST("SOCKS5 frame_build", frame_build(&sess_c, (const uint8_t *)"via proxy", 9, frame, next_tx) == 0);
         memcpy(sess_c.tx, next_tx, KEY);
         sess_c.tx_seq++;
-        TEST("SOCKS5 write", write_exact(client, frame, FRAME_SZ) == 0);
-        TEST("SOCKS5 read", read_exact(srv_ctx.fd, frame, FRAME_SZ) == 0);
+        TEST("SOCKS5 write", frame_send(client, frame, 0) == 0);
+        TEST("SOCKS5 read", frame_recv(srv_ctx.fd, frame, 0) == 0);
         plen = 0;
         TEST("SOCKS5 frame_open", frame_open(&srv_ctx.sess, frame, plain, &plen) == 0);
         plain[plen] = '\0';
@@ -5840,7 +5840,7 @@ static void *fast_peer_thread(void *arg) {
      * after confirming SAS while the slow peer is still at the SAS prompt. */
     uint8_t frame[FRAME_SZ], next_tx[KEY];
     if (frame_build(&ctx->sess, (const uint8_t *)"hello", 5, frame, next_tx) == 0) {
-        write_exact(ctx->fd, frame, FRAME_SZ);
+        frame_send(ctx->fd, frame, 0);
         memcpy(ctx->sess.tx, next_tx, KEY);
         ctx->sess.tx_seq++;
     }
@@ -5881,7 +5881,7 @@ static void test_peer_sends_during_sas(void) {
         uint8_t frame[FRAME_SZ], plain[MAX_MSG + 1];
         uint16_t plen = 0;
         set_sock_timeout(listener.fd, 3);
-        int rr = read_exact(listener.fd, frame, FRAME_SZ);
+        int rr = frame_recv(listener.fd, frame, 0);
         TEST("listener can read the pending frame", rr == 0);
         if (rr == 0) {
             int fo = frame_open(&listener.sess, frame, plain, &plen);
@@ -5925,7 +5925,7 @@ static void test_peer_disconnect_detection(void) {
         int rc = frame_build(&connector.sess, (const uint8_t *)"bye", 3, frame, next_tx);
         TEST("connector builds frame", rc == 0);
         if (rc == 0) {
-            write_exact(connector.fd, frame, FRAME_SZ);
+            frame_send(connector.fd, frame, 0);
             memcpy(connector.sess.tx, next_tx, KEY);
             connector.sess.tx_seq++;
         }
@@ -5937,7 +5937,7 @@ static void test_peer_disconnect_detection(void) {
 
         /* Listener reads the message */
         set_sock_timeout(listener.fd, 3);
-        int rr = read_exact(listener.fd, frame, FRAME_SZ);
+        int rr = frame_recv(listener.fd, frame, 0);
         TEST("listener reads connector's last frame", rr == 0);
         if (rr == 0) {
             int fo = frame_open(&listener.sess, frame, plain, &plen);
@@ -5946,7 +5946,7 @@ static void test_peer_disconnect_detection(void) {
         }
 
         /* Next read should fail (peer disconnected) */
-        rr = read_exact(listener.fd, frame, FRAME_SZ);
+        rr = frame_recv(listener.fd, frame, 0);
         TEST("next read fails (peer disconnected)", rr != 0);
 
         crypto_wipe(frame, sizeof frame);

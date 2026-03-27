@@ -26,10 +26,9 @@
  * Both inputs to the concatenation are exactly 32 bytes, so the boundary
  * is unambiguous and no length prefix is needed.
  *
- * The label "cipher ratchet v2" is a KDF domain label (independent of
- * the wire-format PROTOCOL_VERSION) and is
- * domain-separated from the handshake labels ("cipher x25519 sas root v1",
- * "cipher commit v3") which use "v1". */
+ * The label "cipher ratchet v2" is a KDF domain label (not a protocol
+ * version), domain-separated from the handshake labels
+ * ("cipher x25519 sas root v1", "cipher commit v3"). */
 /* Returns 0 on success, -1 if DH produced all-zero output (malicious peer). */
 static int ratchet_step(uint8_t root[KEY], uint8_t chain_out[KEY], const uint8_t our_priv[KEY],
                         const uint8_t their_pub[KEY]) {

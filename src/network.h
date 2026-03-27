@@ -47,10 +47,21 @@ void set_sock_opts(socket_t fd);
  * Each message is padded with 0-127 random bytes (DPI resistance). */
 [[nodiscard]] int exchange(socket_t fd, int we_init, const uint8_t *out, size_t out_n, uint8_t *in, size_t in_n);
 
-/* Note: chat frames are sent as raw FRAME_SZ bytes (no padding) for
- * compatibility with the Windows non-blocking event loop.  Only the
- * handshake (via exchange()) uses randomized padding for DPI resistance.
- * The fixed 512-byte chat frames are intentional for message-length hiding. */
+/* Build a padded wire message: [pad_len(1)][frame][random_pad].
+ * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern.
+ * Returns the total wire length (513-768 bytes).
+ * wire must be at least WIRE_MAX bytes. */
+size_t frame_wire_build(uint8_t *wire, const uint8_t *frame);
+
+/* Send one frame with random padding over TCP (blocking).
+ * Wire format: [pad_len(1)][frame(512)][random_pad(0-255)].
+ * Pass deadline_ms=0 for no deadline. */
+[[nodiscard]] int frame_send(socket_t fd, const uint8_t *frame, uint64_t deadline_ms);
+
+/* Receive one padded frame from TCP (blocking).
+ * Reads 1-byte pad_len, then the frame, then drains padding.
+ * Pass deadline_ms=0 for no deadline. */
+[[nodiscard]] int frame_recv(socket_t fd, uint8_t *frame, uint64_t deadline_ms);
 
 /* Connect to host:port, trying all addresses getaddrinfo returns.
  * Returns the connected socket, or INVALID_SOCK on failure. */

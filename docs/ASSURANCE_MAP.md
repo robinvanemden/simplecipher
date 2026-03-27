@@ -18,6 +18,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | **SAS verification** (32-bit) | `crypto.c:format_sas()` | `test_p2p.c:test_crypto_basics` (SAS format), `test_p2p.c:test_format_sas_edge_cases` | |
 | **Fingerprint verification** (64-bit) | `crypto.c:format_fingerprint()`, `crypto.c:ct_compare()` | `test_p2p.c:test_format_fingerprint`, `test_p2p.c:test_fingerprint_roundtrip`, `test_p2p.c:test_fingerprint_handshake_verification` (Tests D-G) | |
 | **Message-length hiding** (512-byte frames) | `protocol.h:FRAME_SZ=512`, `protocol.c:frame_build()` | `test_p2p.c:test_frame_boundary_message_sizes` | All frames same size |
+| **DPI resistance** (wire padding) | `network.c:frame_send/recv/wire_build()`, `protocol.h:WIRE_*` | Loopback tests in `test_p2p.c`, `test_socks5_proxy.c` | Wire size varies 514-769 bytes |
 
 ## Key lifecycle (wipe guarantees)
 

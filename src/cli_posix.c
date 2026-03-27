@@ -163,7 +163,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
          * peer message appears cleanly on its own line.  After printing,
          * we redraw the prompt and whatever the user had typed so far. */
         if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
-            if (read_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+            if (frame_recv(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                 cli_clear_input_line(line_len);
                 {
                     const char *msg = "\n  [peer disconnected]\n";
@@ -269,7 +269,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                     break;
                 }
 
-                if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                     const char *msg = "[send error]\n";
                     ssize_t     r;
                     do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
@@ -319,7 +319,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                 secure_chat_print("system", "cover traffic error -- session ended");
                 break;
             }
-            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+            if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                 secure_chat_print("system", "cover traffic error -- session ended");
                 break;
             }
@@ -379,7 +379,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
 
         /* ----- Incoming encrypted frame from peer ----- */
         if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
-            if (read_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+            if (frame_recv(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                 printf("\n  [peer disconnected]\n");
                 break;
             }
@@ -436,7 +436,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 break;
             }
 
-            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+            if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                 fprintf(stderr, "[send error]\n");
                 crypto_wipe(line, sizeof line);
                 crypto_wipe(frame, sizeof frame);
@@ -463,7 +463,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 secure_chat_print("system", "cover traffic error -- session ended");
                 break;
             }
-            if (write_exact_dl(fd, frame, FRAME_SZ, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+            if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                 secure_chat_print("system", "cover traffic error -- session ended");
                 break;
             }
