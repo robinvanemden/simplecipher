@@ -236,8 +236,9 @@ void tui_draw_messages(void) {
                                   text + offset, TUI_COLOR_DIM, TUI_COLOR_RESET);
                 first = 0;
             } else {
-                /* 18 = strlen(" [HH:MM:SS] label: ") — matches the prefix width */
-                tui_secure_printf("%s\xe2\x94\x82%s %*s%-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET, 18, "",
+                /* 17 spaces + 1 leading space = 18 chars, matching the first line's
+                 * " [HH:MM:SS] label: " prefix (19 chars after the │ border). */
+                tui_secure_printf("%s\xe2\x94\x82%s %*s%-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET, 17, "",
                                   max_text, chunk, text + offset, TUI_COLOR_DIM, TUI_COLOR_RESET);
             }
             offset += chunk;

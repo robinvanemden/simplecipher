@@ -1,20 +1,26 @@
 CC      ?= gcc
 
-# Security-hardened flags matching the CMake release build.
-# Override with: make CFLAGS="..." for a custom build.
+# Security-critical flags — always applied, cannot be overridden.
+# CIPHER_HARDEN enables mlockall, core dump suppression, ptrace blocking,
+# and seccomp/Capsicum/pledge sandboxing.
+SECURITY_CFLAGS = -DCIPHER_HARDEN -DNDEBUG \
+                  -fstack-protector-strong \
+                  -ftrivial-auto-var-init=zero \
+                  -fvisibility=hidden \
+                  -fno-delete-null-pointer-checks \
+                  -fno-strict-overflow \
+                  -fno-strict-aliasing \
+                  -fstrict-flex-arrays=3
+
+# User-overridable flags (optimization, warnings, includes).
 CFLAGS  ?= -Os -std=c23 -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough \
            -Wbidi-chars=any \
            -Werror=format-security -Werror=incompatible-pointer-types -Werror=int-conversion \
            -Isrc -Ilib \
-           -flto -ffunction-sections -fdata-sections -fmerge-all-constants \
-           -fstack-protector-strong \
-           -ftrivial-auto-var-init=zero \
-           -fvisibility=hidden \
-           -fno-delete-null-pointer-checks \
-           -fno-strict-overflow \
-           -fno-strict-aliasing \
-           -fstrict-flex-arrays=3 \
-           -DNDEBUG -DCIPHER_HARDEN
+           -flto -ffunction-sections -fdata-sections -fmerge-all-constants
+
+# Combined: security flags are prepended and cannot be removed by overriding CFLAGS.
+ALL_CFLAGS = $(SECURITY_CFLAGS) $(CFLAGS)
 
 LDFLAGS ?= -flto -Wl,--gc-sections -s
 
@@ -43,14 +49,14 @@ SRC = src/main.c $(CORE_SRC) $(PLAT_SRC)
 OBJ = $(SRC:.c=.o)
 
 simplecipher: $(OBJ)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $^
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(ALL_CFLAGS) -c -o $@ $<
 
 # Suppress -Wconversion for vendored Monocypher (upstream code, do not modify)
 lib/monocypher.o: lib/monocypher.c
-	$(CC) $(CFLAGS) -Wno-conversion -c -o $@ $<
+	$(CC) $(ALL_CFLAGS) -Wno-conversion -c -o $@ $<
 
 test: tests/test_p2p
 	./tests/test_p2p
@@ -60,10 +66,10 @@ test-socks5: tests/test_socks5_proxy
 
 LIB_OBJ = $(filter-out src/main.o,$(OBJ))
 tests/test_p2p: tests/test_p2p.c $(LIB_OBJ)
-	$(CC) $(CFLAGS) -pthread -o $@ $^
+	$(CC) $(ALL_CFLAGS) -pthread -o $@ $^
 
 tests/test_socks5_proxy: tests/test_socks5_proxy.c $(LIB_OBJ)
-	$(CC) $(CFLAGS) -pthread -o $@ $^
+	$(CC) $(ALL_CFLAGS) -pthread -o $@ $^
 
 clean:
 	rm -f $(OBJ) simplecipher tests/test_p2p tests/test_socks5_proxy
