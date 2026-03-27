@@ -695,7 +695,8 @@ int main(int argc, char *argv[]) {
             int  sn = snprintf(sas_line, sizeof sas_line, "  |              %-9s                        |\n", sas);
             if (sn > 0) {
                 fflush(stdout);
-                (void)write(STDOUT_FILENO, sas_line, (size_t)sn);
+                ssize_t wr;
+                do { wr = write(STDOUT_FILENO, sas_line, (size_t)sn); } while (wr < 0 && errno == EINTR);
                 crypto_wipe(sas_line, sizeof sas_line);
             }
         }

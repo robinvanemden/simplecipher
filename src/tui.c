@@ -50,7 +50,8 @@ static void tui_secure_printf(const char *fmt, ...) {
     DWORD written;
     WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buf, (DWORD)n, &written, NULL);
 #else
-    (void)write(STDOUT_FILENO, buf, (size_t)n);
+    ssize_t wr;
+    do { wr = write(STDOUT_FILENO, buf, (size_t)n); } while (wr < 0 && errno == EINTR);
 #endif
     crypto_wipe(buf, sizeof buf);
 }
@@ -541,7 +542,8 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
                 DWORD w;
                 WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), &c, 1, &w, NULL);
 #else
-                (void)write(STDOUT_FILENO, &c, 1);
+                ssize_t wr;
+                do { wr = write(STDOUT_FILENO, &c, 1); } while (wr < 0 && errno == EINTR);
 #endif
             }
         }

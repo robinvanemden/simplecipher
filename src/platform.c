@@ -730,7 +730,8 @@ void purge_terminal(void) {
      * \033[3J  — clear scrollback buffer (xterm, VTE, Windows Terminal)
      * \033[H   — move cursor to top-left */
     const char seq[] = "\033[2J\033[3J\033[H";
-    (void)write(STDOUT_FILENO, seq, sizeof seq - 1);
+    ssize_t    wr;
+    do { wr = write(STDOUT_FILENO, seq, sizeof seq - 1); } while (wr < 0 && errno == EINTR);
 }
 #endif /* platform */
 
