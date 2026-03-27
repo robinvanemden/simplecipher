@@ -662,7 +662,7 @@ int main(int argc, char *argv[]) {
 
     if (tui_mode) {
         /* tui_init_term() was already called before TCP connection */
-        int sas_ok = tui_sas_screen(sas);
+        int sas_ok = tui_sas_screen(sas, g_fd);
         crypto_wipe(sas_key, sizeof sas_key);
         crypto_wipe(sas, sizeof sas);
         if (sas_ok <= 0) {
@@ -722,25 +722,58 @@ int main(int argc, char *argv[]) {
         /* read() instead of fgets() so the typed code never passes through
          * libc's internal ~4KB FILE* buffer (which is never wiped).  In
          * canonical mode, read() returns a complete line from the kernel.
-         * On Windows, _read() serves the same purpose. */
+         * On Windows, _read() serves the same purpose.
+         *
+         * Both POSIX and Windows paths monitor the peer socket alongside
+         * stdin so a peer disconnect during SAS verification is detected
+         * immediately instead of leaving the user stuck. */
         {
-#ifndef _WIN32
-            alarm(300); /* 5-minute SAS verification timeout */
-#endif
 #if defined(_WIN32) || defined(_WIN64)
-            /* 5-minute timeout for SAS verification (no alarm() on Windows) */
+            /* WaitForMultipleObjects covers the full 5-minute timeout AND
+             * watches the peer socket for disconnect — no gap. */
+            HANDLE   h_stdin = GetStdHandle(STD_INPUT_HANDLE);
+            WSAEVENT sas_ev  = WSACreateEvent();
+            WSAEventSelect(g_fd, sas_ev, FD_READ | FD_CLOSE);
+            HANDLE sas_waits[2] = {h_stdin, sas_ev};
+            DWORD  wr           = WaitForMultipleObjects(2, sas_waits, FALSE, 300000);
+            WSAEventSelect(g_fd, sas_ev, 0); /* clear before closing */
+            WSACloseEvent(sas_ev);
+            if (wr == WAIT_TIMEOUT) {
+                printf("SAS verification timed out.\n");
+                rc = EXIT_ABORT;
+                goto out;
+            }
+            if (wr == WAIT_OBJECT_0 + 1) {
+                fprintf(stderr, "Peer disconnected during SAS verification.\n");
+                rc = EXIT_NET;
+                goto out;
+            }
+            /* wr == WAIT_OBJECT_0: stdin ready */
+            int rn = _read(0, typed_sas, (unsigned)(sizeof typed_sas - 1));
+#else
+            ssize_t rn = -1;
             {
-                HANDLE h_stdin = GetStdHandle(STD_INPUT_HANDLE);
-                DWORD  wr      = WaitForSingleObject(h_stdin, 300000);
-                if (wr == WAIT_TIMEOUT) {
-                    printf("SAS verification timed out.\n");
+                struct pollfd sas_fds[2] = {{STDIN_FILENO, POLLIN, 0}, {g_fd, POLLIN | POLLHUP, 0}};
+                while (g_running) {
+                    int pr = poll(sas_fds, 2, 1000); /* 1-second poll */
+                    if (pr < 0 && errno == EINTR) continue;
+                    if (pr < 0) break;
+                    if (sas_fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
+                        fprintf(stderr, "Peer disconnected during SAS verification.\n");
+                        rc = EXIT_NET;
+                        goto out;
+                    }
+                    if (sas_fds[0].revents & POLLIN) {
+                        rn = read(STDIN_FILENO, typed_sas, sizeof typed_sas - 1);
+                        break;
+                    }
+                }
+                if (!g_running) { /* Ctrl+C or signal */
+                    printf("Aborted.\n");
                     rc = EXIT_ABORT;
                     goto out;
                 }
             }
-            int rn = _read(0, typed_sas, (unsigned)(sizeof typed_sas - 1));
-#else
-            ssize_t rn = read(STDIN_FILENO, typed_sas, sizeof typed_sas - 1);
 #endif
             if (rn <= 0) {
                 printf("Aborted.\n");
@@ -748,9 +781,6 @@ int main(int argc, char *argv[]) {
                 goto out;
             }
             typed_sas[rn] = '\0';
-#ifndef _WIN32
-            alarm(0); /* cancel timeout */
-#endif
         }
         /* Drain any leftover characters in the kernel's line buffer (e.g.
          * user pasted a long string).  Without this, the extra bytes end

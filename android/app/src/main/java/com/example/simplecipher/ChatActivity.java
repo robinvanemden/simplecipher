@@ -398,6 +398,21 @@ public class ChatActivity extends Activity implements NativeCallback {
      * wipe would leak plaintext into the Java heap while the app is
      * backgrounded. */
     if (paused) return;
+    /* Cap chat log to prevent unbounded heap growth from a flooding peer.
+     * Trim oldest content when the log exceeds ~100KB. */
+    if (chatLog.length() > 100_000) {
+      CharSequence text = chatLog.getText();
+      int cutPoint = 0;
+      for (int i = text.length() / 4; i < text.length(); i++) {
+        if (text.charAt(i) == '\n') {
+          cutPoint = i + 1;
+          break;
+        }
+      }
+      if (cutPoint > 0) {
+        chatLog.setText(text.subSequence(cutPoint, text.length()), TextView.BufferType.SPANNABLE);
+      }
+    }
     String ts = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
     String line = "[" + ts + "] " + who + ": " + msg + "\n";
     SpannableString spannable = new SpannableString(line);

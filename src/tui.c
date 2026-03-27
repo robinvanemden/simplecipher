@@ -419,7 +419,7 @@ void tui_listen_screen(const char *port, const char *ips) {
  * which would defeat the purpose of the SAS entirely.
  *
  * Returns 1 if the user typed a matching code, 0 on mismatch or abort. */
-int tui_sas_screen(const char *sas) {
+int tui_sas_screen(const char *sas, socket_t sas_fd) {
     int  sas_len   = (int)strlen(sas); /* 9 for "XXXX-XXXX" */
     char typed[20] = {0};
     int  pos       = 0;
@@ -476,16 +476,30 @@ int tui_sas_screen(const char *sas) {
 
     while (pos < (int)sizeof(typed) - 1 && g_running) {
 #ifndef _WIN32
-        struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
-        int           pr  = poll(&pfd, 1, 250);
+        struct pollfd pfd[2] = {{STDIN_FILENO, POLLIN, 0}, {(int)sas_fd, POLLIN | POLLHUP, 0}};
+        int           pr     = poll(pfd, 2, 250);
         if (pr <= 0) continue;
+        if (pfd[1].revents & (POLLIN | POLLHUP | POLLERR)) {
+            crypto_wipe(typed, sizeof typed);
+            return 0; /* peer disconnected — abort */
+        }
+        if (!(pfd[0].revents & POLLIN)) continue;
         unsigned char ch = 0;
         if (read(STDIN_FILENO, &ch, 1) != 1) continue;
 #else
         INPUT_RECORD rec;
-        DWORD        nread = 0;
-        HANDLE       h_in  = GetStdHandle(STD_INPUT_HANDLE);
-        DWORD        wr    = WaitForSingleObject(h_in, 250);
+        DWORD        nread  = 0;
+        HANDLE       h_in   = GetStdHandle(STD_INPUT_HANDLE);
+        WSAEVENT     sas_ev = WSACreateEvent();
+        WSAEventSelect(sas_fd, sas_ev, FD_READ | FD_CLOSE);
+        HANDLE sas_waits[2] = {h_in, sas_ev};
+        DWORD  wr           = WaitForMultipleObjects(2, sas_waits, FALSE, 250);
+        WSAEventSelect(sas_fd, sas_ev, 0);
+        WSACloseEvent(sas_ev);
+        if (wr == WAIT_OBJECT_0 + 1) {
+            crypto_wipe(typed, sizeof typed);
+            return 0; /* peer disconnected — abort */
+        }
         if (wr != WAIT_OBJECT_0) continue;
         if (!ReadConsoleInputA(h_in, &rec, 1, &nread)) continue;
         if (rec.EventType != KEY_EVENT || !rec.Event.KeyEvent.bKeyDown) continue;

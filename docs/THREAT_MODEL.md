@@ -11,7 +11,7 @@
 | Malicious peer (frame injection) | Rejected by MAC | Poly1305 authentication, sequence number check |
 | Malicious peer (replay/reorder) | Rejected | Strict sequence equality, chain ratchet |
 | Local non-root attacker | Memory protected | PR_SET_DUMPABLE=0, seccomp, Capsicum, pledge |
-| Post-compromise of chain key | Healed by DH ratchet | Fresh X25519 keypair on direction switch |
+| Post-compromise of chain key | Healed by DH ratchet (takes effect one message after ratchet step) | Fresh X25519 keypair on direction switch |
 
 ## What SimpleCipher does NOT defend against
 

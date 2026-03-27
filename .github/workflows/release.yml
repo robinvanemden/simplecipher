@@ -91,6 +91,9 @@ jobs:
         run: |
           sed -i 's|/opt/llvm-mingw-[^ )]*|/opt/llvm-mingw|' cmake/toolchains/win-x86_64.cmake cmake/toolchains/win-aarch64.cmake
 
+      - name: Verify vendored library integrity and build configuration
+        run: bash tests/test_build.sh
+
       - name: Build Linux x86_64 target
         run: |
           cmake --preset linux-x86_64

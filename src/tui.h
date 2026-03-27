@@ -151,9 +151,10 @@ void tui_status_screen(const char *line1, const char *line2);
 void tui_listen_screen(const char *port, const char *ips);
 
 /* Display the SAS verification screen and require user to type the full
- * code to confirm.  Returns 1 on match, 0 on user abort (Ctrl+C or
- * terminal too small), -1 on code mismatch. */
-int tui_sas_screen(const char *sas);
+ * code to confirm.  Returns 1 on match, 0 on user abort (Ctrl+C,
+ * terminal too small, or peer disconnect), -1 on code mismatch.
+ * sas_fd is the peer socket — monitored for disconnect during input. */
+int tui_sas_screen(const char *sas, socket_t sas_fd);
 
 /* ---- platform-specific functions ----------------------------------------
  *

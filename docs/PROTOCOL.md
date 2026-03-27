@@ -142,6 +142,8 @@ chain[2]  -->  ...
 
 When the conversation direction switches (Alice was listening, now she replies), the sender generates a fresh [X25519](#x25519) keypair and mixes the new shared secret into a root key. This derives a completely new chain that an attacker cannot predict, even if they stole the old chain key.
 
+**Note on recovery timing:** The ratchet key is included in a frame encrypted with the pre-ratchet chain. The receiver derives the new chain only after decrypting that frame, so the first post-ratchet message is encrypted under the old chain — recovery takes effect from the second message onward.
+
 ```
 Alice sends  ──►  DH ratchet  ──►  new tx chain  ──►  symmetric ratchet
 Bob replies  ──►  DH ratchet  ──►  new tx chain  ──►  symmetric ratchet

@@ -73,8 +73,8 @@
 #include <sys/select.h>
 #include <android/log.h>
 #include <pthread.h>
-#include <unistd.h>  /* pipe, read, write, close */
-#include <fcntl.h>   /* fcntl, O_NONBLOCK */
+#include <unistd.h> /* pipe, read, write, close */
+#include <fcntl.h>  /* fcntl, O_NONBLOCK */
 #include <poll.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
@@ -86,18 +86,18 @@
 #define TAG "SimpleCipher"
 #ifdef NDEBUG
 /* Release: suppress all logging to prevent leaking sensitive data to logcat */
-#define LOGI(...) ((void)0)
-#define LOGE(...) ((void)0)
+#    define LOGI(...) ((void)0)
+#    define LOGE(...) ((void)0)
 #else
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#    define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#    define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 #endif
 
 /* ---- Command bytes ------------------------------------------------------ */
 
-#define CMD_SEND        0x01
+#define CMD_SEND 0x01
 #define CMD_CONFIRM_SAS 0x02
-#define CMD_QUIT        0x03
+#define CMD_QUIT 0x03
 
 /* ---- Globals ------------------------------------------------------------ */
 
@@ -134,7 +134,7 @@ static _Atomic socket_t g_session_sock = INVALID_SOCK;
 
 /* Session thread handle — used to join the thread before starting a new
  * session, ensuring the previous socket is fully closed. */
-static pthread_t g_session_thread;
+static pthread_t   g_session_thread;
 static _Atomic int g_session_active = 0;
 
 /* Session generation counter.  Incremented by nativeStart() each time a
@@ -165,14 +165,14 @@ static _Atomic int g_peer_fp_valid = 0;
 /* Everything the session thread needs, passed as pthread arg.
  * The thread copies what it needs and frees the struct immediately. */
 typedef struct {
-    int       mode;         /* 0 = listen, 1 = connect                    */
-    char     *host;         /* strdup'd host string (connect only), or NULL */
-    int       port;
-    char     *socks5_host;  /* SOCKS5 proxy host (e.g. "127.0.0.1"), or NULL */
-    char     *socks5_port;  /* SOCKS5 proxy port (e.g. "9050"), or NULL      */
-    int       pipe_rd;      /* read end of command pipe                    */
-    int       gen;          /* session generation (for stale-thread guard)  */
-    jobject   callback;     /* JNI global ref to NativeCallback            */
+    int     mode; /* 0 = listen, 1 = connect                    */
+    char   *host; /* strdup'd host string (connect only), or NULL */
+    int     port;
+    char   *socks5_host; /* SOCKS5 proxy host (e.g. "127.0.0.1"), or NULL */
+    char   *socks5_port; /* SOCKS5 proxy port (e.g. "9050"), or NULL      */
+    int     pipe_rd;     /* read end of command pipe                    */
+    int     gen;         /* session generation (for stale-thread guard)  */
+    jobject callback;    /* JNI global ref to NativeCallback            */
 
     /* Pre-resolved JNI method IDs — looked up on the calling thread
      * so the native thread doesn't need to do class lookups. */
@@ -185,13 +185,13 @@ typedef struct {
     jmethodID mid_onDisconnected;
 
     /* Pre-generated keypair (copied from globals, which are wiped) */
-    uint8_t   prekey_priv[KEY];
-    uint8_t   prekey_pub[KEY];
-    int       has_prekey;
+    uint8_t prekey_priv[KEY];
+    uint8_t prekey_pub[KEY];
+    int     has_prekey;
 
     /* Expected peer fingerprint (8 raw bytes from globals) */
-    uint8_t   peer_fp[8];
-    int       has_peer_fp;
+    uint8_t peer_fp[8];
+    int     has_peer_fp;
 
     /* 8th callback method ID */
     jmethodID mid_onPeerFingerprintReady;
@@ -205,7 +205,7 @@ typedef struct {
 static void thread_arg_wipe_and_free(thread_arg_t *ta) {
     if (!ta) return;
     crypto_wipe(ta->prekey_priv, KEY);
-    crypto_wipe(ta->prekey_pub,  KEY);
+    crypto_wipe(ta->prekey_pub, KEY);
     crypto_wipe(ta->peer_fp, 8);
     if (ta->host) {
         crypto_wipe(ta->host, strlen(ta->host));
@@ -230,7 +230,7 @@ static int pipe_read_exact(int fd, void *buf, size_t n) {
     uint8_t *p = (uint8_t *)buf;
     while (n > 0) {
         ssize_t r = read(fd, p, n);
-        if (r <= 0) return -1;  /* EOF or error */
+        if (r <= 0) return -1; /* EOF or error */
         p += r;
         n -= (size_t)r;
     }
@@ -247,19 +247,19 @@ static int pipe_read_exact(int fd, void *buf, size_t n) {
  * against the hash of the peer's actual public key after handshake. */
 static int parse_fingerprint(uint8_t out[8], const char *s) {
     uint8_t buf[8];
-    int bi = 0;
+    int     bi = 0;
     for (int i = 0; s[i] && bi < 8; i++) {
         char c = s[i];
         if (c == '-') continue;
         int hi, lo;
-        if      (c >= '0' && c <= '9') hi = c - '0';
+        if (c >= '0' && c <= '9') hi = c - '0';
         else if (c >= 'A' && c <= 'F') hi = c - 'A' + 10;
         else if (c >= 'a' && c <= 'f') hi = c - 'a' + 10;
         else return -1;
         i++;
         if (!s[i]) return -1;
         c = s[i];
-        if      (c >= '0' && c <= '9') lo = c - '0';
+        if (c >= '0' && c <= '9') lo = c - '0';
         else if (c >= 'A' && c <= 'F') lo = c - 'A' + 10;
         else if (c >= 'a' && c <= 'f') lo = c - 'a' + 10;
         else return -1;
@@ -289,8 +289,7 @@ static int jni_callback_ok(JNIEnv *env) {
  * delete the local ref, and check for exceptions.  If NewStringUTF
  * returns NULL (OOM) or the callback throws, returns -1.  label is
  * used only for logging on failure. */
-static int jni_call_str(JNIEnv *env, jobject cb, jmethodID mid,
-                         const char *str, const char *label) {
+static int jni_call_str(JNIEnv *env, jobject cb, jmethodID mid, const char *str, const char *label) {
     jstring jstr = (*env)->NewStringUTF(env, str);
     if (!jstr) {
         LOGE("NewStringUTF(%s) failed", label);
@@ -307,43 +306,43 @@ static void *session_thread(void *arg) {
 
     /* Copy everything we need from the arg struct, then free it.
      * This avoids a dangling pointer if the caller's stack unwinds. */
-    int       mode        = ta->mode;
-    char     *host        = ta->host;        /* we own this (strdup'd) */
-    int       port        = ta->port;
-    char     *socks5_host = ta->socks5_host; /* strdup'd or NULL */
-    char     *socks5_port = ta->socks5_port; /* strdup'd or NULL */
-    int       pipe_rd     = ta->pipe_rd;
-    int       my_gen  = ta->gen;        /* session generation at birth */
-    jobject   cb      = ta->callback;   /* global ref — we delete on exit */
+    int     mode        = ta->mode;
+    char   *host        = ta->host; /* we own this (strdup'd) */
+    int     port        = ta->port;
+    char   *socks5_host = ta->socks5_host; /* strdup'd or NULL */
+    char   *socks5_port = ta->socks5_port; /* strdup'd or NULL */
+    int     pipe_rd     = ta->pipe_rd;
+    int     my_gen      = ta->gen;      /* session generation at birth */
+    jobject cb          = ta->callback; /* global ref — we delete on exit */
 
-    jmethodID mid_onConnected        = ta->mid_onConnected;
-    jmethodID mid_onConnectionFailed = ta->mid_onConnectionFailed;
-    jmethodID mid_onSasReady         = ta->mid_onSasReady;
-    jmethodID mid_onHandshakeFailed  = ta->mid_onHandshakeFailed;
-    jmethodID mid_onMessageReceived  = ta->mid_onMessageReceived;
-    jmethodID mid_onSendResult       = ta->mid_onSendResult;
-    jmethodID mid_onDisconnected     = ta->mid_onDisconnected;
+    jmethodID mid_onConnected            = ta->mid_onConnected;
+    jmethodID mid_onConnectionFailed     = ta->mid_onConnectionFailed;
+    jmethodID mid_onSasReady             = ta->mid_onSasReady;
+    jmethodID mid_onHandshakeFailed      = ta->mid_onHandshakeFailed;
+    jmethodID mid_onMessageReceived      = ta->mid_onMessageReceived;
+    jmethodID mid_onSendResult           = ta->mid_onSendResult;
+    jmethodID mid_onDisconnected         = ta->mid_onDisconnected;
     jmethodID mid_onPeerFingerprintReady = ta->mid_onPeerFingerprintReady;
 
     /* Pre-generated keypair: if the user expanded the fingerprint panel
      * on the connect screen, MainActivity called nativeGenerateKey() and
      * the key was copied into the thread arg by nativeStart().  We move
      * it to the stack and wipe the arg copy immediately. */
-    int       has_prekey  = ta->has_prekey;
-    uint8_t   prekey_priv[KEY], prekey_pub[KEY];
+    int     has_prekey = ta->has_prekey;
+    uint8_t prekey_priv[KEY], prekey_pub[KEY];
     if (has_prekey) {
         memcpy(prekey_priv, ta->prekey_priv, KEY);
-        memcpy(prekey_pub,  ta->prekey_pub,  KEY);
+        memcpy(prekey_pub, ta->prekey_pub, KEY);
         crypto_wipe(ta->prekey_priv, KEY);
-        crypto_wipe(ta->prekey_pub,  KEY);
+        crypto_wipe(ta->prekey_pub, KEY);
     }
 
     /* Expected peer fingerprint: if the user scanned or typed a peer
      * fingerprint, it was parsed to 8 raw bytes by nativeSetPeerFingerprint()
      * and copied into the thread arg by nativeStart().  After the handshake,
      * we compare this against the hash of the peer's actual public key. */
-    int       has_peer_fp = ta->has_peer_fp;
-    uint8_t   expected_peer_fp[8];
+    int     has_peer_fp = ta->has_peer_fp;
+    uint8_t expected_peer_fp[8];
     if (has_peer_fp) {
         memcpy(expected_peer_fp, ta->peer_fp, 8);
         crypto_wipe(ta->peer_fp, 8);
@@ -357,11 +356,20 @@ static void *session_thread(void *arg) {
     if ((*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL) != JNI_OK) {
         LOGE("AttachCurrentThread failed — JVM broken, clearing session state");
         crypto_wipe(prekey_priv, sizeof prekey_priv);
-        crypto_wipe(prekey_pub,  sizeof prekey_pub);
+        crypto_wipe(prekey_pub, sizeof prekey_pub);
         crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
-        if (host)       { crypto_wipe(host, strlen(host)); free(host); }
-        if (socks5_host){ crypto_wipe(socks5_host, strlen(socks5_host)); free(socks5_host); }
-        if (socks5_port){ crypto_wipe(socks5_port, strlen(socks5_port)); free(socks5_port); }
+        if (host) {
+            crypto_wipe(host, strlen(host));
+            free(host);
+        }
+        if (socks5_host) {
+            crypto_wipe(socks5_host, strlen(socks5_host));
+            free(socks5_host);
+        }
+        if (socks5_port) {
+            crypto_wipe(socks5_port, strlen(socks5_port));
+            free(socks5_port);
+        }
         close(pipe_rd);
         /* Cannot DeleteGlobalRef(cb) without a JNI env — accept the leak.
          * Clear g_session_active so nativeStart() doesn't wait forever. */
@@ -372,9 +380,9 @@ static void *session_thread(void *arg) {
     }
 
     /* All session state lives on the stack — no globals, no races. */
-    socket_t  fd       = INVALID_SOCK;
+    socket_t  fd = INVALID_SOCK;
     session_t sess;
-    int       we_init  = 0;
+    int       we_init = 0;
     uint8_t   self_priv[KEY], self_pub[KEY], peer_pub[KEY];
 
     memset(&sess, 0, sizeof sess);
@@ -393,8 +401,7 @@ static void *session_thread(void *arg) {
          * instantly — no need for the non-blocking + poll() machinery.
          * The SOCKS5 negotiation is a few round-trips over localhost.
          * connect_socket_socks5() handles the full handshake. */
-        LOGI("connecting via SOCKS5 %s:%s to %s:%s",
-             socks5_host, socks5_port, host ? host : "(null)", port_str);
+        LOGI("connecting via SOCKS5 %s:%s to %s:%s", socks5_host, socks5_port, host ? host : "(null)", port_str);
 
         fd = connect_socket_socks5(socks5_host, socks5_port, host, port_str);
         if (fd == INVALID_SOCK) {
@@ -437,7 +444,8 @@ static void *session_thread(void *arg) {
                     break;
                 }
                 if (errno != EINPROGRESS) {
-                    close_sock(fd); fd = INVALID_SOCK;
+                    close_sock(fd);
+                    fd = INVALID_SOCK;
                     continue;
                 }
 
@@ -451,17 +459,18 @@ static void *session_thread(void *arg) {
                 cfds[1].events = POLLIN;
 
                 int connected = 0;
-                int ret = poll(cfds, 2, HANDSHAKE_TIMEOUT_S * 1000);
+                int ret       = poll(cfds, 2, HANDSHAKE_TIMEOUT_S * 1000);
                 if (ret > 0 && (cfds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
                     /* nativeStop() closed the pipe (or CMD_QUIT fallback) — abort */
                     LOGI("quit received during connect");
-                    close_sock(fd); fd = INVALID_SOCK;
+                    close_sock(fd);
+                    fd = INVALID_SOCK;
                     freeaddrinfo(res);
                     jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_connect");
                     goto cleanup;
                 }
                 if (ret > 0 && (cfds[0].revents & POLLOUT)) {
-                    int err = 0;
+                    int       err  = 0;
                     socklen_t elen = sizeof err;
                     getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &elen);
                     if (err == 0) connected = 1;
@@ -471,7 +480,8 @@ static void *session_thread(void *arg) {
                 if (flags != -1) fcntl((int)fd, F_SETFL, flags);
 
                 if (connected) break;
-                close_sock(fd); fd = INVALID_SOCK;
+                close_sock(fd);
+                fd = INVALID_SOCK;
             }
             freeaddrinfo(res);
             if (fd != INVALID_SOCK) set_sock_opts(fd);
@@ -492,8 +502,8 @@ static void *session_thread(void *arg) {
         /* Bind and listen using the same setup as listen_socket but
          * keeping the server socket so we can select on it + the pipe. */
         struct addrinfo hints, *res, *p;
-        socket_t srv = INVALID_SOCK;
-        int one = 1;
+        socket_t        srv = INVALID_SOCK;
+        int             one = 1;
         memset(&hints, 0, sizeof hints);
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_family   = AF_UNSPEC;
@@ -507,9 +517,9 @@ static void *session_thread(void *arg) {
             srv = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
             if (srv == INVALID_SOCK) continue;
             setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof one);
-            if (bind(srv, p->ai_addr, (socklen_t)p->ai_addrlen) == 0
-                && listen(srv, 1) == 0) break;
-            close_sock(srv); srv = INVALID_SOCK;
+            if (bind(srv, p->ai_addr, (socklen_t)p->ai_addrlen) == 0 && listen(srv, 1) == 0) break;
+            close_sock(srv);
+            srv = INVALID_SOCK;
         }
         freeaddrinfo(res);
 
@@ -534,8 +544,8 @@ static void *session_thread(void *arg) {
             FD_SET(pipe_rd, &rfds);
             int maxfd = (srv > pipe_rd ? srv : pipe_rd) + 1;
 
-            struct timeval tv = { .tv_sec = 0, .tv_usec = 250000 }; /* 250ms */
-            int ready = select(maxfd, &rfds, NULL, NULL, &tv);
+            struct timeval tv    = {.tv_sec = 0, .tv_usec = 250000}; /* 250ms */
+            int            ready = select(maxfd, &rfds, NULL, NULL, &tv);
             if (ready < 0) break;
 
             if (FD_ISSET(pipe_rd, &rfds)) {
@@ -549,9 +559,7 @@ static void *session_thread(void *arg) {
                 goto cleanup;
             }
 
-            if (FD_ISSET(srv, &rfds)) {
-                fd = accept(srv, NULL, NULL);
-            }
+            if (FD_ISSET(srv, &rfds)) { fd = accept(srv, NULL, NULL); }
         }
         pthread_mutex_lock(&g_session_mtx);
         if (g_listen_sock == srv) g_listen_sock = INVALID_SOCK;
@@ -564,9 +572,21 @@ static void *session_thread(void *arg) {
      * cover traffic decision in the event loop. */
     int used_socks5 = (socks5_host != NULL);
 
-    if (host)       { crypto_wipe(host, strlen(host)); free(host); host = NULL; }
-    if (socks5_host){ crypto_wipe(socks5_host, strlen(socks5_host)); free(socks5_host); socks5_host = NULL; }
-    if (socks5_port){ crypto_wipe(socks5_port, strlen(socks5_port)); free(socks5_port); socks5_port = NULL; }
+    if (host) {
+        crypto_wipe(host, strlen(host));
+        free(host);
+        host = NULL;
+    }
+    if (socks5_host) {
+        crypto_wipe(socks5_host, strlen(socks5_host));
+        free(socks5_host);
+        socks5_host = NULL;
+    }
+    if (socks5_port) {
+        crypto_wipe(socks5_port, strlen(socks5_port));
+        free(socks5_port);
+        socks5_port = NULL;
+    }
 
     if (fd == INVALID_SOCK) {
         LOGE("connection failed");
@@ -600,9 +620,9 @@ static void *session_thread(void *arg) {
 
         if (has_prekey) {
             memcpy(self_priv, prekey_priv, KEY);
-            memcpy(self_pub,  prekey_pub,  KEY);
+            memcpy(self_pub, prekey_pub, KEY);
             crypto_wipe(prekey_priv, KEY);
-            crypto_wipe(prekey_pub,  KEY);
+            crypto_wipe(prekey_pub, KEY);
             has_prekey = 0;
         } else {
             gen_keypair(self_priv, self_pub);
@@ -669,9 +689,8 @@ static void *session_thread(void *arg) {
             domain_hash(peer_hash, "cipher fingerprint v2", peer_pub, KEY);
 
             char peer_fp_str[20];
-            snprintf(peer_fp_str, 20, "%02X%02X-%02X%02X-%02X%02X-%02X%02X",
-                     peer_hash[0], peer_hash[1], peer_hash[2], peer_hash[3],
-                     peer_hash[4], peer_hash[5], peer_hash[6], peer_hash[7]);
+            snprintf(peer_fp_str, 20, "%02X%02X-%02X%02X-%02X%02X-%02X%02X", peer_hash[0], peer_hash[1], peer_hash[2],
+                     peer_hash[3], peer_hash[4], peer_hash[5], peer_hash[6], peer_hash[7]);
 
             int fp_matched = 0;
             if (has_peer_fp) {
@@ -706,8 +725,7 @@ static void *session_thread(void *arg) {
         }
 
         /* Derive session keys */
-        if (session_init(&sess, we_init, self_priv, self_pub, peer_pub,
-                         sas_key) != 0) {
+        if (session_init(&sess, we_init, self_priv, self_pub, peer_pub, sas_key) != 0) {
             LOGE("key agreement failed (bad peer key)");
             crypto_wipe(sas_key, sizeof sas_key);
             jni_call_str(env, cb, mid_onHandshakeFailed, "Key agreement failed", "key_agree");
@@ -744,7 +762,23 @@ static void *session_thread(void *arg) {
      * ================================================================ */
 
     {
+        /* Poll both the pipe (for SAS confirmation / quit from Java) and
+         * the peer socket (for disconnect).  Without the socket check, a
+         * peer disconnect during SAS verification would go unnoticed until
+         * the user tapped Confirm or Back. */
         uint8_t hdr[3];
+        for (;;) {
+            struct pollfd sas_fds[2] = {{pipe_rd, POLLIN, 0}, {(int)fd, POLLIN | POLLHUP, 0}};
+            int           pr         = poll(sas_fds, 2, 1000); /* 1-second poll */
+            if (pr < 0 && errno == EINTR) continue;
+            if (pr < 0) break;
+            if (sas_fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
+                LOGE("peer disconnected during SAS verification");
+                jni_call_str(env, cb, mid_onHandshakeFailed, "Peer disconnected during verification", "sas_peer_dc");
+                goto cleanup_session;
+            }
+            if (sas_fds[0].revents & (POLLIN | POLLHUP | POLLERR)) break; /* pipe ready — read the command below */
+        }
         if (pipe_read_exact(pipe_rd, hdr, 3) != 0) {
             LOGE("pipe read failed waiting for SAS confirm");
             jni_call_str(env, cb, mid_onDisconnected, "Internal error", "sas_pipe");
@@ -907,7 +941,7 @@ static void *session_thread(void *arg) {
                     if (plen > MAX_MSG) {
                         LOGE("CMD_SEND payload too large: %d", (int)plen);
                         /* Drain oversized payload */
-                        uint8_t discard[512];
+                        uint8_t  discard[512];
                         uint16_t remaining = plen;
                         while (remaining > 0) {
                             size_t chunk = remaining < sizeof discard ? remaining : sizeof discard;
@@ -915,7 +949,10 @@ static void *session_thread(void *arg) {
                             remaining -= (uint16_t)chunk;
                         }
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        if (jni_callback_ok(env) != 0) { running = 0; break; }
+                        if (jni_callback_ok(env) != 0) {
+                            running = 0;
+                            break;
+                        }
                         continue;
                     }
 
@@ -926,15 +963,16 @@ static void *session_thread(void *arg) {
 
                     /* Encrypt and send */
                     uint8_t frame[FRAME_SZ], next_tx[KEY];
-                    if (frame_build(&sess,
-                                    msg_buf, plen,
-                                    frame, next_tx) != 0) {
+                    if (frame_build(&sess, msg_buf, plen, frame, next_tx) != 0) {
                         LOGE("frame_build failed");
                         crypto_wipe(frame, sizeof frame);
                         crypto_wipe(next_tx, sizeof next_tx);
                         crypto_wipe(msg_buf, plen);
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        if (jni_callback_ok(env) != 0) { running = 0; break; }
+                        if (jni_callback_ok(env) != 0) {
+                            running = 0;
+                            break;
+                        }
                         continue;
                     }
 
@@ -944,7 +982,10 @@ static void *session_thread(void *arg) {
                         crypto_wipe(next_tx, sizeof next_tx);
                         crypto_wipe(msg_buf, plen);
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        if (jni_callback_ok(env) != 0) { running = 0; continue; }
+                        if (jni_callback_ok(env) != 0) {
+                            running = 0;
+                            continue;
+                        }
                         jni_call_str(env, cb, mid_onDisconnected, "Send failed (connection lost)", "send_fail");
                         running = 0;
                         continue;
@@ -1010,21 +1051,21 @@ static void *session_thread(void *arg) {
 cleanup_keys:
     /* Handshake failed — wipe key material */
     crypto_wipe(self_priv, sizeof self_priv);
-    crypto_wipe(self_pub,  sizeof self_pub);
-    crypto_wipe(peer_pub,  sizeof peer_pub);
+    crypto_wipe(self_pub, sizeof self_pub);
+    crypto_wipe(peer_pub, sizeof peer_pub);
     crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
     goto cleanup;
 
 cleanup_session:
     /* Normal exit or post-handshake error — wipe session + keys */
     session_wipe(&sess);
-    crypto_wipe(self_pub,  sizeof self_pub);
-    crypto_wipe(peer_pub,  sizeof peer_pub);
+    crypto_wipe(self_pub, sizeof self_pub);
+    crypto_wipe(peer_pub, sizeof peer_pub);
 
 cleanup:
     /* Wipe pre-generated key material if still on the stack */
     crypto_wipe(prekey_priv, sizeof prekey_priv);
-    crypto_wipe(prekey_pub,  sizeof prekey_pub);
+    crypto_wipe(prekey_pub, sizeof prekey_pub);
     /* Close socket — clear the global first so nativeStop() won't
      * try to shutdown() a closed fd.  Mutex + value check ensures we
      * only clear if our fd is still the published value. */
@@ -1103,10 +1144,9 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
  * mode: 0 = listen, 1 = connect
  * Returns 0 on success, -1 on failure.
  */
-JNIEXPORT jint JNICALL
-Java_com_example_simplecipher_ChatActivity_nativeStart(
-        JNIEnv *env, jobject thiz, jint mode, jstring host, jint port,
-        jstring socks5_proxy, jobject callback) {
+JNIEXPORT jint JNICALL Java_com_example_simplecipher_ChatActivity_nativeStart(JNIEnv *env, jobject thiz, jint mode,
+                                                                              jstring host, jint port,
+                                                                              jstring socks5_proxy, jobject callback) {
 
     plat_init();
 
@@ -1126,21 +1166,19 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         /* Shutdown old session's sockets under mutex. */
         pthread_mutex_lock(&g_session_mtx);
         {
-            socket_t s = g_session_sock;
+            socket_t s     = g_session_sock;
             g_session_sock = INVALID_SOCK;
             if (s != INVALID_SOCK) sock_shutdown_both(s);
         }
         {
-            socket_t ls = g_listen_sock;
+            socket_t ls   = g_listen_sock;
             g_listen_sock = INVALID_SOCK;
             if (ls != INVALID_SOCK) close_sock(ls);
         }
         pthread_mutex_unlock(&g_session_mtx);
         /* Wait for thread to exit.  Poll g_session_active with short
          * sleeps rather than pthread_timedjoin_np (not available on Bionic). */
-        for (int i = 0; i < 20 && g_session_active; i++) {
-            usleep(100000);  /* 100ms × 20 = 2s max wait */
-        }
+        for (int i = 0; i < 20 && g_session_active; i++) { usleep(100000); /* 100ms × 20 = 2s max wait */ }
         if (g_session_active) {
             LOGE("previous session thread did not exit in time — detaching");
             /* Detach so the thread auto-cleans when it eventually exits.
@@ -1196,7 +1234,7 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     ta->mode    = (int)mode;
     ta->port    = (int)port;
     ta->pipe_rd = pipefd[0];
-    ta->gen     = ++g_session_gen;  /* unique generation for this session */
+    ta->gen     = ++g_session_gen; /* unique generation for this session */
 
     /* Copy host string (connect mode only).
      * GetStringUTFChars may return NULL on OOM (JNI spec).  If so,
@@ -1247,16 +1285,14 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
         if (p[0]) {
             const char *colon = strrchr(p, ':');
             if (colon && colon != p && colon[1]) {
-                size_t hlen = (size_t)(colon - p);
+                size_t hlen     = (size_t)(colon - p);
                 ta->socks5_host = strndup(p, hlen);
                 ta->socks5_port = strdup(colon + 1);
                 /* Defence in depth: reject non-loopback proxies.
                  * Blocking connect to a remote proxy can hang the
                  * session thread beyond nativeStop()'s reach. */
-                if (ta->socks5_host &&
-                    strcmp(ta->socks5_host, "127.0.0.1") != 0 &&
-                    strcmp(ta->socks5_host, "localhost") != 0 &&
-                    strcmp(ta->socks5_host, "::1") != 0) {
+                if (ta->socks5_host && strcmp(ta->socks5_host, "127.0.0.1") != 0 &&
+                    strcmp(ta->socks5_host, "localhost") != 0 && strcmp(ta->socks5_host, "::1") != 0) {
                     LOGE("SOCKS5 proxy must be localhost, got: %s", ta->socks5_host);
                     (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
                     thread_arg_wipe_and_free(ta);
@@ -1292,10 +1328,10 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     /* Copy pre-generated key into thread arg, then wipe globals */
     if (g_prekey_valid) {
         memcpy(ta->prekey_priv, g_prekey_priv, KEY);
-        memcpy(ta->prekey_pub,  g_prekey_pub,  KEY);
+        memcpy(ta->prekey_pub, g_prekey_pub, KEY);
         ta->has_prekey = 1;
         crypto_wipe(g_prekey_priv, KEY);
-        crypto_wipe(g_prekey_pub,  KEY);
+        crypto_wipe(g_prekey_pub, KEY);
         g_prekey_valid = 0;
     } else {
         ta->has_prekey = 0;
@@ -1322,21 +1358,19 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
     }
 
     /* Look up all 7 callback method IDs */
-    ta->mid_onConnected        = (*env)->GetMethodID(env, cls, "onConnected",        "()V");
-    ta->mid_onConnectionFailed = (*env)->GetMethodID(env, cls, "onConnectionFailed", "(Ljava/lang/String;)V");
-    ta->mid_onSasReady         = (*env)->GetMethodID(env, cls, "onSasReady",         "(Ljava/lang/String;)V");
-    ta->mid_onHandshakeFailed  = (*env)->GetMethodID(env, cls, "onHandshakeFailed",  "(Ljava/lang/String;)V");
-    ta->mid_onMessageReceived  = (*env)->GetMethodID(env, cls, "onMessageReceived",  "(Ljava/lang/String;)V");
-    ta->mid_onSendResult       = (*env)->GetMethodID(env, cls, "onSendResult",       "(Z)V");
-    ta->mid_onDisconnected     = (*env)->GetMethodID(env, cls, "onDisconnected",     "(Ljava/lang/String;)V");
-    ta->mid_onPeerFingerprintReady = (*env)->GetMethodID(env, cls, "onPeerFingerprintReady",
-                                                          "(Ljava/lang/String;Z)V");
+    ta->mid_onConnected            = (*env)->GetMethodID(env, cls, "onConnected", "()V");
+    ta->mid_onConnectionFailed     = (*env)->GetMethodID(env, cls, "onConnectionFailed", "(Ljava/lang/String;)V");
+    ta->mid_onSasReady             = (*env)->GetMethodID(env, cls, "onSasReady", "(Ljava/lang/String;)V");
+    ta->mid_onHandshakeFailed      = (*env)->GetMethodID(env, cls, "onHandshakeFailed", "(Ljava/lang/String;)V");
+    ta->mid_onMessageReceived      = (*env)->GetMethodID(env, cls, "onMessageReceived", "(Ljava/lang/String;)V");
+    ta->mid_onSendResult           = (*env)->GetMethodID(env, cls, "onSendResult", "(Z)V");
+    ta->mid_onDisconnected         = (*env)->GetMethodID(env, cls, "onDisconnected", "(Ljava/lang/String;)V");
+    ta->mid_onPeerFingerprintReady = (*env)->GetMethodID(env, cls, "onPeerFingerprintReady", "(Ljava/lang/String;Z)V");
 
     /* Verify all method IDs resolved */
-    if (!ta->mid_onConnected || !ta->mid_onConnectionFailed ||
-        !ta->mid_onSasReady || !ta->mid_onHandshakeFailed ||
-        !ta->mid_onMessageReceived || !ta->mid_onSendResult ||
-        !ta->mid_onDisconnected || !ta->mid_onPeerFingerprintReady) {
+    if (!ta->mid_onConnected || !ta->mid_onConnectionFailed || !ta->mid_onSasReady || !ta->mid_onHandshakeFailed ||
+        !ta->mid_onMessageReceived || !ta->mid_onSendResult || !ta->mid_onDisconnected ||
+        !ta->mid_onPeerFingerprintReady) {
         LOGE("failed to resolve one or more callback method IDs");
         (*env)->DeleteGlobalRef(env, ta->callback);
         thread_arg_wipe_and_free(ta);
@@ -1381,9 +1415,8 @@ Java_com_example_simplecipher_ChatActivity_nativeStart(
  * full (EAGAIN) or any other error occurred.  The Java side uses this
  * to avoid showing phantom "sent" messages under backpressure.
  */
-JNIEXPORT jboolean JNICALL
-Java_com_example_simplecipher_ChatActivity_nativePostCommand(
-        JNIEnv *env, jobject thiz, jint cmd, jbyteArray payload) {
+JNIEXPORT jboolean JNICALL Java_com_example_simplecipher_ChatActivity_nativePostCommand(JNIEnv *env, jobject thiz,
+                                                                                        jint cmd, jbyteArray payload) {
 
     int wr = g_pipe_wr;
     if (wr < 0) {
@@ -1393,7 +1426,7 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
 
     /* Determine payload length */
     uint16_t plen = 0;
-    jbyte *pbuf = NULL;
+    jbyte   *pbuf = NULL;
     if (payload) {
         jsize jlen = (*env)->GetArrayLength(env, payload);
         if (jlen > MAX_MSG) {
@@ -1416,12 +1449,10 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
     buf[0] = (uint8_t)cmd;
     buf[1] = (uint8_t)(plen & 0xFF);
     buf[2] = (uint8_t)((plen >> 8) & 0xFF);
-    if (plen > 0) {
-        memcpy(buf + 3, pbuf, plen);
-    }
+    if (plen > 0) { memcpy(buf + 3, pbuf, plen); }
 
-    jboolean ok = JNI_TRUE;
-    ssize_t written = write(wr, buf, 3 + plen);
+    jboolean ok      = JNI_TRUE;
+    ssize_t  written = write(wr, buf, 3 + plen);
     if (written < 0) {
         ok = JNI_FALSE;
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -1455,9 +1486,7 @@ Java_com_example_simplecipher_ChatActivity_nativePostCommand(
  *
  * Called from ChatActivity.onStop(), onBackPressed(), and onDestroy().
  */
-JNIEXPORT void JNICALL
-Java_com_example_simplecipher_ChatActivity_nativeStop(
-        JNIEnv *env, jobject thiz) {
+JNIEXPORT void JNICALL Java_com_example_simplecipher_ChatActivity_nativeStop(JNIEnv *env, jobject thiz) {
     (void)env;
     (void)thiz;
 
@@ -1474,25 +1503,23 @@ Java_com_example_simplecipher_ChatActivity_nativeStop(
      * generation-guarded publish/clear sequences. */
     pthread_mutex_lock(&g_session_mtx);
     {
-        socket_t s = g_session_sock;
+        socket_t s     = g_session_sock;
         g_session_sock = INVALID_SOCK;
         if (s != INVALID_SOCK) sock_shutdown_both(s);
     }
     {
-        socket_t ls = g_listen_sock;
+        socket_t ls   = g_listen_sock;
         g_listen_sock = INVALID_SOCK;
         if (ls != INVALID_SOCK) close_sock(ls);
     }
     pthread_mutex_unlock(&g_session_mtx);
 }
 
-JNIEXPORT jstring JNICALL
-Java_com_example_simplecipher_MainActivity_nativeGenerateKey(
-        JNIEnv *env, jobject thiz) {
+JNIEXPORT jstring JNICALL Java_com_example_simplecipher_MainActivity_nativeGenerateKey(JNIEnv *env, jobject thiz) {
     (void)thiz;
     if (g_prekey_valid) {
         crypto_wipe(g_prekey_priv, KEY);
-        crypto_wipe(g_prekey_pub,  KEY);
+        crypto_wipe(g_prekey_pub, KEY);
         g_prekey_valid = 0;
     }
     gen_keypair(g_prekey_priv, g_prekey_pub);
@@ -1508,13 +1535,12 @@ Java_com_example_simplecipher_MainActivity_nativeGenerateKey(
     return result; /* NULL on OOM — Java side handles gracefully */
 }
 
-JNIEXPORT void JNICALL
-Java_com_example_simplecipher_MainActivity_nativeWipePreKey(
-        JNIEnv *env, jobject thiz) {
-    (void)env; (void)thiz;
+JNIEXPORT void JNICALL Java_com_example_simplecipher_MainActivity_nativeWipePreKey(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
     if (g_prekey_valid) {
         crypto_wipe(g_prekey_priv, KEY);
-        crypto_wipe(g_prekey_pub,  KEY);
+        crypto_wipe(g_prekey_pub, KEY);
         g_prekey_valid = 0;
     }
     if (g_peer_fp_valid) {
@@ -1523,9 +1549,8 @@ Java_com_example_simplecipher_MainActivity_nativeWipePreKey(
     }
 }
 
-JNIEXPORT void JNICALL
-Java_com_example_simplecipher_MainActivity_nativeSetPeerFingerprint(
-        JNIEnv *env, jobject thiz, jstring fingerprint) {
+JNIEXPORT void JNICALL Java_com_example_simplecipher_MainActivity_nativeSetPeerFingerprint(JNIEnv *env, jobject thiz,
+                                                                                           jstring fingerprint) {
     (void)thiz;
     const char *fp_str = (*env)->GetStringUTFChars(env, fingerprint, NULL);
     if (!fp_str) {
@@ -1543,8 +1568,8 @@ Java_com_example_simplecipher_MainActivity_nativeSetPeerFingerprint(
     (*env)->ReleaseStringUTFChars(env, fingerprint, fp_str);
 }
 
-JNIEXPORT void JNICALL
-Java_com_example_simplecipher_MainActivity_nativeClearPeerFingerprint(JNIEnv *env, jobject thiz) {
+JNIEXPORT void JNICALL Java_com_example_simplecipher_MainActivity_nativeClearPeerFingerprint(JNIEnv *env,
+                                                                                             jobject thiz) {
     (void)env;
     (void)thiz;
     crypto_wipe(g_peer_fp, sizeof g_peer_fp);
