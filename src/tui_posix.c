@@ -234,6 +234,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                     line[line_len]   = '\0';
                 }
             }
+            crypto_wipe(inbuf, sizeof inbuf); /* wipe raw keystrokes */
             /* Single redraw after processing all buffered bytes */
             tui_draw_input(line, line_len);
         }
