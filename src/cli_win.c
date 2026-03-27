@@ -255,117 +255,116 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                     }
                 }
             }
-        }
 
-        if (wr == WAIT_TIMEOUT) continue;
+            if (wr == WAIT_TIMEOUT) continue;
 
-        /* ----- Local keyboard input ----- */
-        if (wr == WAIT_OBJECT_0) {
-            INPUT_RECORD recs[32];
-            DWORD        nrec = 0;
-            DWORD        i;
+            /* ----- Local keyboard input ----- */
+            if (wr == WAIT_OBJECT_0) {
+                INPUT_RECORD recs[32];
+                DWORD        nrec = 0;
+                DWORD        i;
 
-            if (!ReadConsoleInputA(h_in, recs, 32, &nrec)) {
-                loop_error = 1;
-                break;
-            }
-
-            for (i = 0; i < nrec && g_running; i++) {
-                KEY_EVENT_RECORD *k;
-                char              ch;
-                int               send_rc;
-
-                if (recs[i].EventType != KEY_EVENT) continue;
-                k = &recs[i].Event.KeyEvent;
-                if (!k->bKeyDown) continue;
-
-                if (k->wVirtualKeyCode == VK_BACK || k->uChar.AsciiChar == '\b') {
-                    if (line_len > 0) {
-                        char  bs[3] = {'\b', ' ', '\b'};
-                        DWORD bsw;
-                        line[--line_len] = '\0';
-                        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), bs, 3, &bsw, NULL);
-                    }
-                    continue;
+                if (!ReadConsoleInputA(h_in, recs, 32, &nrec)) {
+                    loop_error = 1;
+                    break;
                 }
 
-                if (k->wVirtualKeyCode == VK_RETURN || k->uChar.AsciiChar == '\r') {
-                    {
-                        char  nl = '\n';
-                        DWORD nlw;
-                        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), &nl, 1, &nlw, NULL);
-                    }
+                for (i = 0; i < nrec && g_running; i++) {
+                    KEY_EVENT_RECORD *k;
+                    char              ch;
+                    int               send_rc;
 
-                    if (line_len == 0) {
-                        win_redraw_input(line, line_len);
+                    if (recs[i].EventType != KEY_EVENT) continue;
+                    k = &recs[i].Event.KeyEvent;
+                    if (!k->bKeyDown) continue;
+
+                    if (k->wVirtualKeyCode == VK_BACK || k->uChar.AsciiChar == '\b') {
+                        if (line_len > 0) {
+                            char  bs[3] = {'\b', ' ', '\b'};
+                            DWORD bsw;
+                            line[--line_len] = '\0';
+                            WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), bs, 3, &bsw, NULL);
+                        }
                         continue;
                     }
-                    if (out_active) {
-                        win_print_status("[send still in progress -- press Enter again shortly]", line, line_len);
-                        continue;
-                    }
 
-                    if (frame_build(sess, (const uint8_t *)line, (uint16_t)line_len, out_frame, out_next_tx) != 0) {
-                        loop_error = 1;
-                        break;
-                    }
-                    memcpy(out_text, line, line_len);
-                    out_text[line_len] = '\0';
-                    crypto_wipe(line, sizeof line);
-                    line_len           = 0;
-                    out_off            = 0;
-                    out_active         = 1;
-                    out_frame_start_ms = GetTickCount64();
+                    if (k->wVirtualKeyCode == VK_RETURN || k->uChar.AsciiChar == '\r') {
+                        {
+                            char  nl = '\n';
+                            DWORD nlw;
+                            WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), &nl, 1, &nlw, NULL);
+                        }
 
-                    send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
-                    if (send_rc < 0) {
-                        win_print_status("[send error]", line, line_len);
-                        loop_error = 1;
-                        break;
-                    }
-                    if (send_rc == 0) {
-                        memcpy(sess->tx, out_next_tx, KEY);
-                        sess->tx_seq++;
-                        /* Cover timer NOT reset on real sends — schedule runs independently
+                        if (line_len == 0) {
+                            win_redraw_input(line, line_len);
+                            continue;
+                        }
+                        if (out_active) {
+                            win_print_status("[send still in progress -- press Enter again shortly]", line, line_len);
+                            continue;
+                        }
+
+                        if (frame_build(sess, (const uint8_t *)line, (uint16_t)line_len, out_frame, out_next_tx) != 0) {
+                            loop_error = 1;
+                            break;
+                        }
+                        memcpy(out_text, line, line_len);
+                        out_text[line_len] = '\0';
+                        crypto_wipe(line, sizeof line);
+                        line_len           = 0;
+                        out_off            = 0;
+                        out_active         = 1;
+                        out_frame_start_ms = GetTickCount64();
+
+                        send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
+                        if (send_rc < 0) {
+                            win_print_status("[send error]", line, line_len);
+                            loop_error = 1;
+                            break;
+                        }
+                        if (send_rc == 0) {
+                            memcpy(sess->tx, out_next_tx, KEY);
+                            sess->tx_seq++;
+                            /* Cover timer NOT reset on real sends — schedule runs independently
                              * so real messages blend into the cover traffic pattern. */
-                        out_active = 0;
-                        win_print_chat(" me", out_text, line, line_len);
-                        crypto_wipe(out_frame, sizeof out_frame);
-                        crypto_wipe(out_next_tx, sizeof out_next_tx);
-                        crypto_wipe(out_text, sizeof out_text);
-                    } else {
-                        win_redraw_input(line, line_len);
+                            out_active = 0;
+                            win_print_chat(" me", out_text, line, line_len);
+                            crypto_wipe(out_frame, sizeof out_frame);
+                            crypto_wipe(out_next_tx, sizeof out_next_tx);
+                            crypto_wipe(out_text, sizeof out_text);
+                        } else {
+                            win_redraw_input(line, line_len);
+                        }
+                        continue;
                     }
-                    continue;
-                }
 
-                ch = k->uChar.AsciiChar;
-                if (ch >= 0x20 && ch <= 0x7E) {
-                    if (line_len < (size_t)MAX_MSG_RATCHET) {
-                        DWORD chw;
-                        line[line_len++] = ch;
-                        line[line_len]   = '\0';
-                        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), &ch, 1, &chw, NULL);
+                    ch = k->uChar.AsciiChar;
+                    if (ch >= 0x20 && ch <= 0x7E) {
+                        if (line_len < (size_t)MAX_MSG_RATCHET) {
+                            DWORD chw;
+                            line[line_len++] = ch;
+                            line[line_len]   = '\0';
+                            WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), &ch, 1, &chw, NULL);
+                        }
+                        continue;
                     }
-                    continue;
                 }
-            }
-            crypto_wipe(recs, sizeof recs); /* wipe raw keystrokes */
-            if (loop_error) break;
-            continue;
-        }
-
-        /* ----- Socket activity: incoming data, writable socket, close ----- */
-        if (wr == WAIT_OBJECT_0 + 1) {
-            WSANETWORKEVENTS ne;
-
-            if (WSAEnumNetworkEvents(fd, net_ev, &ne) != 0) {
-                loop_error = 1;
-                break;
+                crypto_wipe(recs, sizeof recs); /* wipe raw keystrokes */
+                if (loop_error) break;
+                continue;
             }
 
-            if (ne.lNetworkEvents & FD_READ) {
-                /* Accumulate incoming bytes until a full 512-byte frame arrives.
+            /* ----- Socket activity: incoming data, writable socket, close ----- */
+            if (wr == WAIT_OBJECT_0 + 1) {
+                WSANETWORKEVENTS ne;
+
+                if (WSAEnumNetworkEvents(fd, net_ev, &ne) != 0) {
+                    loop_error = 1;
+                    break;
+                }
+
+                if (ne.lNetworkEvents & FD_READ) {
+                    /* Accumulate incoming bytes until a full 512-byte frame arrives.
                      * WSAEventSelect puts the socket in non-blocking mode, so recv()
                      * returns WSAEWOULDBLOCK when no more bytes are available right now.
                      * We loop here to drain everything the OS has buffered before
@@ -377,116 +376,116 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                      * peer from stalling the Windows event loop indefinitely by sending
                      * a partial frame and then going silent. */
 
-                /* Check deadline before reading: disconnect if a frame has been
+                    /* Check deadline before reading: disconnect if a frame has been
                      * partially received for more than 30 seconds. */
-                if (in_have > 0 && (GetTickCount64() - in_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
-                    win_print_status("[peer stalled mid-frame: disconnecting]", line, line_len);
-                    loop_error = 1;
-                    break;
-                }
+                    if (in_have > 0 && (GetTickCount64() - in_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
+                        win_print_status("[peer stalled mid-frame: disconnecting]", line, line_len);
+                        loop_error = 1;
+                        break;
+                    }
 
-                for (;;) {
-                    int r = recv(fd, (char *)in_frame + in_have, (int)(FRAME_SZ - in_have), 0);
-                    if (r > 0) {
-                        /* Record when the first byte of this frame arrived. */
-                        if (in_have == 0) in_frame_start_ms = GetTickCount64();
-                        in_have += (size_t)r;
-                        if (in_have == FRAME_SZ) {
-                            uint16_t plen = 0;
+                    for (;;) {
+                        int r = recv(fd, (char *)in_frame + in_have, (int)(FRAME_SZ - in_have), 0);
+                        if (r > 0) {
+                            /* Record when the first byte of this frame arrived. */
+                            if (in_have == 0) in_frame_start_ms = GetTickCount64();
+                            in_have += (size_t)r;
+                            if (in_have == FRAME_SZ) {
+                                uint16_t plen = 0;
 
-                            int fo_rc = frame_open(sess, in_frame, plain, &plen);
-                            if (fo_rc != 0) {
+                                int fo_rc = frame_open(sess, in_frame, plain, &plen);
+                                if (fo_rc != 0) {
+                                    crypto_wipe(plain, sizeof plain);
+                                    crypto_wipe(in_frame, sizeof in_frame);
+                                    in_have           = 0;
+                                    in_frame_start_ms = 0;
+                                    if (fo_rc == -2 || ++auth_fails >= MAX_AUTH_FAILURES) {
+                                        win_print_status("[session error: authentication or sequence failure]", line,
+                                                         line_len);
+                                        loop_error = 1;
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                auth_fails = 0;
+                                if (plen > 0) { /* len==0 is cover-traffic dummy */
+                                    plain[plen] = '\0';
+                                    sanitize_peer_text(plain, plen);
+                                    win_print_chat("peer", (char *)plain, line, line_len);
+                                }
                                 crypto_wipe(plain, sizeof plain);
                                 crypto_wipe(in_frame, sizeof in_frame);
                                 in_have           = 0;
-                                in_frame_start_ms = 0;
-                                if (fo_rc == -2 || ++auth_fails >= MAX_AUTH_FAILURES) {
-                                    win_print_status("[session error: authentication or sequence failure]", line,
-                                                     line_len);
-                                    loop_error = 1;
-                                    break;
-                                }
+                                in_frame_start_ms = 0; /* frame complete; reset timer */
                                 continue;
                             }
-                            auth_fails = 0;
-                            if (plen > 0) { /* len==0 is cover-traffic dummy */
-                                plain[plen] = '\0';
-                                sanitize_peer_text(plain, plen);
-                                win_print_chat("peer", (char *)plain, line, line_len);
-                            }
-                            crypto_wipe(plain, sizeof plain);
-                            crypto_wipe(in_frame, sizeof in_frame);
-                            in_have           = 0;
-                            in_frame_start_ms = 0; /* frame complete; reset timer */
                             continue;
                         }
-                        continue;
-                    }
-                    if (r == 0) {
+                        if (r == 0) {
+                            win_print_status("[peer disconnected]", line, line_len);
+                            g_running = 0;
+                            break;
+                        }
+                        if (WSAGetLastError() == WSAEWOULDBLOCK) break;
                         win_print_status("[peer disconnected]", line, line_len);
-                        g_running = 0;
+                        loop_error = 1;
                         break;
                     }
-                    if (WSAGetLastError() == WSAEWOULDBLOCK) break;
-                    win_print_status("[peer disconnected]", line, line_len);
-                    loop_error = 1;
-                    break;
+                    if (loop_error || !g_running) break;
                 }
-                if (loop_error || !g_running) break;
-            }
 
-            if (out_active && (ne.lNetworkEvents & FD_WRITE)) {
-                /* Deadline: abort if partial send pending too long. */
-                if ((GetTickCount64() - out_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
-                    win_print_status("[send timeout]", line, line_len);
-                    loop_error = 1;
-                    break;
-                }
-                int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
-                if (send_rc < 0) {
-                    win_print_status("[send error]", line, line_len);
-                    loop_error = 1;
-                    break;
-                }
-                if (send_rc == 0) {
-                    memcpy(sess->tx, out_next_tx, KEY);
-                    sess->tx_seq++;
-                    /* Reset cover timer only for cover frames (out_text[0]==0).
+                if (out_active && (ne.lNetworkEvents & FD_WRITE)) {
+                    /* Deadline: abort if partial send pending too long. */
+                    if ((GetTickCount64() - out_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
+                        win_print_status("[send timeout]", line, line_len);
+                        loop_error = 1;
+                        break;
+                    }
+                    int send_rc = win_try_send(fd, out_frame, FRAME_SZ, &out_off);
+                    if (send_rc < 0) {
+                        win_print_status("[send error]", line, line_len);
+                        loop_error = 1;
+                        break;
+                    }
+                    if (send_rc == 0) {
+                        memcpy(sess->tx, out_next_tx, KEY);
+                        sess->tx_seq++;
+                        /* Reset cover timer only for cover frames (out_text[0]==0).
                          * Real message sends must NOT reset the timer — otherwise an
                          * attacker forcing backpressure can correlate cover timing with
                          * real user traffic. */
-                    if (cover && !out_text[0]) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
-                    out_active = 0;
-                    /* out_text[0]==0 means this was a cover frame — no UI update */
-                    if (out_text[0]) win_print_chat(" me", out_text, line, line_len);
-                    crypto_wipe(out_frame, sizeof out_frame);
-                    crypto_wipe(out_next_tx, sizeof out_next_tx);
-                    crypto_wipe(out_text, sizeof out_text);
+                        if (cover && !out_text[0]) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
+                        out_active = 0;
+                        /* out_text[0]==0 means this was a cover frame — no UI update */
+                        if (out_text[0]) win_print_chat(" me", out_text, line, line_len);
+                        crypto_wipe(out_frame, sizeof out_frame);
+                        crypto_wipe(out_next_tx, sizeof out_next_tx);
+                        crypto_wipe(out_text, sizeof out_text);
+                    }
                 }
+
+                if (ne.lNetworkEvents & FD_CLOSE) {
+                    win_print_status("[peer disconnected]", line, line_len);
+                    break;
+                }
+                continue;
             }
 
-            if (ne.lNetworkEvents & FD_CLOSE) {
-                win_print_status("[peer disconnected]", line, line_len);
-                break;
-            }
-            continue;
+            loop_error = 1;
+            break;
         }
 
-        loop_error = 1;
-        break;
+        crypto_wipe(in_frame, sizeof in_frame);
+        crypto_wipe(out_frame, sizeof out_frame);
+        crypto_wipe(out_next_tx, sizeof out_next_tx);
+        crypto_wipe(out_text, sizeof out_text);
+        crypto_wipe(line, sizeof line);
+        crypto_wipe(plain, sizeof plain);
     }
 
-    crypto_wipe(in_frame, sizeof in_frame);
-    crypto_wipe(out_frame, sizeof out_frame);
-    crypto_wipe(out_next_tx, sizeof out_next_tx);
-    crypto_wipe(out_text, sizeof out_text);
-    crypto_wipe(line, sizeof line);
-    crypto_wipe(plain, sizeof plain);
-}
-
-if (fd != INVALID_SOCK) WSAEventSelect(fd, nullptr, 0);
-WSACloseEvent(net_ev);
-win_console_restore(h_in, h_in_mode);
+    if (fd != INVALID_SOCK) WSAEventSelect(fd, nullptr, 0);
+    WSACloseEvent(net_ev);
+    win_console_restore(h_in, h_in_mode);
 }
 
 #endif /* _WIN32 || _WIN64 */
