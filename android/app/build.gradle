@@ -105,7 +105,7 @@ dependencies {
     /* ZXing: only included in the 'full' flavor.
      * core = QR code generation (display your fingerprint as QR)
      * embedded = QR code scanning with camera */
-    fullImplementation 'com.google.zxing:core:3.5.3'
+    fullImplementation 'com.google.zxing:core:3.5.4'
     fullImplementation 'com.journeyapps:zxing-android-embedded:4.3.0'
 
     /* Android-specific regression tests (onSendResult ordering, port
