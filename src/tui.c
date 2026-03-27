@@ -471,9 +471,20 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
     WSAEventSelect(sas_fd, sas_ev_win, FD_CLOSE); /* only disconnect, not data */
 #endif
 
+    uint64_t sas_deadline = monotonic_ms() + 300000; /* 5-minute timeout */
+
     while (pos < (int)sizeof(typed) - 1 && g_running) {
+        /* Check deadline on every iteration */
+        if (monotonic_ms() >= sas_deadline) {
+            crypto_wipe(typed, sizeof typed);
+#ifdef _WIN32
+            WSAEventSelect(sas_fd, sas_ev_win, 0);
+            WSACloseEvent(sas_ev_win);
+#endif
+            return 0; /* timeout — treated as abort */
+        }
 #ifndef _WIN32
-        struct pollfd pfd[2] = {{STDIN_FILENO, POLLIN, 0}, {(int)sas_fd, POLLIN | POLLHUP, 0}};
+        struct pollfd pfd[2] = {{STDIN_FILENO, POLLIN, 0}, {(int)sas_fd, 0, 0}};
         int           pr     = poll(pfd, 2, 250);
         if (pr <= 0) continue;
         if (pfd[1].revents & (POLLHUP | POLLERR)) {

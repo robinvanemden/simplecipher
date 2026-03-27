@@ -754,7 +754,7 @@ int main(int argc, char *argv[]) {
 #else
             ssize_t rn = -1;
             {
-                struct pollfd sas_fds[2]   = {{STDIN_FILENO, POLLIN, 0}, {g_fd, POLLIN | POLLHUP, 0}};
+                struct pollfd sas_fds[2]   = {{STDIN_FILENO, POLLIN, 0}, {g_fd, 0, 0}};
                 uint64_t      sas_deadline = monotonic_ms() + 300000; /* 5-minute timeout */
                 while (g_running) {
                     int64_t remain = (int64_t)(sas_deadline - monotonic_ms());
