@@ -730,27 +730,47 @@ int main(int argc, char *argv[]) {
          * immediately instead of leaving the user stuck. */
         {
 #if defined(_WIN32) || defined(_WIN64)
-            /* WaitForMultipleObjects covers the full 5-minute timeout AND
-             * watches the peer socket for disconnect — no gap. */
-            HANDLE   h_stdin = GetStdHandle(STD_INPUT_HANDLE);
-            WSAEVENT sas_ev  = WSACreateEvent();
-            WSAEventSelect(g_fd, sas_ev, FD_CLOSE); /* only disconnect, not data */
-            HANDLE sas_waits[2] = {h_stdin, sas_ev};
-            DWORD  wr           = WaitForMultipleObjects(2, sas_waits, FALSE, 300000);
-            WSAEventSelect(g_fd, sas_ev, 0); /* clear before closing */
+            /* Loop with 1-second waits so Ctrl+C (which sets g_running=0
+             * from the console handler thread) is detected promptly.
+             * Also watches peer socket for disconnect and enforces 5-min deadline. */
+            HANDLE   h_stdin    = GetStdHandle(STD_INPUT_HANDLE);
+            WSAEVENT sas_ev     = WSACreateEvent();
+            uint64_t sas_dl_win = GetTickCount64() + 300000;
+            int      rn         = -1;
+            WSAEventSelect(g_fd, sas_ev, FD_CLOSE);
+            {
+                HANDLE sas_waits[2] = {h_stdin, sas_ev};
+                while (g_running) {
+                    uint64_t now_w = GetTickCount64();
+                    if (now_w >= sas_dl_win) {
+                        printf("SAS verification timed out.\n");
+                        rc = EXIT_ABORT;
+                        WSAEventSelect(g_fd, sas_ev, 0);
+                        WSACloseEvent(sas_ev);
+                        goto out;
+                    }
+                    DWORD wr = WaitForMultipleObjects(2, sas_waits, FALSE, 1000);
+                    if (wr == WAIT_OBJECT_0 + 1) {
+                        fprintf(stderr, "Peer disconnected during SAS verification.\n");
+                        rc = EXIT_NET;
+                        WSAEventSelect(g_fd, sas_ev, 0);
+                        WSACloseEvent(sas_ev);
+                        goto out;
+                    }
+                    if (wr == WAIT_OBJECT_0) {
+                        rn = _read(0, typed_sas, (unsigned)(sizeof typed_sas - 1));
+                        break;
+                    }
+                    /* WAIT_TIMEOUT: loop back, recheck g_running + deadline */
+                }
+            }
+            WSAEventSelect(g_fd, sas_ev, 0);
             WSACloseEvent(sas_ev);
-            if (wr == WAIT_TIMEOUT) {
-                printf("SAS verification timed out.\n");
+            if (!g_running) {
+                printf("Aborted.\n");
                 rc = EXIT_ABORT;
                 goto out;
             }
-            if (wr == WAIT_OBJECT_0 + 1) {
-                fprintf(stderr, "Peer disconnected during SAS verification.\n");
-                rc = EXIT_NET;
-                goto out;
-            }
-            /* wr == WAIT_OBJECT_0: stdin ready */
-            int rn = _read(0, typed_sas, (unsigned)(sizeof typed_sas - 1));
 #else
             ssize_t rn = -1;
             {
