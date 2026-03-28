@@ -16,7 +16,7 @@ The scrambled, unreadable version of a message after [encryption](#encryption) h
 
 The process of scrambling a message so that only the intended recipient can read it. SimpleCipher uses [XChaCha20-Poly1305](#xchacha20-poly1305) to encrypt every chat message. *See [PROTOCOL.md](PROTOCOL.md)*
 
-### End-to-end encryption
+### End-to-end encryption (E2EE)
 
 A design where messages are encrypted on the sender's device and decrypted only on the recipient's device. No server, router, or middleman can read them. SimpleCipher is entirely end-to-end: there is no server at all, just a direct connection between two peers. *See [PROTOCOL.md](PROTOCOL.md)*
 
@@ -42,7 +42,7 @@ A piece of secret data used to lock ([encrypt](#encryption)) and unlock (decrypt
 
 ### Man-in-the-middle (MITM)
 
-An attack where someone secretly intercepts communication between two people, potentially reading or altering messages. SimpleCipher defeats this with a [commitment scheme](#commitment-scheme) and [SAS](#sas) verification. *See [PROTOCOL.md](PROTOCOL.md#2-commitment-scheme-anti-mitm)*
+An attack where someone secretly intercepts communication between two people, potentially reading or altering messages. SimpleCipher defeats this with a [commitment scheme](#commitment-scheme) and [SAS](#sas-short-authentication-string) verification. *See [PROTOCOL.md](PROTOCOL.md#2-commitment-scheme-anti-mitm)*
 
 ### Plaintext
 
@@ -62,7 +62,7 @@ A single conversation between two peers, from connection to disconnection. Each 
 
 Terms for readers who want to understand how SimpleCipher's protocol works under the hood.
 
-### AEAD
+### AEAD (Authenticated Encryption with Associated Data)
 
 Authenticated Encryption with Associated Data. [Encryption](#encryption) that also proves the message was not tampered with. SimpleCipher uses [XChaCha20-Poly1305](#xchacha20-poly1305) as its AEAD cipher. The "associated data" (the sequence number) is authenticated but not encrypted: visible, yet tamper-proof. *See [PROTOCOL.md](PROTOCOL.md#aead)*
 
@@ -72,7 +72,7 @@ A system using two mathematically related keys: a public key (shared openly) and
 
 ### BLAKE2b
 
-A fast, secure hash function that takes any input and produces a fixed 32-byte output. The same input always gives the same output, but the process cannot be reversed. SimpleCipher uses BLAKE2b for [commitments](#commitment-scheme), [key derivation](#kdf), [fingerprints](#fingerprint), and domain separation, all via [Monocypher](#monocypher). *See [PROTOCOL.md](PROTOCOL.md#blake2b)*
+A fast, secure hash function that takes any input and produces a fixed 32-byte output. The same input always gives the same output, but the process cannot be reversed. SimpleCipher uses BLAKE2b for [commitments](#commitment-scheme), [key derivation](#kdf-key-derivation-function), [fingerprints](#fingerprint), and domain separation, all via [Monocypher](#monocypher). *See [PROTOCOL.md](PROTOCOL.md#blake2b)*
 
 ### CDH
 
@@ -84,7 +84,7 @@ See [Ratchet (symmetric/chain)](#ratchet-symmetricchain).
 
 ### Commitment scheme
 
-A two-phase protocol: first *commit* (send a [hash](#blake2b) of your value), then *reveal* (send the actual value). The receiver checks that the hash matches. In SimpleCipher, both sides commit to their public keys before revealing them. This prevents a [man-in-the-middle](#man-in-the-middle-mitm) from seeing one key and crafting a fake key that produces a matching [SAS](#sas) code. *See [PROTOCOL.md](PROTOCOL.md#commitment-scheme)*
+A two-phase protocol: first *commit* (send a [hash](#blake2b) of your value), then *reveal* (send the actual value). The receiver checks that the hash matches. In SimpleCipher, both sides commit to their public keys before revealing them. This prevents a [man-in-the-middle](#man-in-the-middle-mitm) from seeing one key and crafting a fake key that produces a matching [SAS](#sas-short-authentication-string) code. *See [PROTOCOL.md](PROTOCOL.md#commitment-scheme)*
 
 ### Cover traffic
 
@@ -104,13 +104,13 @@ A technique that ensures hashing the same data for different purposes produces u
 
 ### Double ratchet
 
-The combination of a [symmetric chain ratchet](#ratchet-symmetricchain) ([forward secrecy](#forward-secrecy)) and a [DH ratchet](#ratchet-dh) ([post-compromise security](#post-compromise-security)). This is the same architecture that Signal uses. SimpleCipher implements both ratchets across `crypto.c` and `ratchet.c`. *See [PROTOCOL.md](PROTOCOL.md#4-encrypted-messaging-with-forward-secrecy-and-post-compromise-security)*
+The combination of a [symmetric chain ratchet](#ratchet-symmetricchain) ([forward secrecy](#forward-secrecy)) and a [DH ratchet](#ratchet-dh) ([post-compromise security](#post-compromise-security-pcs)). This is the same architecture that Signal uses. SimpleCipher implements both ratchets across `crypto.c` and `ratchet.c`. *See [PROTOCOL.md](PROTOCOL.md#4-encrypted-messaging-with-forward-secrecy-and-post-compromise-security)*
 
-### KDF
+### KDF (Key Derivation Function)
 
-Key Derivation Function. Takes one secret and derives multiple independent [keys](#key) from it. SimpleCipher uses [BLAKE2b](#blake2b) as its KDF: the shared secret goes in, and separate keys for sending, receiving, and the [SAS](#sas) come out. Knowing one derived key reveals nothing about the others. *See [PROTOCOL.md](PROTOCOL.md#kdf)*
+Key Derivation Function. Takes one secret and derives multiple independent [keys](#key) from it. SimpleCipher uses [BLAKE2b](#blake2b) as its KDF: the shared secret goes in, and separate keys for sending, receiving, and the [SAS](#sas-short-authentication-string) come out. Knowing one derived key reveals nothing about the others. *See [PROTOCOL.md](PROTOCOL.md#kdf)*
 
-### MAC
+### MAC (Message Authentication Code)
 
 Message Authentication Code. A short tag appended to each message that proves it was not tampered with. In SimpleCipher, Poly1305 computes a 16-byte MAC over each frame; the receiver recomputes it and compares. If they differ, the frame is rejected. *See [PROTOCOL.md](PROTOCOL.md#mac)*
 
@@ -120,25 +120,25 @@ The sole cryptographic library used by SimpleCipher, vendored as `lib/monocypher
 
 ### Nonce
 
-"Number used once." A value that must never repeat with the same [key](#key). In SimpleCipher, each message uses a different key (from the [chain ratchet](#ratchet-symmetricchain)), so the nonce is simply the sequence number. The (key, nonce) pair is always unique, which is what the [AEAD](#aead) cipher requires. *See [PROTOCOL.md](PROTOCOL.md#nonce)*
+"Number used once." A value that must never repeat with the same [key](#key). In SimpleCipher, each message uses a different key (from the [chain ratchet](#ratchet-symmetricchain)), so the nonce is simply the sequence number. The (key, nonce) pair is always unique, which is what the [AEAD](#aead-authenticated-encryption-with-associated-data) cipher requires. *See [PROTOCOL.md](PROTOCOL.md#nonce)*
 
-### Post-compromise security
+### Post-compromise security (PCS)
 
 A property ensuring that stealing a [key](#key) now does not let an attacker read future messages. The [DH ratchet](#ratchet-dh) mixes fresh random [X25519](#x25519) entropy on each conversation direction switch, creating a new chain the attacker cannot predict even if they stole the old chain key. *See [PROTOCOL.md](PROTOCOL.md#post-compromise-security)*
 
 ### PRF
 
-Pseudo-Random Function. A deterministic function whose output is indistinguishable from random to anyone who does not know the key. SimpleCipher uses keyed [BLAKE2b](#blake2b) as a PRF for [key derivation](#kdf) and the [chain ratchet](#ratchet-symmetricchain) step. *See [PROTOCOL.md](PROTOCOL.md)*
+Pseudo-Random Function. A deterministic function whose output is indistinguishable from random to anyone who does not know the key. SimpleCipher uses keyed [BLAKE2b](#blake2b) as a PRF for [key derivation](#kdf-key-derivation-function) and the [chain ratchet](#ratchet-symmetricchain) step. *See [PROTOCOL.md](PROTOCOL.md)*
 
 ### Ratchet (DH)
 
-A mechanism that injects fresh randomness into the key hierarchy. When the conversation direction switches (one side was receiving, now they send), the sender generates a fresh [X25519](#x25519) keypair, computes a new shared secret with the peer's latest public key, and derives a new sending chain from it. This provides [post-compromise security](#post-compromise-security). *See [PROTOCOL.md](PROTOCOL.md#4-encrypted-messaging-with-forward-secrecy-and-post-compromise-security)*
+A mechanism that injects fresh randomness into the key hierarchy. When the conversation direction switches (one side was receiving, now they send), the sender generates a fresh [X25519](#x25519) keypair, computes a new shared secret with the peer's latest public key, and derives a new sending chain from it. This provides [post-compromise security](#post-compromise-security-pcs). *See [PROTOCOL.md](PROTOCOL.md#4-encrypted-messaging-with-forward-secrecy-and-post-compromise-security)*
 
 ### Ratchet (symmetric/chain)
 
 A one-way key advancement mechanism. Each message derives a fresh encryption [key](#key) from the current chain key, then the chain steps forward and the old key is wiped. This provides per-message [forward secrecy](#forward-secrecy): compromising one message key reveals nothing about any other. *See [PROTOCOL.md](PROTOCOL.md#4-encrypted-messaging-with-forward-secrecy-and-post-compromise-security)*
 
-### SAS
+### SAS (Short Authentication String)
 
 Short Authentication String. A short code (formatted as `XXXX-XXXX`) derived from the shared secret and displayed on both screens. Users compare it out-of-band (phone call, video call) to confirm no [man-in-the-middle](#man-in-the-middle-mitm) is present. The 32-bit code space is sufficient because the [commitment scheme](#commitment-scheme) prevents brute-force search. *See [PROTOCOL.md](PROTOCOL.md#sas)*
 
@@ -152,7 +152,7 @@ An elliptic-curve [Diffie-Hellman](#diffie-hellman-dh) key exchange algorithm bu
 
 ### XChaCha20-Poly1305
 
-An [AEAD](#aead) cipher that combines XChaCha20 (stream cipher for confidentiality) with Poly1305 ([MAC](#mac) for integrity). It encrypts a message so only the [key](#key) holder can read it, and produces a 16-byte tag that detects any tampering. SimpleCipher uses it for all message encryption via [Monocypher](#monocypher). *See [PROTOCOL.md](PROTOCOL.md#xchacha20-poly1305)*
+An [AEAD](#aead-authenticated-encryption-with-associated-data) cipher that combines XChaCha20 (stream cipher for confidentiality) with Poly1305 ([MAC](#mac-message-authentication-code) for integrity). It encrypts a message so only the [key](#key) holder can read it, and produces a 16-byte tag that detects any tampering. SimpleCipher uses it for all message encryption via [Monocypher](#monocypher). *See [PROTOCOL.md](PROTOCOL.md#xchacha20-poly1305)*
 
 ---
 
@@ -160,15 +160,15 @@ An [AEAD](#aead) cipher that combines XChaCha20 (stream cipher for confidentiali
 
 Terms for developers and auditors reviewing SimpleCipher's hardening, build, and deployment.
 
-### APK
+### APK (Android Package)
 
 Android Package Kit. The file format used to distribute Android applications. SimpleCipher's Android build produces a debug APK via Gradle; release APKs are signed with a keystore for distribution. *See [ANDROID.md](ANDROID.md)*
 
-### ASLR
+### ASLR (Address Space Layout Randomization)
 
-Address Space Layout Randomization. An OS feature that randomizes where a program's code and data are placed in memory, making it harder for an attacker to exploit memory corruption bugs. SimpleCipher is compiled as a [PIE](#pie) binary to enable full ASLR on all platforms. *See [HARDENING.md](HARDENING.md)*
+Address Space Layout Randomization. An OS feature that randomizes where a program's code and data are placed in memory, making it harder for an attacker to exploit memory corruption bugs. SimpleCipher is compiled as a [PIE](#pie-position-independent-executable) binary to enable full ASLR on all platforms. *See [HARDENING.md](HARDENING.md)*
 
-### BTI
+### BTI (Branch Target Identification)
 
 Branch Target Identification. An ARM64 hardware feature that restricts where indirect branches can land, preventing attackers from diverting execution to arbitrary code. SimpleCipher enables BTI on AArch64 builds via compiler flags. *See [HARDENING.md](HARDENING.md)*
 
@@ -176,11 +176,11 @@ Branch Target Identification. An ARM64 hardware feature that restricts where ind
 
 A capability-based security framework on FreeBSD. After entering capability mode (`cap_enter()`), a process can only use file descriptors it already holds and cannot open new files, sockets, or connections. SimpleCipher uses Capsicum on FreeBSD as its syscall sandbox. *See [HARDENING.md](HARDENING.md)*
 
-### CET
+### CET (Control-flow Enforcement Technology)
 
 Control-flow Enforcement Technology. An Intel hardware feature that uses a shadow stack to detect return address tampering. SimpleCipher enables CET on x86_64 builds where supported. *See [HARDENING.md](HARDENING.md)*
 
-### CFI
+### CFI (Control-Flow Integrity)
 
 Control Flow Integrity. A compiler technique that restricts indirect calls and jumps to valid targets, preventing attackers from hijacking execution. SimpleCipher enables CFI through compiler flags in hardened builds. *See [HARDENING.md](HARDENING.md)*
 
@@ -188,27 +188,27 @@ Control Flow Integrity. A compiler technique that restricts indirect calls and j
 
 A coding discipline where operations take the same amount of time regardless of the input values. This prevents attackers from measuring execution time to infer secret data (a "timing side-channel"). SimpleCipher's `ct_compare` and `is_zero32` functions use this technique, and [Monocypher](#monocypher) is constant-time throughout. *See [HARDENING.md](HARDENING.md)*
 
-### CSPRNG
+### CSPRNG (Cryptographically Secure Pseudo-Random Number Generator)
 
 Cryptographically Secure Pseudo-Random Number Generator. A source of random bytes suitable for generating [keys](#key) and [nonces](#nonce). SimpleCipher uses the operating system's CSPRNG (`getrandom` on Linux, `getentropy` on BSD, `BCryptGenRandom` on Windows) and never implements its own. *See [PROTOCOL.md](PROTOCOL.md)*
 
-### DEP
+### DEP (Data Execution Prevention)
 
-Data Execution Prevention. An OS/hardware feature that marks memory pages as either writable or executable, but never both (also known as [W^X](#wx)). Prevents injected data from being executed as code. SimpleCipher benefits from DEP on all supported platforms. *See [HARDENING.md](HARDENING.md)*
+Data Execution Prevention. An OS/hardware feature that marks memory pages as either writable or executable, but never both (also known as [W^X](#wx-write-xor-execute)). Prevents injected data from being executed as code. SimpleCipher benefits from DEP on all supported platforms. *See [HARDENING.md](HARDENING.md)*
 
-### DPI
+### DPI (Deep Packet Inspection)
 
-Deep Packet Inspection. A technique where network middleboxes examine packet contents to identify or block specific protocols. SimpleCipher's wire format uses random-length padding and a [CSPRNG](#csprng)-generated pad length byte, making the entire stream indistinguishable from random data to DPI systems. *See [PROTOCOL.md](PROTOCOL.md#6-wire-padding-dpi-resistance)*
+Deep Packet Inspection. A technique where network middleboxes examine packet contents to identify or block specific protocols. SimpleCipher's wire format uses random-length padding and a [CSPRNG](#csprng-cryptographically-secure-pseudo-random-number-generator)-generated pad length byte, making the entire stream indistinguishable from random data to DPI systems. *See [PROTOCOL.md](PROTOCOL.md#6-wire-padding-dpi-resistance)*
 
-### IME
+### IME (Input Method Editor)
 
 Input Method Editor. Software that intercepts keyboard input to compose characters (common for CJK languages, but also predictive text on mobile). IMEs can log keystrokes. SimpleCipher's Android build uses `android:inputType="textVisiblePassword"` to suppress IME suggestions and prevent sensitive text from entering the IME's prediction dictionary. *See [ANDROID.md](ANDROID.md)*
 
-### JNI
+### JNI (Java Native Interface)
 
 Java Native Interface. The bridge between Java/Kotlin code running on Android's JVM and native C code. SimpleCipher's Android app uses JNI to call the same C protocol library used by the desktop builds, keeping all cryptographic operations in native code where `crypto_wipe()` works reliably. *See [ANDROID.md](ANDROID.md)*
 
-### LTO
+### LTO (Link-Time Optimization)
 
 Link-Time Optimization. A compiler technique that optimizes across all source files at link time rather than one file at a time, enabling better dead-code elimination and inlining. SimpleCipher uses `-flto` for smaller, faster binaries. *See [BUILDING.md](BUILDING.md)*
 
@@ -216,19 +216,19 @@ Link-Time Optimization. A compiler technique that optimizes across all source fi
 
 A lightweight, static-friendly C standard library. SimpleCipher's Linux builds link against musl instead of glibc, producing fully static binaries with zero runtime dependencies. This means the binary runs on any Linux kernel without needing shared libraries. *See [BUILDING.md](BUILDING.md)*
 
-### NDK
+### NDK (Native Development Kit)
 
 Native Development Kit. Android's toolchain for compiling C/C++ code to run on Android devices. SimpleCipher uses the NDK to cross-compile its C protocol library for ARM64, ARM, x86_64, and x86 Android targets. *See [ANDROID.md](ANDROID.md)*
 
-### PIE
+### PIE (Position-Independent Executable)
 
-Position-Independent Executable. A binary compiled so it can be loaded at any memory address, enabling [ASLR](#aslr). SimpleCipher is compiled as PIE on all platforms. *See [HARDENING.md](HARDENING.md)*
+Position-Independent Executable. A binary compiled so it can be loaded at any memory address, enabling [ASLR](#aslr-address-space-layout-randomization). SimpleCipher is compiled as PIE on all platforms. *See [HARDENING.md](HARDENING.md)*
 
 ### pledge / unveil
 
 OpenBSD system calls that restrict what a process can do. `pledge` limits available system calls to a named set (e.g., `"stdio"`), and `unveil` restricts filesystem visibility. After SimpleCipher's handshake, it pledges `"stdio"` only, blocking all file and network operations beyond the existing connection. *See [HARDENING.md](HARDENING.md)*
 
-### RELRO
+### RELRO (Relocation Read-Only)
 
 Relocation Read-Only. A linker hardening feature that marks the Global Offset Table (GOT) as read-only after startup, preventing attackers from overwriting function pointers. SimpleCipher uses full RELRO (`-Wl,-z,relro,-z,now`). *See [HARDENING.md](HARDENING.md)*
 
@@ -236,7 +236,7 @@ Relocation Read-Only. A linker hardening feature that marks the Global Offset Ta
 
 A compiler instrumentation tool that detects bugs at runtime: AddressSanitizer finds memory errors, UndefinedBehaviorSanitizer catches undefined behavior, and MemorySanitizer detects uninitialized reads. SimpleCipher's test suite runs under sanitizers in CI to catch bugs before release. *See [BUILDING.md](BUILDING.md)*
 
-### seccomp
+### seccomp (Secure Computing Mode)
 
 Secure Computing Mode. A Linux kernel feature that restricts which system calls a process can make. SimpleCipher installs a seccomp-BPF filter after the handshake, allowing only I/O, memory management, and exit. Blocked calls include `open`, `connect`, `execve`, and `ptrace`. *See [HARDENING.md](HARDENING.md)*
 
@@ -252,6 +252,6 @@ A random value placed on the stack before a function's return address. If a buff
 
 The Onion Router. An anonymity network that routes traffic through multiple relays to hide the user's IP address. SimpleCipher can connect through Tor via [SOCKS5](#socks5) (`--socks5 127.0.0.1:9050`), and listeners can expose an onion service so neither peer learns the other's real IP. *See [WALKTHROUGH.md](WALKTHROUGH.md)*
 
-### W^X
+### W^X (Write XOR Execute)
 
-Write XOR Execute. A memory protection policy where pages are either writable or executable, never both. This prevents injected data from being executed as code (also known as [DEP](#dep)). SimpleCipher benefits from W^X enforcement on all supported platforms. *See [HARDENING.md](HARDENING.md)*
+Write XOR Execute. A memory protection policy where pages are either writable or executable, never both. This prevents injected data from being executed as code (also known as [DEP](#dep-data-execution-prevention)). SimpleCipher benefits from W^X enforcement on all supported platforms. *See [HARDENING.md](HARDENING.md)*
