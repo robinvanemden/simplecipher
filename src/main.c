@@ -60,7 +60,11 @@
 #include "tui.h"
 #include "cli.h"
 #if defined(_WIN32) || defined(_WIN64)
-#    include <io.h> /* _read — bypass libc FILE* buffer for SAS input */
+#    include <io.h>      /* _read — bypass libc FILE* buffer for SAS input */
+#    include <conio.h>   /* _getch — read passphrase without echo */
+#else
+#    include <termios.h> /* tcgetattr/tcsetattr — disable echo for passphrase */
+#    include <fcntl.h>   /* open /dev/tty */
 #endif
 
 /* Exit codes — distinct values let scripts distinguish failure types. */
@@ -111,6 +115,7 @@ static void usage(const char *prog) {
             "                                wait for a peer\n"
             "    %s connect [--socks5 proxy:port] [--peer-fingerprint XXXX-XXXX-XXXX-XXXX] <host> [port]\n"
             "                                connect to a peer\n"
+            "    %s keygen <file>           generate persistent identity key\n"
             "\n"
             "  Options:\n"
             "    --tui                split-pane terminal interface\n"
@@ -121,6 +126,7 @@ static void usage(const char *prog) {
             "    --require-sandbox    abort if syscall sandbox fails to install\n"
             "    --peer-fingerprint   verify the peer's public key fingerprint\n"
             "    --trust-fingerprint  skip SAS if fingerprint matches (64-bit)\n"
+            "    --identity <file>    load persistent identity key (see: keygen)\n"
             "    port                 default: 7777\n"
             "\n"
             "  After connecting, compare the safety code with your peer\n"
@@ -136,8 +142,50 @@ static void usage(const char *prog) {
             "    3  handshake    4  MITM detected  5  sandbox failed\n"
             "    6  internal     7  SAS aborted\n"
             "\n",
-            prog, prog);
+            prog, prog, prog);
     exit(EXIT_USAGE);
+}
+
+/* Read a passphrase from /dev/tty (POSIX) or console (Windows) with
+ * echo disabled.  Returns length, or -1 on error.  The caller must
+ * wipe buf after use. */
+static int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
+    fprintf(stderr, "%s", prompt);
+    fflush(stderr);
+#if defined(_WIN32) || defined(_WIN64)
+    int i = 0;
+    while (i < (int)bufsz - 1) {
+        int ch = _getch();
+        if (ch == '\r' || ch == '\n') break;
+        if (ch == '\b' || ch == 127) { if (i > 0) i--; continue; }
+        buf[i++] = (char)ch;
+    }
+    buf[i] = '\0';
+    fprintf(stderr, "\n");
+    return i;
+#else
+    struct termios old, raw;
+    int fd = open("/dev/tty", O_RDWR);
+    if (fd < 0) fd = STDIN_FILENO;
+    tcgetattr(fd, &old);
+    raw = old;
+    raw.c_lflag &= ~((tcflag_t)ECHO);
+    tcsetattr(fd, TCSANOW, &raw);
+
+    int i = 0;
+    while (i < (int)bufsz - 1) {
+        char ch;
+        ssize_t r = read(fd, &ch, 1);
+        if (r <= 0 || ch == '\n') break;
+        buf[i++] = ch;
+    }
+    buf[i] = '\0';
+
+    tcsetattr(fd, TCSANOW, &old);
+    if (fd != STDIN_FILENO) close(fd);
+    fprintf(stderr, "\n");
+    return i;
+#endif
 }
 
 /* Program entry point.
@@ -164,6 +212,7 @@ int main(int argc, char *argv[]) {
     const char *socks5_port      = nullptr;
     const char *peer_fp_expected = nullptr;
     int         trust_fingerprint = 0; /* --trust-fingerprint: skip SAS if fingerprint matches */
+    const char *identity_path    = nullptr;
     static char s5host[256];
     static char s5port[8];
 
@@ -211,6 +260,8 @@ int main(int argc, char *argv[]) {
                 peer_fp_expected = argv[++i];
             } else if (strcmp(argv[i], "--trust-fingerprint") == 0) {
                 trust_fingerprint = 1;
+            } else if (strcmp(argv[i], "--identity") == 0 && i + 1 < argc) {
+                identity_path = argv[++i];
             } else {
                 argv[out++] = argv[i];
             }
@@ -237,6 +288,53 @@ int main(int argc, char *argv[]) {
     if (plat_init() != 0) {
         fprintf(stderr, "platform init failed\n");
         return EXIT_INTERNAL;
+    }
+
+    /* keygen subcommand — generate a persistent identity key file.
+     * Runs before signal handlers because it exits immediately. */
+    if (strcmp(argv[1], "keygen") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "  Usage: %s keygen <output-file>\n", prog);
+            return EXIT_USAGE;
+        }
+        const char *keypath = argv[2];
+
+        char pass1[256], pass2[256];
+        int p1 = read_passphrase("  Enter passphrase: ", pass1, sizeof pass1);
+        if (p1 <= 0) {
+            fprintf(stderr, "  Empty passphrase not allowed.\n");
+            return EXIT_USAGE;
+        }
+        int p2 = read_passphrase("  Confirm passphrase: ", pass2, sizeof pass2);
+        int mismatch = (p1 != p2) || (memcmp(pass1, pass2, (size_t)p1) != 0);
+        crypto_wipe(pass2, sizeof pass2);
+        if (mismatch) {
+            crypto_wipe(pass1, sizeof pass1);
+            fprintf(stderr, "  Passphrases do not match.\n");
+            return EXIT_USAGE;
+        }
+
+        uint8_t priv[KEY], pub[KEY];
+        gen_keypair(priv, pub);
+
+        int rc_save = identity_save(keypath, priv, pass1, (size_t)p1);
+        crypto_wipe(pass1, sizeof pass1);
+
+        if (rc_save != 0) {
+            crypto_wipe(priv, sizeof priv);
+            fprintf(stderr, "  Failed to write %s\n", keypath);
+            return EXIT_INTERNAL;
+        }
+
+        char fp[20];
+        format_fingerprint(fp, pub);
+        printf("  Identity key saved to %s\n", keypath);
+        printf("  Your fingerprint: %s\n", fp);
+        printf("  (share with your peer on paper — same every time you load this key)\n");
+
+        crypto_wipe(priv, sizeof priv);
+        crypto_wipe(fp, sizeof fp);
+        return 0;
     }
 
     /* Install signal handlers.
@@ -422,6 +520,28 @@ int main(int argc, char *argv[]) {
         printf("  SimpleCipher\n");
         printf("  No server. No account. Ephemeral keys.\n");
         printf("\n");
+    }
+
+    /* --identity: load a persistent identity key instead of the ephemeral
+     * one just generated.  The persistent key gives a stable fingerprint
+     * across sessions, enabling the paper fingerprint workflow. */
+    if (identity_path) {
+        char pass[256];
+        int plen = read_passphrase("  Enter passphrase: ", pass, sizeof pass);
+        if (plen <= 0) {
+            fprintf(stderr, "  Empty passphrase.\n");
+            return EXIT_USAGE;
+        }
+        if (identity_load(identity_path, self_priv, self_pub, pass, (size_t)plen) != 0) {
+            crypto_wipe(pass, sizeof pass);
+            fprintf(stderr, "  Failed to decrypt %s — wrong passphrase or corrupt file.\n",
+                    identity_path);
+            return EXIT_MITM;
+        }
+        crypto_wipe(pass, sizeof pass);
+        /* Recompute commitment and fingerprint with the persistent key */
+        make_commit(commit_self, self_pub);
+        format_fingerprint(self_fp, self_pub);
     }
 
     /* ------------------------------------------------------------------
