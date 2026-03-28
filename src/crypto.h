@@ -112,12 +112,15 @@ typedef struct {
      *                we receive a frame with FLAG_RATCHET set).
      * need_send_ratchet — set to 1 after receiving a message; when we
      *                next send, this triggers a DH ratchet step. */
-    uint8_t  root[KEY];
-    uint8_t  dh_priv[KEY];
-    uint8_t  dh_pub[KEY];
-    uint8_t  peer_dh[KEY];
-    int      need_send_ratchet;
-    uint16_t rx_no_ratchet; /* frames received without a ratchet key from peer */
+    uint8_t root[KEY];
+    uint8_t dh_priv[KEY];
+    uint8_t dh_pub[KEY];
+    uint8_t peer_dh[KEY];
+    int     need_send_ratchet;
+    /* No ratchet-stalling guard: DH ratchets trigger on direction switches,
+     * so a one-directional burst of messages legitimately has no ratchet.
+     * The symmetric chain ratchet still provides per-message forward secrecy;
+     * the DH ratchet adds post-compromise security on the next direction switch. */
 } session_t;
 
 /* ---- crypto function declarations --------------------------------------- */

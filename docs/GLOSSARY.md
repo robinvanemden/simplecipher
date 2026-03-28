@@ -30,7 +30,9 @@ A short, human-readable summary of a [key](#key), formatted as `XXXX-XXXX-XXXX-X
 
 ### Identity key
 
-A persistent private key stored in a passphrase-protected file, created by `simplecipher keygen`. Unlike [ephemeral](#ephemeral) keys (generated fresh each session), an identity key survives across reboots. It is used only to derive a stable [fingerprint](#fingerprint) — the actual message encryption still uses fresh [ephemeral](#ephemeral) keys every session, so [forward secrecy](#forward-secrecy) is preserved. The key file is encrypted with [Argon2id](#argon2id) + [XChaCha20-Poly1305](#xchacha20-poly1305), requiring both the file (something you have) and the passphrase (something you know). *See [DEPLOYMENT.md](DEPLOYMENT.md)*
+A persistent [X25519](#x25519) private key stored in a passphrase-protected file, created by `simplecipher keygen`. Unlike [ephemeral](#ephemeral) keys (generated fresh each session), an identity key survives across reboots. When loaded via `--identity`, the identity key **is** the handshake keypair -- the same key used for [Diffie-Hellman](#diffie-hellman-dh) key exchange. Session nonces (random per-session values mixed into the [KDF](#kdf-key-derivation-function)) ensure that each session's derived keys are unique even though the DH shared secret between two fixed identity keys is deterministic. [Forward secrecy](#forward-secrecy) is preserved because the [chain ratchet](#chain-ratchet) and [DH ratchet](#ratchet-dh) still derive and wipe per-message keys.
+
+**Security implications:** Theft of the key file **plus** the passphrase allows impersonation in future sessions (the attacker can pose as you to any peer). Theft of the key file alone (without the passphrase) requires brute-forcing [Argon2id](#argon2id) (100 MB memory, 3 passes). The key file is encrypted with Argon2id + [XChaCha20-Poly1305](#xchacha20-poly1305), requiring both the file (something you have) and the passphrase (something you know). *See [DEPLOYMENT.md](DEPLOYMENT.md)*
 
 ### Forward secrecy
 

@@ -5336,10 +5336,15 @@ static void test_ratchet_receive_atomic(void) {
     crypto_wipe(plain, sizeof plain);
 }
 
-/* ---- test: ratchet stalling guard --------------------------------------- */
+/* ---- test: one-directional burst (no ratchet stalling) ------------------ */
 
-static void test_ratchet_stalling_guard(void) {
-    printf("\n=== Ratchet stalling guard (MAX_FRAMES_WITHOUT_RATCHET) ===\n");
+static void test_one_directional_burst(void) {
+    printf("\n=== One-directional burst (no ratchet stalling) ===\n");
+
+    /* DH ratchets trigger on direction switches, so a long one-directional
+     * burst of messages legitimately has no ratchet after the first frame.
+     * Verify that 200+ consecutive non-ratchet frames from the same sender
+     * are accepted without error. */
 
     session_t alice, bob;
     uint8_t   alice_priv[KEY], bob_priv[KEY];
@@ -5349,19 +5354,17 @@ static void test_ratchet_stalling_guard(void) {
     uint16_t plen;
     int      rc;
 
-    /* First message from Alice carries FLAG_RATCHET — resets counter. */
+    /* First message from Alice carries FLAG_RATCHET. */
     rc = frame_build(&alice, (const uint8_t *)"hi", 2, frame, next_tx);
     TEST("setup: alice builds first (ratchet) frame", rc == 0);
     memcpy(alice.tx, next_tx, KEY);
     alice.tx_seq++;
     rc = frame_open(&bob, frame, plain, &plen);
     TEST("setup: bob opens ratchet frame", rc == 0);
-    TEST("counter reset after ratchet frame", bob.rx_no_ratchet == 0);
 
-    /* Alice sends MAX_FRAMES_WITHOUT_RATCHET more frames without ratcheting.
-     * These should all succeed (counter goes 1..50). */
+    /* Alice sends 200 more frames without ratcheting — all must succeed. */
     int all_ok = 1;
-    for (int i = 0; i < MAX_FRAMES_WITHOUT_RATCHET; i++) {
+    for (int i = 0; i < 200; i++) {
         char msg[32];
         snprintf(msg, sizeof msg, "msg %d", i);
         uint16_t mlen = (uint16_t)strlen(msg);
@@ -5378,16 +5381,15 @@ static void test_ratchet_stalling_guard(void) {
             break;
         }
     }
-    TEST("50 non-ratchet frames accepted", all_ok);
-    TEST("counter at threshold", bob.rx_no_ratchet == MAX_FRAMES_WITHOUT_RATCHET);
+    TEST("200 non-ratchet frames accepted in one-directional burst", all_ok);
 
-    /* The 51st non-ratchet frame must be rejected with -2 (session-fatal). */
-    rc = frame_build(&alice, (const uint8_t *)"stall", 5, frame, next_tx);
-    TEST("alice builds 51st frame", rc == 0);
-    memcpy(alice.tx, next_tx, KEY);
-    alice.tx_seq++;
-    rc = frame_open(&bob, frame, plain, &plen);
-    TEST("51st non-ratchet frame returns -2", rc == -2);
+    /* Direction switch: Bob replies, triggering a DH ratchet. */
+    rc = frame_build(&bob, (const uint8_t *)"reply", 5, frame, next_tx);
+    TEST("bob replies with ratchet after burst", rc == 0);
+    memcpy(bob.tx, next_tx, KEY);
+    bob.tx_seq++;
+    rc = frame_open(&alice, frame, plain, &plen);
+    TEST("alice accepts bob's ratcheted reply", rc == 0);
 
     session_wipe(&alice);
     session_wipe(&bob);
@@ -6221,7 +6223,7 @@ int main(void) {
      * and manual Tor integration tests. */
     test_cover_traffic();
     test_ratchet_receive_atomic();
-    test_ratchet_stalling_guard();
+    test_one_directional_burst();
     test_mac_failure_tolerance();
     test_frame_open_ratchet_dh_fatal();
     test_mac_failure_exact_boundary();

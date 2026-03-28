@@ -151,13 +151,14 @@ extern uint8_t nondet_uint8(void);
 extern int nondet_int(void);
 int main(void) {
     session_t s;
-    uint8_t priv[32], pub[32], peer[32], sas[32];
+    uint8_t priv[32], pub[32], peer[32], self_nonce[32], peer_nonce[32], sas[32];
     for (int i = 0; i < 32; i++) {
         priv[i] = nondet_uint8(); pub[i] = nondet_uint8();
         peer[i] = nondet_uint8();
+        self_nonce[i] = nondet_uint8(); peer_nonce[i] = nondet_uint8();
     }
     int we_init = nondet_int();
-    session_init(&s, we_init, priv, pub, peer, sas);
+    session_init(&s, we_init, priv, pub, peer, self_nonce, peer_nonce, sas);
     return 0;
 }
 """,
@@ -323,13 +324,13 @@ def main():
         subprocess.run(["cbmc", "--version"], capture_output=True, check=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
         print("SKIP: CBMC not found (install from https://github.com/diffblue/cbmc)")
-        sys.exit(0)
+        sys.exit(77)
 
     try:
         subprocess.run(["goto-cc", "--version"], capture_output=True, check=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
         print("SKIP: goto-cc not found (part of CBMC)")
-        sys.exit(0)
+        sys.exit(77)
 
     print("SimpleCipher CBMC Formal Verification")
     print("=" * 40)

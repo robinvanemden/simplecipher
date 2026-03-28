@@ -90,22 +90,68 @@ if zenity --question --title="SimpleCipher" \
     USE_TUI="--tui"
 fi
 
-# Build the command
-if [ "$MODE" = "Listen" ]; then
-    CMD="$CIPHER $USE_TUI listen $PORT"
-else
-    CMD="$CIPHER $USE_TUI connect $HOST $PORT"
+# Validate inputs — reject shell metacharacters to prevent command injection
+validate_input() {
+    local name="$1" value="$2" pattern="$3"
+    if ! printf '%s' "$value" | grep -qE "^${pattern}\$"; then
+        zenity --error --title="SimpleCipher" \
+               --text="Invalid ${name}: '${value}'\nOnly alphanumeric characters, dots, colons, underscores, and hyphens are allowed." \
+               --width=400 2>/dev/null
+        exit 1
+    fi
+}
+
+validate_input "port" "$PORT" '[0-9]+'
+if [ -n "$HOST" ]; then
+    validate_input "host" "$HOST" '[a-zA-Z0-9._:-]+'
 fi
+
+# Build the command as an array (prevents injection via string splitting)
+CMD_ARGS=("$CIPHER")
+if [ -n "$USE_TUI" ]; then
+    CMD_ARGS+=("$USE_TUI")
+fi
+if [ "$MODE" = "Listen" ]; then
+    CMD_ARGS+=("listen" "$PORT")
+else
+    CMD_ARGS+=("connect" "$HOST" "$PORT")
+fi
+
+# Write a safe launcher script that uses exec with proper quoting
+# This avoids passing user input through bash -c string interpretation
+LAUNCH_SCRIPT=$(mktemp /tmp/simplecipher-launch.XXXXXX.sh)
+chmod 700 "$LAUNCH_SCRIPT"
+{
+    printf '#!/bin/bash\n'
+    # Write each argument individually quoted via printf %q
+    printf 'exec'
+    for arg in "${CMD_ARGS[@]}"; do
+        printf ' %q' "$arg"
+    done
+    printf '\n'
+} > "$LAUNCH_SCRIPT"
+
+# Wrapper that runs the launcher then prompts before closing
+WRAPPER_SCRIPT=$(mktemp /tmp/simplecipher-wrapper.XXXXXX.sh)
+chmod 700 "$WRAPPER_SCRIPT"
+cat > "$WRAPPER_SCRIPT" <<WRAPPER
+#!/bin/bash
+bash "$LAUNCH_SCRIPT"
+echo
+echo 'Press Enter to close...'
+read
+rm -f "$LAUNCH_SCRIPT" "$WRAPPER_SCRIPT"
+WRAPPER
 
 # Launch in a terminal
 # Different terminals have different exec flag syntax
 case "$TERM_EMU" in
     gnome-terminal)
-        $TERM_EMU -- bash -c "$CMD; echo; echo 'Press Enter to close...'; read" ;;
+        $TERM_EMU -- bash "$WRAPPER_SCRIPT" ;;
     konsole)
-        $TERM_EMU -e bash -c "$CMD; echo; echo 'Press Enter to close...'; read" ;;
+        $TERM_EMU -e bash "$WRAPPER_SCRIPT" ;;
     xfce4-terminal)
-        $TERM_EMU -e "bash -c \"$CMD; echo; echo 'Press Enter to close...'; read\"" ;;
+        $TERM_EMU -e "bash '$WRAPPER_SCRIPT'" ;;
     *)
-        $TERM_EMU -e bash -c "$CMD; echo; echo 'Press Enter to close...'; read" ;;
+        $TERM_EMU -e bash "$WRAPPER_SCRIPT" ;;
 esac

@@ -111,16 +111,21 @@ $rbListen.Add_CheckedChanged({ $hostLabel.Visible = $rbConnect.Checked; $hostBox
 $goBtn.Add_Click({^
     $port = $portBox.Text.Trim();^
     if (-not $port) { $port = '7777' };^
+    if ($port -notmatch '^[0-9]+$') { [System.Windows.Forms.MessageBox]::Show('Invalid port: only digits are allowed.', 'SimpleCipher'); return };^
     $tui = '';^
     if ($tuiCheck.Checked) { $tui = '--tui' };^
+    $cipher = '%CIPHER%';^
+    $argList = @($cipher);^
+    if ($tui) { $argList += $tui };^
     if ($rbConnect.Checked) {^
         $host = $hostBox.Text.Trim();^
         if (-not $host) { [System.Windows.Forms.MessageBox]::Show('Host is required.', 'SimpleCipher'); return };^
-        $script = 'cmd /c \"\"' + '%CIPHER%'.Replace('\', '/') + '\" ' + $tui + ' connect ' + $host + ' ' + $port + ' & echo. & echo Press Enter to close... & pause >nul\"';^
+        if ($host -notmatch '^[a-zA-Z0-9.:_-]+$') { [System.Windows.Forms.MessageBox]::Show('Invalid host: only alphanumeric characters, dots, colons, underscores, and hyphens are allowed.', 'SimpleCipher'); return };^
+        $argList += 'connect'; $argList += $host; $argList += $port;^
     } else {^
-        $script = 'cmd /c \"\"' + '%CIPHER%'.Replace('\', '/') + '\" ' + $tui + ' listen ' + $port + ' & echo. & echo Press Enter to close... & pause >nul\"';^
+        $argList += 'listen'; $argList += $port;^
     };^
-    Start-Process cmd -ArgumentList '/c', $script;^
+    Start-Process -FilePath $cipher -ArgumentList ($argList | Select-Object -Skip 1) -Wait:$false;^
     $form.Close();^
 });^
 ^

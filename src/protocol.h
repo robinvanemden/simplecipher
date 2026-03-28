@@ -8,10 +8,13 @@
  *   [ seq : 8 ][ ciphertext : 488 ][ mac : 16 ]
  *   seq is authenticated additional data (not encrypted, but tamper-proof).
  *
- * Wire format (randomized padding defeats DPI fingerprinting):
+ * Wire format (randomized padding defeats naive fixed-size DPI rules):
  *   [ pad_len : 1 ][ frame : 512 ][ random_pad : 0-255 ]
- *   pad_len is a raw CSPRNG byte (uniform random, no detectable pattern).
- *   Total wire size per message varies from 513 to 768 bytes.
+ *   pad_len is a cleartext CSPRNG byte indicating padding length.
+ *   The 8-byte sequence number in the frame AD is also unencrypted.
+ *   Total wire size per message varies from 513 to 768 bytes, but the
+ *   fixed inner frame size is a distinguishing feature for sophisticated
+ *   observers.
  *
  * Plaintext slot:
  *   Normal:  [ flags(1) | len(2) | message(≤485) | zero padding ]
@@ -61,10 +64,9 @@ enum {
      * After MAX_AUTH_FAILURES consecutive failures with no valid frame in
      * between, the session is torn down — either the peer is misbehaving
      * or the TCP stream is permanently corrupted by injection. */
-    MAX_AUTH_FAILURES          = 3,
-    MAX_FRAMES_WITHOUT_RATCHET = 50,
+    MAX_AUTH_FAILURES = 3,
     /* Wire padding: each chat frame is sent as [pad_len(1)][frame][random_pad].
-     * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
+     * pad_len is a cleartext CSPRNG byte indicating the padding length. */
     WIRE_HDR     = 1,                                  /* pad_len byte            */
     WIRE_PAD_MAX = 255,                                /* max random padding      */
     WIRE_MAX     = WIRE_HDR + FRAME_SZ + WIRE_PAD_MAX, /* 768 bytes   */

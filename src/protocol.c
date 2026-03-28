@@ -271,13 +271,8 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
             rc = -2; /* ratchet DH failure — session-fatal */
             goto cleanup;
         }
-        s->rx_no_ratchet = 0;
     } else {
         memcpy(s->rx, next_rx, KEY);
-        if (++s->rx_no_ratchet > MAX_FRAMES_WITHOUT_RATCHET) {
-            rc = -2; /* ratchet stalling — session-fatal */
-            goto cleanup;
-        }
     }
     s->rx_seq++;
     s->need_send_ratchet = 1;

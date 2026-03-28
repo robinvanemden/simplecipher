@@ -189,14 +189,17 @@ int main(void) {
      * observer measuring encryption time. */
     printf("Testing frame_build...\n");
     {
-        uint8_t priv_a[32], pub_a[32], priv_b[32], pub_b[32], sas[32];
+        uint8_t priv_a[32], pub_a[32], priv_b[32], pub_b[32];
+        uint8_t nonce_a[32], nonce_b[32], sas[32];
         fill_random(priv_a, 32);
         crypto_x25519_public_key(pub_a, priv_a);
         fill_random(priv_b, 32);
         crypto_x25519_public_key(pub_b, priv_b);
+        fill_random(nonce_a, 32);
+        fill_random(nonce_b, 32);
 
         session_t s;
-        (void)session_init(&s, 1, priv_a, pub_a, pub_b, sas);
+        (void)session_init(&s, 1, priv_a, pub_a, pub_b, nonce_a, nonce_b, sas);
 
         uint8_t msg[16] = "secret message!";
         poison(msg, 16);           /* mark plaintext as secret */

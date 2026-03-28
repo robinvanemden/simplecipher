@@ -377,12 +377,15 @@ int main(void) {
      * Leak: encryption time should not depend on plaintext content. */
     printf("\n--- Protocol operations ---\n");
     {
-        uint8_t priv[32], pub[32], priv2[32], pub2[32], sas[32];
+        uint8_t priv[32], pub[32], priv2[32], pub2[32];
+        uint8_t nonce1[32], nonce2[32], sas[32];
         fill_random(priv, 32);
         crypto_x25519_public_key(pub, priv);
         fill_random(priv2, 32);
         crypto_x25519_public_key(pub2, priv2);
-        (void)session_init(&ct_session, 1, priv, pub, pub2, sas);
+        fill_random(nonce1, 32);
+        fill_random(nonce2, 32);
+        (void)session_init(&ct_session, 1, priv, pub, pub2, nonce1, nonce2, sas);
         crypto_wipe(priv, 32);
         crypto_wipe(priv2, 32);
     }
@@ -398,17 +401,20 @@ int main(void) {
     {
         /* Build a valid frame with the session's current tx (seq=0 already) */
         session_t build_s;
-        uint8_t priv[32], pub[32], priv2[32], pub2[32], sas[32];
+        uint8_t priv[32], pub[32], priv2[32], pub2[32];
+        uint8_t nonce1[32], nonce2[32], sas[32];
         fill_random(priv, 32);
         crypto_x25519_public_key(pub, priv);
         fill_random(priv2, 32);
         crypto_x25519_public_key(pub2, priv2);
-        (void)session_init(&build_s, 1, priv, pub, pub2, sas);
+        fill_random(nonce1, 32);
+        fill_random(nonce2, 32);
+        (void)session_init(&build_s, 1, priv, pub, pub2, nonce1, nonce2, sas);
         uint8_t next[32];
         (void)frame_build(&build_s, (const uint8_t *)"constant-time", 13,
                           ct_fixed_input, next);
         /* Set up ct_session for decryption with matching rx state */
-        (void)session_init(&ct_session, 0, priv2, pub2, pub, sas);
+        (void)session_init(&ct_session, 0, priv2, pub2, pub, nonce2, nonce1, sas);
         /* ct_session.rx_seq is already 0 */
         crypto_wipe(priv, 32);
         crypto_wipe(priv2, 32);

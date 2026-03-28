@@ -9,6 +9,10 @@
 #include "network.h"
 #include "protocol.h"
 
+#if !defined(_WIN32) && !defined(_WIN64)
+#    include <fcntl.h> /* fcntl, O_NONBLOCK — used for non-blocking connect */
+#endif
+
 /* ---- network I/O -------------------------------------------------------- */
 
 /* Set a receive/send timeout of 'secs' seconds on the socket.
@@ -558,7 +562,21 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     return fd;
 }
 
-/* Internal: connect with configurable getaddrinfo flags. */
+/* Application-level connect timeout in milliseconds.  Matches the per-round
+ * handshake deadline (EXCHANGE_DEADLINE_MS) so a blackholed host fails in
+ * bounded time rather than waiting for the OS TCP timeout (often 2+ minutes). */
+enum { CONNECT_TIMEOUT_MS = 15000 };
+
+/* Internal: non-blocking connect with a 15-second poll timeout.
+ *
+ * A blocking connect() to a blackholed host can hang for minutes (the OS
+ * retransmits SYN packets until its own timeout expires).  We set the socket
+ * non-blocking, call connect (returns immediately with EINPROGRESS), then
+ * poll/select with CONNECT_TIMEOUT_MS.  On success we restore blocking mode
+ * so the rest of the code (read_exact, write_exact) works unchanged.
+ *
+ * The SOCKS5 path benefits automatically: connect_socket_socks5 calls
+ * connect_socket which calls this function. */
 static socket_t connect_socket_flags(const char *host, const char *port, int ai_flags) {
     struct addrinfo hints, *res, *p;
     socket_t        fd = INVALID_SOCK;
@@ -570,10 +588,63 @@ static socket_t connect_socket_flags(const char *host, const char *port, int ai_
     for (p = res; p; p = p->ai_next) {
         fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (fd == INVALID_SOCK) continue;
+
+        /* Set non-blocking before connect. */
 #if defined(_WIN32) || defined(_WIN64)
+        unsigned long nb = 1;
+        ioctlsocket(fd, FIONBIO, &nb);
         g_interrupt_sock = fd;
+#else
+        int flags = fcntl(fd, F_GETFL, 0);
+        if (flags < 0) flags = 0;
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 #endif
-        if (connect(fd, p->ai_addr, (socklen_t)p->ai_addrlen) == 0) break;
+
+        int rc = connect(fd, p->ai_addr, (socklen_t)p->ai_addrlen);
+
+        if (rc != 0) {
+            /* Check if connect is in progress (expected for non-blocking). */
+#if defined(_WIN32) || defined(_WIN64)
+            int in_progress = (WSAGetLastError() == WSAEWOULDBLOCK);
+#else
+            int in_progress = (errno == EINPROGRESS);
+#endif
+            if (!in_progress) goto next;
+
+            /* Wait for the socket to become writable (connect complete). */
+            int ready;
+#if defined(_WIN32) || defined(_WIN64)
+            fd_set         wfds, efds;
+            struct timeval tv;
+            FD_ZERO(&wfds);
+            FD_ZERO(&efds);
+            FD_SET(fd, &wfds);
+            FD_SET(fd, &efds);
+            tv.tv_sec  = CONNECT_TIMEOUT_MS / 1000;
+            tv.tv_usec = (CONNECT_TIMEOUT_MS % 1000) * 1000;
+            ready      = select(0 /* ignored on Windows */, nullptr, &wfds, &efds, &tv);
+#else
+            struct pollfd pfd = {fd, POLLOUT, 0};
+            do { ready = poll(&pfd, 1, CONNECT_TIMEOUT_MS); } while (ready < 0 && errno == EINTR && g_running);
+#endif
+            if (ready <= 0) goto next; /* timeout or error */
+
+            /* Check SO_ERROR — the connect may have failed asynchronously. */
+            int       err  = 0;
+            socklen_t elen = sizeof err;
+            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (char *)&err, &elen) != 0 || err != 0) goto next;
+        }
+
+        /* Restore blocking mode. */
+#if defined(_WIN32) || defined(_WIN64)
+        nb = 0;
+        ioctlsocket(fd, FIONBIO, &nb);
+#else
+        fcntl(fd, F_SETFL, flags); /* original flags (without O_NONBLOCK) */
+#endif
+        break; /* connected successfully */
+
+    next:
 #if defined(_WIN32) || defined(_WIN64)
         g_interrupt_sock = INVALID_SOCKET;
 #endif
