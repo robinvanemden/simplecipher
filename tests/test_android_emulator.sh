@@ -135,6 +135,77 @@ else
 fi
 
 # ------------------------------------------------------------------
+# 3.6. Test trust-fingerprint checkbox
+# ------------------------------------------------------------------
+echo ""
+echo "=== Testing trust-fingerprint checkbox ==="
+adb shell am force-stop "$PKG"
+sleep 1
+adb logcat -c
+adb shell am start -n "$PKG/$MAIN" -W
+sleep 3
+
+# Expand fingerprint panel
+if tap_by_id "${PKG}:id/fpToggle"; then
+    sleep 2
+
+    # 3.6.1 - Checkbox hidden by default (no peer FP entered yet)
+    adb shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+    if adb shell cat /sdcard/ui.xml | grep -q 'fpTrustCheckbox.*GONE\|fpTrustCheckbox.*gone'; then
+        pass "Trust checkbox hidden by default"
+    elif adb shell cat /sdcard/ui.xml | grep -q 'fpTrustCheckbox'; then
+        fail "Trust checkbox visible before peer FP entered"
+    else
+        pass "Trust checkbox not in UI tree (hidden)"
+    fi
+
+    # 3.6.2 - Enter peer fingerprint → checkbox should appear
+    if tap_by_id "${PKG}:id/fpManualInput"; then
+        sleep 1
+        adb shell input text "A3F291BCD4E5F678"
+        sleep 2
+        adb shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        if adb shell cat /sdcard/ui.xml | grep -q 'fpTrustCheckbox.*VISIBLE\|fpTrustCheckbox.*visible' ||
+           adb shell cat /sdcard/ui.xml | grep 'fpTrustCheckbox' | grep -qv 'GONE\|gone'; then
+            pass "Trust checkbox visible after peer FP entered"
+        else
+            fail "Trust checkbox not visible after peer FP entered"
+        fi
+        check_no_crash "Trust checkbox after FP entry: no crash"
+
+        # 3.6.3 - Tap the checkbox → no crash
+        if tap_by_id "${PKG}:id/fpTrustCheckbox"; then
+            sleep 1
+            check_no_crash "Trust checkbox tap: no crash"
+        else
+            fail "Could not find trust checkbox to tap"
+        fi
+
+        # 3.6.4 - Clear FP input → checkbox should hide
+        tap_by_id "${PKG}:id/fpManualInput"
+        sleep 1
+        adb shell input keyevent KEYCODE_MOVE_HOME
+        adb shell input keyevent --longpress KEYCODE_MOVE_END
+        adb shell input keyevent KEYCODE_DEL
+        sleep 2
+        adb shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        if adb shell cat /sdcard/ui.xml | grep -q 'fpTrustCheckbox.*GONE\|fpTrustCheckbox.*gone' ||
+           ! adb shell cat /sdcard/ui.xml | grep -q 'fpTrustCheckbox.*VISIBLE'; then
+            pass "Trust checkbox hidden after FP cleared"
+        else
+            fail "Trust checkbox still visible after FP cleared"
+        fi
+    else
+        fail "Could not find manual FP input"
+    fi
+
+    adb shell input keyevent KEYCODE_BACK
+    sleep 1
+else
+    fail "Could not find fingerprint toggle for trust checkbox test"
+fi
+
+# ------------------------------------------------------------------
 # 4. Navigate to ChatActivity via Connect mode
 #    (Switch radio to Connect, enter localhost, tap Go)
 # ------------------------------------------------------------------

@@ -411,6 +411,31 @@ Type the full code to confirm:
 
 Always compare the code. If it matches, you are safe. If you skip it, someone could be listening.
 
+### Understanding fingerprints and safety codes
+
+SimpleCipher has two ways to check that you are really talking to your friend: **safety codes** and **fingerprints**. They work differently and are used at different times.
+
+**Safety code -- compare it right now, over the phone.**
+When you connect, both screens show the same short code (like `9052-EF29`). You call your friend and read it out loud. If it matches, you are safe. The safety code only exists during this one session. It proves nobody is secretly sitting between you right now.
+
+**Fingerprint -- exchange it on paper when you meet in person.**
+A fingerprint is another short code (like `A3F2-91BC-D4E5-F678`). You see it when you run `simplecipher listen`. When you and your friend are together in the same room, you each write down your own fingerprint and hand it to each other. Later, when you chat from different locations, SimpleCipher checks the fingerprint automatically. If it does not match, the connection stops.
+
+**Why are there two fingerprints -- one for each person?**
+A fingerprint is like a phone number. Yours is different from your friend's. You each have your own. When you meet, you give yours to your friend, and they give theirs to you. Later, SimpleCipher uses the fingerprint your friend gave you to make sure the person connecting is really them. Your friend's copy of SimpleCipher does the same thing with the fingerprint you gave them.
+
+**What if someone finds the paper with a fingerprint on it?**
+Nothing bad happens. A fingerprint is not a password. It is more like a phone number -- knowing it does not let anyone read your messages or pretend to be you. The real secret (the encryption key) only exists inside the computer's memory while you are chatting. When you close the program, the key is destroyed. The fingerprint on the paper cannot be used to recover it.
+
+**In short:**
+
+| | Safety code | Fingerprint |
+|---|---|---|
+| **When** | During the chat session | Before the chat, when you meet in person |
+| **How** | Read it out loud on a phone call | Write it on paper and hand it over |
+| **What it proves** | Nobody is intercepting this session | The person connecting is the same person you met |
+| **If someone steals it** | Only useful during this one session | Useless -- it is not a secret |
+
 ## Choosing your platform
 
 SimpleCipher runs on Linux, Windows, and Android. The encryption is identical everywhere — the same C code, the same protocol. What differs is how well the operating system protects your keys while they're in memory.
