@@ -60,7 +60,8 @@ enum {
      * After MAX_AUTH_FAILURES consecutive failures with no valid frame in
      * between, the session is torn down — either the peer is misbehaving
      * or the TCP stream is permanently corrupted by injection. */
-    MAX_AUTH_FAILURES = 3,
+    MAX_AUTH_FAILURES          = 3,
+    MAX_FRAMES_WITHOUT_RATCHET = 50,
     /* Wire padding: each chat frame is sent as [pad_len(1)][frame][random_pad].
      * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
     WIRE_HDR     = 1,                                 /* pad_len byte            */

@@ -109,7 +109,13 @@ else()
 endif()
 
 # Suppress -Wconversion for vendored Monocypher (upstream code, do not modify).
-set_source_files_properties(lib/monocypher.c PROPERTIES COMPILE_FLAGS "-Wno-conversion -fno-lto")
+# -fno-lto prevents LTO from inlining constant-time crypto across the library
+# boundary, but must be skipped for sanitizer/fuzz builds where LTO is not used.
+if(NOT FUZZ AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
+    set_source_files_properties(lib/monocypher.c PROPERTIES COMPILE_FLAGS "-Wno-conversion -fno-lto")
+else()
+    set_source_files_properties(lib/monocypher.c PROPERTIES COMPILE_FLAGS "-Wno-conversion")
+endif()
 
 add_executable(simplecipher src/main.c ${CORE_SRC} ${PLATFORM_SRC})
 target_include_directories(simplecipher PRIVATE src lib)

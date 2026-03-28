@@ -34,12 +34,30 @@
 
 /* ---- test helpers ------------------------------------------------------- */
 
-/* Random port in [20000, 60000) to avoid TIME_WAIT conflicts on bare-metal CI */
+/* Random port in [20000, 60000) to avoid TIME_WAIT conflicts on bare-metal CI.
+ * Probes the port with a quick bind to confirm it is available before returning. */
 static void random_port(char buf[8]) {
+    for (int attempt = 0; attempt < 20; attempt++) {
+        uint8_t r[2];
+        fill_random(r, 2);
+        int port = 20000 + (((int)r[0] | ((int)r[1] << 8)) % 40000);
+        /* Probe: try to bind and immediately release */
+        int s = socket(AF_INET, SOCK_STREAM, 0);
+        if (s < 0) continue;
+        int one = 1;
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+        struct sockaddr_in a = {.sin_family = AF_INET, .sin_port = htons((uint16_t)port), .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
+        int ok = bind(s, (struct sockaddr *)&a, sizeof a);
+        close(s);
+        if (ok == 0) {
+            snprintf(buf, 8, "%d", port);
+            return;
+        }
+    }
+    /* Fallback: use a random port and hope for the best */
     uint8_t r[2];
     fill_random(r, 2);
-    int port = 20000 + (((int)r[0] | ((int)r[1] << 8)) % 40000);
-    snprintf(buf, 8, "%d", port);
+    snprintf(buf, 8, "%d", 20000 + (((int)r[0] | ((int)r[1] << 8)) % 40000));
 }
 
 static int g_pass = 0;
@@ -5221,6 +5239,59 @@ static void test_ratchet_receive_atomic(void) {
     crypto_wipe(plain, sizeof plain);
 }
 
+/* ---- test: ratchet stalling guard --------------------------------------- */
+
+static void test_ratchet_stalling_guard(void) {
+    printf("\n=== Ratchet stalling guard (MAX_FRAMES_WITHOUT_RATCHET) ===\n");
+
+    session_t alice, bob;
+    uint8_t   alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    uint8_t  frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
+    uint16_t plen;
+    int      rc;
+
+    /* First message from Alice carries FLAG_RATCHET — resets counter. */
+    rc = frame_build(&alice, (const uint8_t *)"hi", 2, frame, next_tx);
+    TEST("setup: alice builds first (ratchet) frame", rc == 0);
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("setup: bob opens ratchet frame", rc == 0);
+    TEST("counter reset after ratchet frame", bob.rx_no_ratchet == 0);
+
+    /* Alice sends MAX_FRAMES_WITHOUT_RATCHET more frames without ratcheting.
+     * These should all succeed (counter goes 1..50). */
+    int all_ok = 1;
+    for (int i = 0; i < MAX_FRAMES_WITHOUT_RATCHET; i++) {
+        char msg[32];
+        snprintf(msg, sizeof msg, "msg %d", i);
+        uint16_t mlen = (uint16_t)strlen(msg);
+        rc = frame_build(&alice, (const uint8_t *)msg, mlen, frame, next_tx);
+        if (rc != 0) { all_ok = 0; break; }
+        memcpy(alice.tx, next_tx, KEY);
+        alice.tx_seq++;
+        rc = frame_open(&bob, frame, plain, &plen);
+        if (rc != 0) { all_ok = 0; break; }
+    }
+    TEST("50 non-ratchet frames accepted", all_ok);
+    TEST("counter at threshold", bob.rx_no_ratchet == MAX_FRAMES_WITHOUT_RATCHET);
+
+    /* The 51st non-ratchet frame must be rejected with -2 (session-fatal). */
+    rc = frame_build(&alice, (const uint8_t *)"stall", 5, frame, next_tx);
+    TEST("alice builds 51st frame", rc == 0);
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("51st non-ratchet frame returns -2", rc == -2);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
 /* ---- test: MAC failure tolerance ---------------------------------------- */
 
 static void test_mac_failure_tolerance(void) {
@@ -5993,6 +6064,7 @@ int main(void) {
      * and manual Tor integration tests. */
     test_cover_traffic();
     test_ratchet_receive_atomic();
+    test_ratchet_stalling_guard();
     test_mac_failure_tolerance();
     test_frame_open_ratchet_dh_fatal();
     test_mac_failure_exact_boundary();
