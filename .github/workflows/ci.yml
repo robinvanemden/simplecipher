@@ -28,7 +28,7 @@ jobs:
             -o build/native/test_p2p_harden \
             tests/test_p2p.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c lib/monocypher.c
+            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c
           build/native/test_p2p_harden
 
       - name: Build and run SOCKS5 proxy loopback test
@@ -37,7 +37,7 @@ jobs:
             -o build/native/test_socks5_proxy \
             tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c lib/monocypher.c
+            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c
           build/native/test_socks5_proxy
 
   test-tui:
@@ -406,7 +406,7 @@ jobs:
             -o tests/test_socks5_proxy_android \
             tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c lib/monocypher.c -lm
+            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
           file tests/test_socks5_proxy_android
 
       - name: Cross-compile SOCKS5 daemon + simplecipher peer for emulator
@@ -419,7 +419,7 @@ jobs:
             -o tests/simplecipher_android \
             src/main.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c lib/monocypher.c -lm
+            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
 
       - name: Emulator smoke test (full flavor)
         uses: reactivecircus/android-emulator-runner@70f4dee990796918b78d040e3278474bdbd348a7 # v2

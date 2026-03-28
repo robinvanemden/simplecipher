@@ -347,7 +347,7 @@ jobs:
             -o build/test_asan \
             tests/test_p2p.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c lib/monocypher.c
+            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
             build/test_asan
 
@@ -364,7 +364,8 @@ jobs:
           cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER=clang-19 -B build/analysis
           clang-tidy-19 -p build/analysis \
             src/main.c src/platform.c src/crypto.c src/protocol.c \
-            src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c
+            src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c \
+            src/args.c src/verify.c
           clang-format-19 --dry-run -Werror src/*.c src/*.h
 
   fuzz:
@@ -384,7 +385,7 @@ jobs:
               -o build/$target \
               tests/$target.c src/platform.c src/crypto.c src/protocol.c \
               src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-              src/cli.c src/cli_posix.c lib/monocypher.c
+              src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c
             timeout 30 build/$target -max_total_time=25; rc=$?
             # timeout returns 124 on normal time expiry — that's expected.
             # Any other non-zero exit means the fuzzer found a crash.
@@ -542,14 +543,14 @@ jobs:
             -o tests/test_socks5_proxy_android \
             tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c lib/monocypher.c -lm
+            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
           $CC -Os -static -o tests/mini_socks5_daemon_android \
             tests/mini_socks5_daemon.c
           $CC -std=c23 -Os -Isrc -Ilib -DNDEBUG -DCIPHER_HARDEN -static \
             -o tests/simplecipher_android \
             src/main.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c lib/monocypher.c -lm
+            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
       - name: Build release APKs with x86_64 for emulator
         working-directory: android
         env:

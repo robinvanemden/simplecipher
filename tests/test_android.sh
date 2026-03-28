@@ -514,9 +514,9 @@ check "statusText cleared in onPause" \
 check "jni_call_str helper exists in jni_bridge.c" \
     "grep -q 'jni_call_str' '$REPO_ROOT/android/app/src/main/c/jni_bridge.c'"
 
-# prompt_host wiped at cleanup
-check "prompt_host wiped at cleanup in main.c" \
-    "grep -q 'crypto_wipe(prompt_host' '$REPO_ROOT/src/main.c'"
+# prompt_host wiped at cleanup (in args.c via args_wipe())
+check "prompt_host wiped at cleanup in args.c" \
+    "grep -q 'crypto_wipe(prompt_host' '$REPO_ROOT/src/args.c'"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

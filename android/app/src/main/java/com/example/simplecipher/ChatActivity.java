@@ -87,6 +87,7 @@ public class ChatActivity extends Activity implements NativeCallback {
    * thread via onPeerFingerprintReady, read on UI thread.
    */
   private volatile boolean fingerprintVerified = false;
+
   private boolean trustFingerprint = false;
 
   @Override

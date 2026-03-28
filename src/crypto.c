@@ -11,7 +11,8 @@
 
 #include "crypto.h"
 #if !defined(_WIN32) && !defined(_WIN64)
-#    include <fcntl.h> /* open() with O_CREAT for 0600 key file permissions */
+#    include <fcntl.h>    /* open() with O_CREAT for 0600 key file permissions */
+#    include <sys/mman.h> /* mlockall/munlockall for Argon2 work buffer */
 #endif
 
 /* Constant-time all-zero check for 32 bytes.
