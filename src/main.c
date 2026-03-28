@@ -150,9 +150,8 @@ static void usage(const char *prog) {
  * echo disabled.  Returns length, or -1 on error.  The caller must
  * wipe buf after use. */
 static int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
-    fprintf(stderr, "%s", prompt);
-    fflush(stderr);
 #if defined(_WIN32) || defined(_WIN64)
+    (void)!_write(2, prompt, (unsigned)strlen(prompt));
     int i = 0;
     while (i < (int)bufsz - 1) {
         int ch = _getch();
@@ -161,9 +160,10 @@ static int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
         buf[i++] = (char)ch;
     }
     buf[i] = '\0';
-    fprintf(stderr, "\n");
+    (void)!_write(2, "\n", 1);
     return i;
 #else
+    (void)!write(STDERR_FILENO, prompt, strlen(prompt));
     struct termios old, raw;
     int fd = open("/dev/tty", O_RDWR);
     if (fd < 0) fd = STDIN_FILENO;
@@ -183,7 +183,7 @@ static int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
 
     tcsetattr(fd, TCSANOW, &old);
     if (fd != STDIN_FILENO) close(fd);
-    fprintf(stderr, "\n");
+    (void)!write(STDERR_FILENO, "\n", 1);
     return i;
 #endif
 }
@@ -303,6 +303,11 @@ int main(int argc, char *argv[]) {
         int p1 = read_passphrase("  Enter passphrase: ", pass1, sizeof pass1);
         if (p1 <= 0) {
             fprintf(stderr, "  Empty passphrase not allowed.\n");
+            return EXIT_USAGE;
+        }
+        if (p1 >= (int)sizeof(pass1) - 1) {
+            crypto_wipe(pass1, sizeof pass1);
+            fprintf(stderr, "  Passphrase too long (max 255 characters).\n");
             return EXIT_USAGE;
         }
         int p2 = read_passphrase("  Confirm passphrase: ", pass2, sizeof pass2);
@@ -529,6 +534,7 @@ int main(int argc, char *argv[]) {
         char pass[256];
         int plen = read_passphrase("  Enter passphrase: ", pass, sizeof pass);
         if (plen <= 0) {
+            crypto_wipe(pass, sizeof pass);
             fprintf(stderr, "  Empty passphrase.\n");
             return EXIT_USAGE;
         }

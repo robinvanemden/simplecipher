@@ -10,6 +10,9 @@
  */
 
 #include "crypto.h"
+#if !defined(_WIN32) && !defined(_WIN64)
+#    include <fcntl.h> /* open() with O_CREAT for 0600 key file permissions */
+#endif
 
 /* Constant-time all-zero check for 32 bytes.
  *
@@ -152,11 +155,12 @@ static const crypto_argon2_config identity_kdf_config = {
     .nb_lanes  = 1
 };
 
-/* Derive an encryption key from a passphrase and salt. */
-static void identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_SZ],
-                          const char *pass, size_t pass_len) {
+/* Derive an encryption key from a passphrase and salt.
+ * Returns 0 on success, -1 on allocation failure. */
+static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_SZ],
+                         const char *pass, size_t pass_len) {
     void *work = malloc((size_t)identity_kdf_config.nb_blocks * 1024);
-    if (!work) { memset(enc_key, 0, KEY); return; }
+    if (!work) { memset(enc_key, 0, KEY); return -1; }
 
     crypto_argon2_inputs inputs = {
         .pass      = (const uint8_t *)pass,
@@ -168,6 +172,7 @@ static void identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_
                   inputs, crypto_argon2_no_extras);
     crypto_wipe(work, (size_t)identity_kdf_config.nb_blocks * 1024);
     free(work);
+    return 0;
 }
 
 int identity_save(const char *path, const uint8_t priv[KEY],
@@ -177,13 +182,20 @@ int identity_save(const char *path, const uint8_t priv[KEY],
     fill_random(nonce, sizeof nonce);
 
     uint8_t enc_key[KEY];
-    identity_kdf(enc_key, salt, pass, pass_len);
+    if (identity_kdf(enc_key, salt, pass, pass_len) != 0) return -1;
 
     uint8_t ct[KEY], mac[MAC_SZ];
     crypto_aead_lock(ct, mac, enc_key, nonce, NULL, 0, priv, KEY);
     crypto_wipe(enc_key, sizeof enc_key);
 
+#if defined(_WIN32) || defined(_WIN64)
     FILE *f = fopen(path, "wb");
+#else
+    int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+    if (fd < 0) { crypto_wipe(ct, sizeof ct); return -1; }
+    FILE *f = fdopen(fd, "wb");
+    if (!f) { close(fd); crypto_wipe(ct, sizeof ct); return -1; }
+#endif
     if (!f) { crypto_wipe(ct, sizeof ct); return -1; }
 
     int ok = (fwrite(salt, 1, sizeof salt, f) == sizeof salt
@@ -191,6 +203,9 @@ int identity_save(const char *path, const uint8_t priv[KEY],
            && fwrite(ct, 1, sizeof ct, f) == sizeof ct
            && fwrite(mac, 1, sizeof mac, f) == sizeof mac);
     fclose(f);
+    if (!ok) {
+        unlink(path);
+    }
     crypto_wipe(ct, sizeof ct);
     return ok ? 0 : -1;
 }
@@ -211,7 +226,10 @@ int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY],
     const uint8_t *mac   = buf + IDENTITY_SALT_SZ + NONCE_SZ + KEY;
 
     uint8_t enc_key[KEY];
-    identity_kdf(enc_key, salt, pass, pass_len);
+    if (identity_kdf(enc_key, salt, pass, pass_len) != 0) {
+        crypto_wipe(buf, sizeof buf);
+        return -1;
+    }
 
     int ok = crypto_aead_unlock(priv, mac, enc_key, nonce, NULL, 0, ct, KEY);
     crypto_wipe(enc_key, sizeof enc_key);
