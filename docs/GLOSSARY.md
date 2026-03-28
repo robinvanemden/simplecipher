@@ -22,7 +22,7 @@ A design where messages are encrypted on the sender's device and decrypted only 
 
 ### Ephemeral
 
-Temporary and not stored. SimpleCipher generates fresh [keys](#key) for every [session](#session), holds them only in RAM, and wipes them on exit. Nothing is ever written to disk. *See [PROTOCOL.md](PROTOCOL.md#ephemeral)*
+Temporary and not stored. SimpleCipher generates fresh [keys](#key) for every [session](#session), holds them only in RAM, and wipes them on exit. By default, nothing is stored to disk. The optional `keygen` command saves a passphrase-protected identity key file. *See [PROTOCOL.md](PROTOCOL.md#ephemeral)*
 
 ### Fingerprint
 

@@ -224,7 +224,7 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
     int close_ok = (fclose(f) == 0);
     if (!ok || !close_ok) { unlink(path); }
     crypto_wipe(ct, sizeof ct);
-    return ok ? 0 : -1;
+    return (ok && close_ok) ? 0 : -1;
 }
 
 int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY], const char *pass, size_t pass_len) {

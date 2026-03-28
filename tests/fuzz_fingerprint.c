@@ -45,7 +45,7 @@ static int parse_fingerprint(uint8_t out[8], const char *s) {
     return 0;
 }
 
-/* Reimplementation of main.c fingerprint normalization logic. */
+/* Reimplementation of verify.c fingerprint normalization logic. */
 static void normalize_fingerprint(const char *input, char *out, int *out_len) {
     int oi = 0;
     for (int i = 0; input[i] && oi < 19; i++) {

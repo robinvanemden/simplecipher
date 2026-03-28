@@ -81,8 +81,8 @@ Each side generates a random [X25519](#x25519) keypair for this session only. Th
 Before revealing public keys, each side sends a [hash](#blake2b) ([commitment](#commitment-scheme)) of their key. This prevents a man-in-the-middle from seeing one key and then crafting a fake key that produces a matching safety code. The commitment locks both sides into their keys before the reveal. The version byte and commitment are sent together in a single exchange so that version-mismatch and commitment-mismatch failures are timing-indistinguishable from the wire.
 
 ```
-Round 1:  Alice -> version || H(key_A)    Bob -> version || H(key_B)    (commit)
-Round 2:  Alice -> key_A                  Bob -> key_B                  (reveal)
+Round 1:  Alice -> version || H(key_A) || nonce_A    Bob -> version || H(key_B) || nonce_B    (commit)
+Round 2:  Alice -> key_A                             Bob -> key_B                             (reveal)
 Verify:   H(revealed_key) == commitment                                (both sides)
 ```
 
@@ -93,8 +93,8 @@ This is what goes over the wire. Each arrow is one exchange round. Payload sizes
 ```
         Alice                              Bob
           |                                  |
-          |--- version + H(pub_A) [33B] --->|  commit
-          |<-- version + H(pub_B) [33B] ----|  (locked in)
+          |--- version + H(pub_A) + nonce_A [65B] --->|  commit
+          |<-- version + H(pub_B) + nonce_B [65B] ----|  (locked in)
           |                                  |
           |--- pub_A [32B] ---------------->|  reveal
           |<-- pub_B [32B] -----------------|
@@ -104,7 +104,8 @@ This is what goes over the wire. Each arrow is one exchange round. Payload sizes
           |  verify H(pub_A) == commitment   |
           |                                  |
           |  dh  = X25519(priv, peer_pub)    |  both compute
-          |  prk = BLAKE2b(dh || both pubs)  |  domain-separated
+          |  ikm = dh || both pubs || both nonces
+          |  prk = BLAKE2b(ikm)              |  domain-separated
           |  SAS = expand(prk, "sas")[:4]    |  same value
           |                                  |
           |  [optional: verify fingerprint]  |
@@ -291,7 +292,7 @@ Every key and secret has a defined lifetime. Nothing persists beyond its purpose
 | fingerprint hash   | domain_hash()     | after compare/format  | immediate      |
 | peer fingerprint   | nativeSetPeerFp() | after compare         | handshake only |
 
-Nothing is stored to disk, ever.
+By default, nothing is stored to disk. The optional `keygen` command saves a passphrase-protected identity key file.
 
 ### Fingerprint verification (optional)
 

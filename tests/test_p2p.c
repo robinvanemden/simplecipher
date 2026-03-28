@@ -11,7 +11,8 @@
  *
  * Build:
  *   gcc -std=c23 -Isrc -Ilib -pthread -o test_p2p tests/test_p2p.c \
- *       src/platform.c src/crypto.c src/protocol.c src/network.c \
+ *       src/platform.c src/crypto.c src/protocol.c src/network.c src/ratchet.c \
+ *       src/args.c src/verify.c \
  *       src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c lib/monocypher.c
  */
 
@@ -4033,7 +4034,7 @@ static void test_parse_fingerprint_edge_cases(void) {
 /* ---- test: constant-time comparison correctness ------------------------- */
 
 /* Use the shared ct_compare from crypto.h — the same function used by
- * both the desktop CLI (main.c) and the Android JNI bridge. */
+ * both the desktop CLI (verify.c) and the Android JNI bridge. */
 #define test_ct_cmp ct_compare
 
 static void test_ct_compare_correctness(void) {
@@ -4345,7 +4346,7 @@ static void *fp_peer_thread(void *arg) {
  * the normalization that fp_compare (test helper) tests miss because
  * fp_compare tests the helper against itself, not against real fingerprints. */
 static void test_desktop_fingerprint_normalization(void) {
-    printf("\n=== desktop fingerprint normalization (main.c logic) ===\n");
+    printf("\n=== desktop fingerprint normalization (verify.c logic) ===\n");
 
     /* Generate a real fingerprint from a random key */
     uint8_t priv[KEY], pub[KEY];
