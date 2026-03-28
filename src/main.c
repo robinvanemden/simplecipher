@@ -107,7 +107,8 @@ static void usage(const char *prog) {
             "  SimpleCipher -- encrypted P2P chat\n"
             "\n"
             "  Usage:\n"
-            "    %s listen  [port]          wait for a peer\n"
+            "    %s listen  [--peer-fingerprint ...] [port]\n"
+            "                                wait for a peer\n"
             "    %s connect [--socks5 proxy:port] [--peer-fingerprint XXXX-XXXX-XXXX-XXXX] <host> [port]\n"
             "                                connect to a peer\n"
             "\n"
@@ -119,6 +120,7 @@ static void usage(const char *prog) {
             "                         add manually when listening behind Tor)\n"
             "    --require-sandbox    abort if syscall sandbox fails to install\n"
             "    --peer-fingerprint   verify the peer's public key fingerprint\n"
+            "    --trust-fingerprint  skip SAS if fingerprint matches (64-bit)\n"
             "    port                 default: 7777\n"
             "\n"
             "  After connecting, compare the safety code with your peer\n"
@@ -161,6 +163,7 @@ int main(int argc, char *argv[]) {
     const char *socks5_host      = nullptr;
     const char *socks5_port      = nullptr;
     const char *peer_fp_expected = nullptr;
+    int         trust_fingerprint = 0; /* --trust-fingerprint: skip SAS if fingerprint matches */
     static char s5host[256];
     static char s5port[8];
 
@@ -206,11 +209,20 @@ int main(int argc, char *argv[]) {
                 }
             } else if (strcmp(argv[i], "--peer-fingerprint") == 0 && i + 1 < argc) {
                 peer_fp_expected = argv[++i];
+            } else if (strcmp(argv[i], "--trust-fingerprint") == 0) {
+                trust_fingerprint = 1;
             } else {
                 argv[out++] = argv[i];
             }
         }
         argc = out;
+    }
+
+    /* --trust-fingerprint requires --peer-fingerprint.  Without a
+     * fingerprint to verify, there is nothing to trust. */
+    if (trust_fingerprint && !peer_fp_expected) {
+        fprintf(stderr, "  --trust-fingerprint requires --peer-fingerprint\n");
+        return EXIT_USAGE;
     }
 
     /* --socks5 implies --cover-traffic: if you're using Tor, you want
@@ -653,13 +665,41 @@ int main(int argc, char *argv[]) {
      * Both sides display the same code derived from the shared secret.
      * Call the peer on a separate channel and compare it aloud.
      * If it does not match, an attacker is relaying the connection.
-     * ------------------------------------------------------------------ */
+     *
+     * --trust-fingerprint: when the peer fingerprint was verified above,
+     * the 64-bit fingerprint (stronger than 32-bit SAS) is treated as
+     * sufficient.  Skip the interactive SAS screen entirely and proceed
+     * to the chat phase.  The commitment scheme prevents brute-forcing
+     * a matching fingerprint, so this is cryptographically sound. */
 
     format_sas(sas, sas_key);
 
 #if defined(_WIN32) || defined(_WIN64)
     g_interrupt_sock = INVALID_SOCKET; /* event loops handle their own I/O */
 #endif
+
+    if (trust_fingerprint) {
+        /* Fingerprint already verified in STEP 3 — skip SAS. */
+        if (!tui_mode)
+            printf("  Fingerprint verified — SAS confirmation skipped.\n");
+        crypto_wipe(sas_key, sizeof sas_key);
+        crypto_wipe(sas, sizeof sas);
+
+        if (sandbox_phase2((int)g_fd) != 0) {
+            fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
+            rc = EXIT_SANDBOX;
+            goto out;
+        }
+
+        if (tui_mode) {
+            tui_chat_loop(g_fd, &g_sess, cover_traffic);
+        } else {
+            printf("\n");
+            cli_chat_loop(g_fd, &g_sess, cover_traffic);
+        }
+        rc = 0;
+        goto out;
+    }
 
     if (tui_mode) {
         /* tui_init_term() was already called before TCP connection */
