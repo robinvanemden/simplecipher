@@ -52,8 +52,10 @@ Consumers (main.c, test_p2p.c, jni_bridge.c) include headers and link object fil
 - C23 standard, size-optimized (`-Os -flto`). OpenBSD 7.7 uses `-std=c2x` (Clang 16); `constexpr` compat shim in `platform.h`.
 - Crypto: X25519, XChaCha20-Poly1305, BLAKE2b (all via Monocypher)
 - Every key/secret must be wiped with `crypto_wipe()` after use
+- `keygen` subcommand creates a passphrase-protected persistent identity key file; `--identity` loads it at runtime (prompts for passphrase)
 - `--peer-fingerprint` works for both listen and connect (64-bit BLAKE2b hash of peer's public key)
 - `--trust-fingerprint` (requires `--peer-fingerprint`): skips SAS when fingerprint matches — enables fully non-interactive mutual verification via pre-shared paper fingerprints
+- Fingerprints are stable when using `keygen` + `--identity`; ephemeral (change every session) without them
 - CI builds and tests natively on 8 runners (Linux/Windows x86_64/aarch64)
 - Release: push a `v*` tag — CI builds, tests, publishes GitHub release
 

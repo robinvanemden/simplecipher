@@ -97,18 +97,19 @@ The strongest verification method is **fingerprints exchanged on paper** when yo
 
 **Setup (one-time, in person):**
 
-1. Both open SimpleCipher and note the fingerprint shown on the listen screen
-2. Write it on paper (or print a QR code) and give it to each other
-3. Store the paper securely — it has no secret value (derived from a public key), but it identifies your device for this session
+1. Both run `simplecipher keygen mykey.dat` — choose a passphrase you can remember
+2. Write down each other's fingerprint on paper (or print a QR code) and exchange
+3. Store the paper securely — it has no secret value (derived from a public key), but it identifies your peer across sessions
+4. Store the key file (`mykey.dat`) on a USB stick or encrypted volume — it is protected by the passphrase (something you have + something you know)
 
 **Each session:**
 
 ```bash
-# Listener (also verifies connector's fingerprint)
-simplecipher listen --peer-fingerprint YYYY-YYYY-YYYY-YYYY --trust-fingerprint
+# Listener (loads identity key, also verifies connector's fingerprint)
+simplecipher listen --identity mykey.dat --peer-fingerprint YYYY-YYYY-YYYY-YYYY --trust-fingerprint
 
-# Connector (uses the paper fingerprint — interactive to keep address off argv)
-simplecipher connect --peer-fingerprint XXXX-XXXX-XXXX-XXXX --trust-fingerprint
+# Connector (loads identity key, uses the paper fingerprint — interactive to keep address off argv)
+simplecipher connect --identity mykey.dat --peer-fingerprint XXXX-XXXX-XXXX-XXXX --trust-fingerprint
 #   Host: <address>
 ```
 
@@ -116,7 +117,7 @@ With `--trust-fingerprint`, the 64-bit fingerprint verification is treated as su
 
 Without `--trust-fingerprint`, the fingerprint is verified first, then the SAS screen appears as a second layer (defence in depth). If the fingerprint doesn't match, the connection is aborted immediately — someone is intercepting.
 
-**Important:** Fingerprints are [ephemeral](PROTOCOL.md#ephemeral). They change every session. A printed fingerprint works exactly once. Exchange new ones when you meet again, or fall back to the safety code (voice/video call) for sessions where you don't have a current fingerprint.
+**Important:** With `keygen`, fingerprints are stable — the same key file always produces the same fingerprint, so the paper fingerprint works across sessions. Without `keygen`, fingerprints are [ephemeral](PROTOCOL.md#ephemeral) and change every session.
 
 ### 4. Operational security checklist
 

@@ -176,7 +176,7 @@ simplecipher connect
 
 ### With pre-shared fingerprints (paper)
 
-**What this is.** A [fingerprint](docs/GLOSSARY.md#fingerprint) is a short code (like `A3F2-91BC-D4E5-F678`) that identifies your copy of SimpleCipher for one session. When you meet your friend in person, you each run `simplecipher listen` to see your fingerprint, write it down on paper, and hand it to each other. Later, when you chat, SimpleCipher checks the fingerprint automatically. You still confirm a safety code, but the fingerprint adds an extra layer of trust.
+**What this is.** A [fingerprint](docs/GLOSSARY.md#fingerprint) is a short code (like `A3F2-91BC-D4E5-F678`) that identifies you. When you meet your friend in person, you each generate a persistent identity key with `simplecipher keygen`, write down each other's fingerprint on paper, and hand it to each other. Later, when you chat, SimpleCipher checks the fingerprint automatically. You still confirm a safety code, but the fingerprint adds an extra layer of trust.
 
 Think of it like exchanging secret handshakes in person, then using them later to prove who you are.
 
@@ -184,22 +184,23 @@ Think of it like exchanging secret handshakes in person, then using them later t
 
 **Steps:**
 
-1. When you meet in person, both run `simplecipher listen` to see your fingerprints. Write them on paper and exchange.
-2. Later, when you want to chat, you start listening with your friend's fingerprint.
-3. Your friend connects with your fingerprint.
-4. SimpleCipher checks the fingerprints automatically. If they don't match, it stops.
-5. Compare the safety code over a phone call.
-6. Chat.
+1. When you meet in person, both run `simplecipher keygen mykey.dat` — choose a passphrase you can remember. Each side sees their fingerprint.
+2. Write down each other's fingerprint on paper and exchange.
+3. Later, when you want to chat, you start listening with `--identity` and your friend's fingerprint.
+4. Your friend connects with `--identity` and your fingerprint.
+5. SimpleCipher checks the fingerprints automatically. If they don't match, it stops.
+6. Compare the safety code over a phone call.
+7. Chat.
 
 ```bash
-# You: start listening with your friend's fingerprint from the paper
-simplecipher listen --peer-fingerprint B7E2-04AC-F931-8D56
+# You: start listening with your identity key and your friend's fingerprint from the paper
+simplecipher listen --identity mykey.dat --peer-fingerprint B7E2-04AC-F931-8D56
 
-# Your friend: connect with your fingerprint from the paper
-simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678
+# Your friend: connect with their identity key and your fingerprint from the paper
+simplecipher connect --identity mykey.dat --peer-fingerprint A3F2-91BC-D4E5-F678
 ```
 
-**Note:** Fingerprints change every session. Exchange new ones each time you meet.
+**Note:** Fingerprints are stable when using `keygen` — the same key file always produces the same fingerprint. Without `keygen`, fingerprints are ephemeral and change every session.
 
 ---
 
@@ -213,16 +214,16 @@ The fingerprint (64-bit) is cryptographically stronger than the safety code (32-
 
 **Steps:**
 
-1. Exchange fingerprints on paper when you meet in person (same as above).
-2. When you want to chat, both add `--trust-fingerprint`.
+1. Generate identity keys with `simplecipher keygen mykey.dat` and exchange fingerprints on paper when you meet in person (same as above).
+2. When you want to chat, both add `--identity` and `--trust-fingerprint`.
 3. SimpleCipher checks the fingerprints and starts the chat automatically.
 
 ```bash
-# You: listen with your friend's fingerprint + trust
-simplecipher listen --peer-fingerprint B7E2-04AC-F931-8D56 --trust-fingerprint
+# You: listen with your identity key, your friend's fingerprint + trust
+simplecipher listen --identity mykey.dat --peer-fingerprint B7E2-04AC-F931-8D56 --trust-fingerprint
 
-# Your friend: connect with your fingerprint + trust
-simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678 --trust-fingerprint
+# Your friend: connect with their identity key, your fingerprint + trust
+simplecipher connect --identity mykey.dat --peer-fingerprint A3F2-91BC-D4E5-F678 --trust-fingerprint
 ```
 
 ---
@@ -328,6 +329,13 @@ simplecipher connect
 #   Host: 100.70.179.3
 #   Port [7777]:
 
+# Generate a persistent identity key (passphrase-protected)
+simplecipher keygen mykey.dat
+
+# Use a persistent identity key (prompts for passphrase)
+simplecipher listen --identity mykey.dat
+simplecipher connect --identity mykey.dat
+
 # Verify peer identity with a pre-shared fingerprint (interactive)
 simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678
 #   Host: 100.x.y.z
@@ -391,7 +399,7 @@ Type the full code to confirm:
 
 | Method | Why |
 |--------|-----|
-| **Paper with fingerprint** (best) | Exchange `--peer-fingerprint` codes on paper when you meet. Paper can't be hacked — no network, no device, no interception. **Note:** fingerprints are ephemeral — they change every session. Exchange new ones each time you meet. |
+| **Paper with fingerprint** (best) | Run `simplecipher keygen` and exchange fingerprints on paper when you meet. Paper can't be hacked — no network, no device, no interception. With `keygen`, fingerprints are stable across sessions. |
 | **Video call** | You see and hear the person — very hard to fake in real time |
 | **Voice call** | You recognize their voice — good if you know them well |
 | **Pre-shared fingerprint via Signal/secure chat** | Shared digitally in advance — only as secure as that channel |
@@ -419,7 +427,9 @@ SimpleCipher has two ways to check that you are really talking to your friend: *
 When you connect, both screens show the same short code (like `9052-EF29`). You call your friend and read it out loud. If it matches, you are safe. The safety code only exists during this one session. It proves nobody is secretly sitting between you right now.
 
 **Fingerprint -- exchange it on paper when you meet in person.**
-A fingerprint is another short code (like `A3F2-91BC-D4E5-F678`). You see it when you run `simplecipher listen`. When you and your friend are together in the same room, you each write down your own fingerprint and hand it to each other. Later, when you chat from different locations, SimpleCipher checks the fingerprint automatically. If it does not match, the connection stops.
+A fingerprint is another short code (like `A3F2-91BC-D4E5-F678`). When you and your friend are together in the same room, you each run `simplecipher keygen mykey.dat` to create a persistent identity key, write down your fingerprint and hand it to each other. Later, when you chat from different locations with `--identity mykey.dat`, SimpleCipher checks the fingerprint automatically. If it does not match, the connection stops.
+
+**Note:** Fingerprints are stable when using `keygen` — the same key file always produces the same fingerprint. Without `keygen`, fingerprints are ephemeral and change every session.
 
 **Why are there two fingerprints -- one for each person?**
 A fingerprint is like a phone number. Yours is different from your friend's. You each have your own. When you meet, you give yours to your friend, and they give theirs to you. Later, SimpleCipher uses the fingerprint your friend gave you to make sure the person connecting is really them. Your friend's copy of SimpleCipher does the same thing with the fingerprint you gave them.
