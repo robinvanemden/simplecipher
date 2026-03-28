@@ -188,6 +188,119 @@ static int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
 #endif
 }
 
+/* Strip dashes and uppercase a hex string for comparison.
+ * Returns the number of characters written to out (excluding NUL).
+ * The caller must wipe out after use. */
+static int normalize_hex(const char *in, char *out, size_t out_sz) {
+    int j = 0;
+    for (int i = 0; in[i] && j < (int)out_sz - 1; i++) {
+        char c = in[i];
+        if (c == '-') continue;
+        if (c >= 'a' && c <= 'z') c -= 32;
+        out[j++] = c;
+    }
+    out[j] = '\0';
+    return j;
+}
+
+/* Handle the keygen subcommand: generate a passphrase-protected identity key. */
+static int keygen_main(const char *prog, int argc, char *argv[]) {
+    if (argc < 3) {
+        fprintf(stderr, "  Usage: %s keygen <output-file>\n", prog);
+        return EXIT_USAGE;
+    }
+    const char *keypath = argv[2];
+
+    char pass1[256], pass2[256];
+    int p1 = read_passphrase("  Enter passphrase: ", pass1, sizeof pass1);
+    if (p1 <= 0) {
+        fprintf(stderr, "  Empty passphrase not allowed.\n");
+        return EXIT_USAGE;
+    }
+    if (p1 >= (int)sizeof(pass1) - 1) {
+        crypto_wipe(pass1, sizeof pass1);
+        fprintf(stderr, "  Passphrase too long (max 255 characters).\n");
+        return EXIT_USAGE;
+    }
+    int p2 = read_passphrase("  Confirm passphrase: ", pass2, sizeof pass2);
+    int mismatch = (p1 != p2) || (memcmp(pass1, pass2, (size_t)p1) != 0);
+    crypto_wipe(pass2, sizeof pass2);
+    if (mismatch) {
+        crypto_wipe(pass1, sizeof pass1);
+        fprintf(stderr, "  Passphrases do not match.\n");
+        return EXIT_USAGE;
+    }
+
+    uint8_t priv[KEY], pub[KEY];
+    gen_keypair(priv, pub);
+
+    int rc_save = identity_save(keypath, priv, pass1, (size_t)p1);
+    crypto_wipe(pass1, sizeof pass1);
+
+    if (rc_save != 0) {
+        crypto_wipe(priv, sizeof priv);
+        fprintf(stderr, "  Failed to write %s\n", keypath);
+        return EXIT_INTERNAL;
+    }
+
+    char fp[20];
+    format_fingerprint(fp, pub);
+    printf("  Identity key saved to %s\n", keypath);
+    printf("  Your fingerprint: %s\n", fp);
+    printf("  (share with your peer on paper — same every time you load this key)\n");
+
+    crypto_wipe(priv, sizeof priv);
+    crypto_wipe(fp, sizeof fp);
+    return 0;
+}
+
+/* Verify the peer's public key fingerprint against the expected value.
+ * Returns 0 if OK (or no fingerprint expected), -1 on mismatch. */
+static int verify_peer_fingerprint(const uint8_t peer_pub[KEY],
+                                   const char *expected, int tui_mode) {
+    char peer_fp[20];
+    format_fingerprint(peer_fp, peer_pub);
+
+    if (expected) {
+        char ne[20] = {0}, np[20] = {0};
+        int ei = normalize_hex(expected, ne, sizeof ne);
+        int pi = normalize_hex(peer_fp, np, sizeof np);
+        int mismatch = (ei != pi) || ct_compare((const uint8_t *)ne, (const uint8_t *)np, (size_t)ei) != 0;
+        crypto_wipe(ne, sizeof ne);
+        crypto_wipe(np, sizeof np);
+        if (mismatch) {
+            if (tui_mode) tui_restore_term();
+            fprintf(stderr,
+                    "\n  [!] Peer fingerprint mismatch!\n"
+                    "  Expected: %s\n"
+                    "  Got:      %s\n"
+                    "  Aborting -- possible MITM attack.\n",
+                    expected, peer_fp);
+            crypto_wipe(peer_fp, sizeof peer_fp);
+            return -1;
+        }
+        if (!tui_mode) printf("  Peer fingerprint verified: %s\n", peer_fp);
+    }
+    crypto_wipe(peer_fp, sizeof peer_fp);
+    return 0;
+}
+
+/* Enter phase-2 sandbox and start the chat event loop.
+ * Returns 0 on success, EXIT_SANDBOX on sandbox failure. */
+static int start_chat_phase(socket_t fd, session_t *sess, int cover, int tui) {
+    if (sandbox_phase2((int)fd) != 0) {
+        fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
+        return EXIT_SANDBOX;
+    }
+    if (tui) {
+        tui_chat_loop(fd, sess, cover);
+    } else {
+        printf("\n");
+        cli_chat_loop(fd, sess, cover);
+    }
+    return 0;
+}
+
 /* Program entry point.
  *
  * The core design is the same on both platforms: one thread, one session,
@@ -292,55 +405,8 @@ int main(int argc, char *argv[]) {
 
     /* keygen subcommand — generate a persistent identity key file.
      * Runs before signal handlers because it exits immediately. */
-    if (strcmp(argv[1], "keygen") == 0) {
-        if (argc < 3) {
-            fprintf(stderr, "  Usage: %s keygen <output-file>\n", prog);
-            return EXIT_USAGE;
-        }
-        const char *keypath = argv[2];
-
-        char pass1[256], pass2[256];
-        int p1 = read_passphrase("  Enter passphrase: ", pass1, sizeof pass1);
-        if (p1 <= 0) {
-            fprintf(stderr, "  Empty passphrase not allowed.\n");
-            return EXIT_USAGE;
-        }
-        if (p1 >= (int)sizeof(pass1) - 1) {
-            crypto_wipe(pass1, sizeof pass1);
-            fprintf(stderr, "  Passphrase too long (max 255 characters).\n");
-            return EXIT_USAGE;
-        }
-        int p2 = read_passphrase("  Confirm passphrase: ", pass2, sizeof pass2);
-        int mismatch = (p1 != p2) || (memcmp(pass1, pass2, (size_t)p1) != 0);
-        crypto_wipe(pass2, sizeof pass2);
-        if (mismatch) {
-            crypto_wipe(pass1, sizeof pass1);
-            fprintf(stderr, "  Passphrases do not match.\n");
-            return EXIT_USAGE;
-        }
-
-        uint8_t priv[KEY], pub[KEY];
-        gen_keypair(priv, pub);
-
-        int rc_save = identity_save(keypath, priv, pass1, (size_t)p1);
-        crypto_wipe(pass1, sizeof pass1);
-
-        if (rc_save != 0) {
-            crypto_wipe(priv, sizeof priv);
-            fprintf(stderr, "  Failed to write %s\n", keypath);
-            return EXIT_INTERNAL;
-        }
-
-        char fp[20];
-        format_fingerprint(fp, pub);
-        printf("  Identity key saved to %s\n", keypath);
-        printf("  Your fingerprint: %s\n", fp);
-        printf("  (share with your peer on paper — same every time you load this key)\n");
-
-        crypto_wipe(priv, sizeof priv);
-        crypto_wipe(fp, sizeof fp);
-        return 0;
-    }
+    if (strcmp(argv[1], "keygen") == 0)
+        return keygen_main(prog, argc, argv);
 
     /* Install signal handlers.
      *
@@ -744,44 +810,9 @@ int main(int argc, char *argv[]) {
      * In connect mode with --peer-fingerprint, verify the peer's key matches
      * the expected fingerprint.  This catches MITM attacks even before the
      * SAS comparison, and does not require an interactive voice call. */
-    {
-        char peer_fp[20];
-        format_fingerprint(peer_fp, peer_pub);
-
-        if (peer_fp_expected) {
-            /* Strip dashes and uppercase both strings before comparing. */
-            char ne[20] = {0}, np[20] = {0};
-            int  ei = 0, pi = 0;
-            for (int i = 0; peer_fp_expected[i] && ei < (int)sizeof(ne) - 1; i++) {
-                char c = peer_fp_expected[i];
-                if (c == '-') continue;
-                if (c >= 'a' && c <= 'z') c -= 32;
-                ne[ei++] = c;
-            }
-            for (int i = 0; peer_fp[i] && pi < (int)sizeof(np) - 1; i++) {
-                char c = peer_fp[i];
-                if (c == '-') continue;
-                if (c >= 'a' && c <= 'z') c -= 32;
-                np[pi++] = c;
-            }
-            int mismatch = (ei != pi) || ct_compare((const uint8_t *)ne, (const uint8_t *)np, (size_t)ei) != 0;
-            crypto_wipe(ne, sizeof ne);
-            crypto_wipe(np, sizeof np);
-            if (mismatch) {
-                if (tui_mode) tui_restore_term(); /* exit alternate screen so error is visible */
-                fprintf(stderr,
-                        "\n  [!] Peer fingerprint mismatch!\n"
-                        "  Expected: %s\n"
-                        "  Got:      %s\n"
-                        "  Aborting -- possible MITM attack.\n",
-                        peer_fp_expected, peer_fp);
-                crypto_wipe(peer_fp, sizeof peer_fp);
-                rc = EXIT_MITM;
-                goto out;
-            }
-            if (!tui_mode) printf("  Peer fingerprint verified: %s\n", peer_fp);
-        }
-        crypto_wipe(peer_fp, sizeof peer_fp);
+    if (verify_peer_fingerprint(peer_pub, peer_fp_expected, tui_mode) != 0) {
+        rc = EXIT_MITM;
+        goto out;
     }
     crypto_wipe(self_fp, sizeof self_fp);
 
@@ -811,18 +842,8 @@ int main(int argc, char *argv[]) {
         crypto_wipe(sas_key, sizeof sas_key);
         crypto_wipe(sas, sizeof sas);
 
-        if (sandbox_phase2((int)g_fd) != 0) {
-            fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
-            rc = EXIT_SANDBOX;
-            goto out;
-        }
-
-        if (tui_mode) {
-            tui_chat_loop(g_fd, &g_sess, cover_traffic);
-        } else {
-            printf("\n");
-            cli_chat_loop(g_fd, &g_sess, cover_traffic);
-        }
+        rc = start_chat_phase(g_fd, &g_sess, cover_traffic, tui_mode);
+        if (rc != 0) goto out;
         rc = 0;
         goto out;
     }
@@ -844,12 +865,8 @@ int main(int argc, char *argv[]) {
             goto out;
         }
 
-        if (sandbox_phase2((int)g_fd) != 0) { /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
-            fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
-            rc = EXIT_SANDBOX;
-            goto out;
-        }
-        tui_chat_loop(g_fd, &g_sess, cover_traffic);
+        rc = start_chat_phase(g_fd, &g_sess, cover_traffic, 1);
+        if (rc != 0) goto out;
     } else {
         printf("\n");
         printf("  +----------------------------------------------+\n");
@@ -1001,19 +1018,8 @@ int main(int argc, char *argv[]) {
         {
             /* Strip dashes and uppercase both strings before comparing. */
             char nt[16] = {0}, ns[16] = {0};
-            int  ti = 0, si = 0;
-            for (int i = 0; typed_sas[i] && ti < (int)sizeof(nt) - 1; i++) {
-                char c = typed_sas[i];
-                if (c == '-') continue;
-                if (c >= 'a' && c <= 'z') c -= 32;
-                nt[ti++] = c;
-            }
-            for (int i = 0; sas[i] && si < (int)sizeof(ns) - 1; i++) {
-                char c = sas[i];
-                if (c == '-') continue;
-                if (c >= 'a' && c <= 'z') c -= 32;
-                ns[si++] = c;
-            }
+            int ti = normalize_hex(typed_sas, nt, sizeof nt);
+            int si = normalize_hex(sas, ns, sizeof ns);
             int mismatch = (ti != si || ct_compare((const uint8_t *)nt, (const uint8_t *)ns, (size_t)ti) != 0);
             crypto_wipe(nt, sizeof nt);
             crypto_wipe(ns, sizeof ns);
@@ -1042,14 +1048,9 @@ int main(int argc, char *argv[]) {
         printf("\n");
         printf("  Secure session active. Ctrl+C to quit.\n");
         printf("  Type a message and press Enter to send.\n");
-        printf("\n");
 
-        if (sandbox_phase2((int)g_fd) != 0) { /* tighten: drop setsockopt (Capsicum), setup syscalls (seccomp) */
-            fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
-            rc = EXIT_SANDBOX;
-            goto out;
-        }
-        cli_chat_loop(g_fd, &g_sess, cover_traffic);
+        rc = start_chat_phase(g_fd, &g_sess, cover_traffic, 0);
+        if (rc != 0) goto out;
     } /* end else (CLI mode) */
 
     sock_shutdown_both(g_fd);
