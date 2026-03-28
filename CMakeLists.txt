@@ -97,6 +97,8 @@ set(CORE_SRC
     src/network.c
     src/tui.c
     src/cli.c
+    src/args.c
+    src/verify.c
     lib/monocypher.c
 )
 

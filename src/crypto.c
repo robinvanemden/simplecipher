@@ -148,35 +148,45 @@ void format_fingerprint(char out[20], const uint8_t pub[KEY]) {
 /* Argon2id parameters: ~100 MB memory, 3 passes, single-threaded.
  * Stretches a human-chosen passphrase into a 32-byte encryption key.
  * ~0.5-1 second on modern hardware; makes GPU brute-force expensive. */
-static const crypto_argon2_config identity_kdf_config = {
-    .algorithm = CRYPTO_ARGON2_ID,
-    .nb_blocks = 100000,  /* ~100 MB */
-    .nb_passes = 3,
-    .nb_lanes  = 1
-};
+static const crypto_argon2_config identity_kdf_config = {.algorithm = CRYPTO_ARGON2_ID,
+                                                         .nb_blocks = 100000, /* ~100 MB */
+                                                         .nb_passes = 3,
+                                                         .nb_lanes  = 1};
 
 /* Derive an encryption key from a passphrase and salt.
  * Returns 0 on success, -1 on allocation failure. */
-static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_SZ],
-                         const char *pass, size_t pass_len) {
-    void *work = malloc((size_t)identity_kdf_config.nb_blocks * 1024);
-    if (!work) { memset(enc_key, 0, KEY); return -1; }
+static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_SZ], const char *pass, size_t pass_len) {
+    size_t work_sz    = (size_t)identity_kdf_config.nb_blocks * 1024;
+    int    did_unlock = 0;
+    void  *work       = malloc(work_sz);
+#if !defined(_WIN32) && !defined(_WIN64)
+    /* mlockall(MCL_FUTURE) (set by harden()) forces every allocation to be
+     * locked into RAM.  On systems with a low mlock limit (OpenBSD default)
+     * the ~100 MB Argon2 work buffer allocation fails.  Temporarily lift the
+     * lock, allocate, and re-lock after the buffer is freed. */
+    if (!work) {
+        munlockall();
+        did_unlock = 1;
+        work       = malloc(work_sz);
+    }
+#endif
+    if (!work) {
+        memset(enc_key, 0, KEY);
+        return -1;
+    }
 
     crypto_argon2_inputs inputs = {
-        .pass      = (const uint8_t *)pass,
-        .salt      = salt,
-        .pass_size = (uint32_t)pass_len,
-        .salt_size = IDENTITY_SALT_SZ
-    };
-    crypto_argon2(enc_key, KEY, work, identity_kdf_config,
-                  inputs, crypto_argon2_no_extras);
-    crypto_wipe(work, (size_t)identity_kdf_config.nb_blocks * 1024);
+        .pass = (const uint8_t *)pass, .salt = salt, .pass_size = (uint32_t)pass_len, .salt_size = IDENTITY_SALT_SZ};
+    crypto_argon2(enc_key, KEY, work, identity_kdf_config, inputs, crypto_argon2_no_extras);
+    crypto_wipe(work, work_sz);
     free(work);
+#if !defined(_WIN32) && !defined(_WIN64)
+    if (did_unlock) mlockall(MCL_CURRENT | MCL_FUTURE);
+#endif
     return 0;
 }
 
-int identity_save(const char *path, const uint8_t priv[KEY],
-                  const char *pass, size_t pass_len) {
+int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, size_t pass_len) {
     uint8_t salt[IDENTITY_SALT_SZ], nonce[NONCE_SZ];
     fill_random(salt, sizeof salt);
     fill_random(nonce, sizeof nonce);
@@ -192,33 +202,41 @@ int identity_save(const char *path, const uint8_t priv[KEY],
     FILE *f = fopen(path, "wb");
 #else
     int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0600);
-    if (fd < 0) { crypto_wipe(ct, sizeof ct); return -1; }
-    FILE *f = fdopen(fd, "wb");
-    if (!f) { close(fd); crypto_wipe(ct, sizeof ct); return -1; }
-#endif
-    if (!f) { crypto_wipe(ct, sizeof ct); return -1; }
-
-    int ok = (fwrite(salt, 1, sizeof salt, f) == sizeof salt
-           && fwrite(nonce, 1, sizeof nonce, f) == sizeof nonce
-           && fwrite(ct, 1, sizeof ct, f) == sizeof ct
-           && fwrite(mac, 1, sizeof mac, f) == sizeof mac);
-    fclose(f);
-    if (!ok) {
-        unlink(path);
+    if (fd < 0) {
+        crypto_wipe(ct, sizeof ct);
+        return -1;
     }
+    FILE *f = fdopen(fd, "wb");
+    if (!f) {
+        close(fd);
+        crypto_wipe(ct, sizeof ct);
+        return -1;
+    }
+#endif
+    if (!f) {
+        crypto_wipe(ct, sizeof ct);
+        return -1;
+    }
+
+    int ok = (fwrite(salt, 1, sizeof salt, f) == sizeof salt && fwrite(nonce, 1, sizeof nonce, f) == sizeof nonce &&
+              fwrite(ct, 1, sizeof ct, f) == sizeof ct && fwrite(mac, 1, sizeof mac, f) == sizeof mac);
+    fclose(f);
+    if (!ok) { unlink(path); }
     crypto_wipe(ct, sizeof ct);
     return ok ? 0 : -1;
 }
 
-int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY],
-                  const char *pass, size_t pass_len) {
+int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY], const char *pass, size_t pass_len) {
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
 
     uint8_t buf[IDENTITY_FILE_SZ];
-    size_t n = fread(buf, 1, sizeof buf, f);
+    size_t  n = fread(buf, 1, sizeof buf, f);
     fclose(f);
-    if (n != IDENTITY_FILE_SZ) { crypto_wipe(buf, sizeof buf); return -1; }
+    if (n != IDENTITY_FILE_SZ) {
+        crypto_wipe(buf, sizeof buf);
+        return -1;
+    }
 
     const uint8_t *salt  = buf;
     const uint8_t *nonce = buf + IDENTITY_SALT_SZ;

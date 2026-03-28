@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mainScrollView"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/bg_primary"
+    android:fitsSystemWindows="true"
+    android:fillViewport="true">
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
     android:orientation="vertical"
     android:gravity="center_horizontal"
     android:padding="32dp"
-    android:background="@color/bg_primary"
-    android:fitsSystemWindows="true"
     android:importantForAutofill="noExcludeDescendants">
 
     <!-- App identity -->
@@ -326,3 +331,4 @@
         android:layout_marginBottom="8dp" />
 
 </LinearLayout>
+</ScrollView>

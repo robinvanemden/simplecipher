@@ -26,7 +26,7 @@ LDFLAGS ?= -flto -Wl,--gc-sections -s
 
 # Core sources (platform-independent + small inline #ifdefs)
 CORE_SRC = src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c \
-           src/tui.c src/cli.c lib/monocypher.c
+           src/tui.c src/cli.c src/args.c src/verify.c lib/monocypher.c
 
 # Platform-specific event loops and hardening
 UNAME := $(shell uname -s)

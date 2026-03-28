@@ -230,17 +230,15 @@ void format_fingerprint(char out[20], const uint8_t pub[KEY]);
  * ========================================================================= */
 enum {
     IDENTITY_SALT_SZ = 16,
-    IDENTITY_FILE_SZ = IDENTITY_SALT_SZ + NONCE_SZ + KEY + MAC_SZ  /* 88 */
+    IDENTITY_FILE_SZ = IDENTITY_SALT_SZ + NONCE_SZ + KEY + MAC_SZ /* 88 */
 };
 
 /* Save an encrypted identity key to a file.  Returns 0 on success. */
-[[nodiscard]] int identity_save(const char *path, const uint8_t priv[KEY],
-                                const char *pass, size_t pass_len);
+[[nodiscard]] int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, size_t pass_len);
 
 /* Load and decrypt an identity key from a file.  Derives the public key.
  * Returns 0 on success, -1 on wrong passphrase or corrupt/missing file. */
-[[nodiscard]] int identity_load(const char *path, uint8_t priv[KEY],
-                                uint8_t pub[KEY],
-                                const char *pass, size_t pass_len);
+[[nodiscard]] int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY], const char *pass,
+                                size_t pass_len);
 
 #endif /* SIMPLECIPHER_CRYPTO_H */
