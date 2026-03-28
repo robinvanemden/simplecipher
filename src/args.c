@@ -196,7 +196,7 @@ config_t parse_args(int argc, char *argv[]) {
      * history, and process listings — useful when connecting to sensitive
      * destinations (e.g. .onion addresses through --socks5). */
     if (cfg.we_init && argc < 3) {
-        printf("  Host: ");
+        printf("  Host (IP address from peer's screen): ");
         fflush(stdout);
         /* read() instead of fgets() so the destination address never passes
          * through libc's internal ~4KB FILE* buffer (which is never wiped).

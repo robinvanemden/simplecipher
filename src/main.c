@@ -268,7 +268,7 @@ int main(int argc, char *argv[]) {
             rc = EXIT_NET;
             goto out;
         }
-        if (!cfg.tui_mode) printf(" ok\n");
+        if (!cfg.tui_mode) printf(" connected.\n  Performing handshake...\n");
     } else {
         if (cfg.tui_mode) {
             char ipbuf[LOCAL_IPS_BUF];
@@ -283,7 +283,7 @@ int main(int argc, char *argv[]) {
             print_local_ips(cfg.port);
             printf("\n");
             printf("  Your fingerprint: %s\n", self_fp);
-            printf("  (share with peer for --peer-fingerprint verification)\n\n");
+            printf("  (share this with your peer on paper or QR for identity verification)\n\n");
             printf("  Waiting for connection... (Ctrl+C to cancel)");
             fflush(stdout);
             g_fd = listen_socket(cfg.port);
@@ -295,7 +295,7 @@ int main(int argc, char *argv[]) {
             goto out;
         }
         if (cfg.tui_mode) tui_status_screen("Peer connected", "Performing handshake...");
-        else printf(" ok\n");
+        else printf(" connected.\n  Performing handshake...\n");
     }
 
     /* On Windows, register the connected socket so Ctrl+C can close it
@@ -537,7 +537,7 @@ out:
     /* Tell the user the session is gone.  This is the last thing they see.
      * Factual, not overstated: keys are wiped, nothing was written to disk,
      * but OS-level traces (swap, scrollback) are outside our control. */
-    if (rc == EXIT_OK) printf("\n  Session ended. Keys wiped. Nothing was stored to disk.\n\n");
+    if (rc == EXIT_OK) printf("\n  Session ended. All keys have been wiped from memory.\n\n");
 
     plat_quit();
     return rc;

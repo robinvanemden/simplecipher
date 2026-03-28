@@ -388,7 +388,8 @@ int cli_sas_verify(const char *sas, socket_t fd) {
         crypto_wipe(ns, sizeof ns);
         crypto_wipe(typed_sas, sizeof typed_sas);
         if (mismatch) {
-            printf("\n  Code mismatch -- aborted.\n");
+            printf("\n  Code mismatch. If you mistyped, reconnect and try again.\n"
+                   "  If the codes genuinely differ, someone may be intercepting.\n");
             return EXIT_MITM;
         }
     }
