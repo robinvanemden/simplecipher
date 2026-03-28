@@ -3662,7 +3662,7 @@ static void test_deterministic_session_vector(void) {
     /* True KAT: verify the exact SAS string (nonces 0x03/0x04 in IKM) */
     char sas_str[20];
     format_sas(sas_str, sas_a1);
-    TEST("KAT SAS string is \"7392-01D4\"", strcmp(sas_str, "7392-01D4") == 0);
+    TEST("KAT SAS string is \"4234-56C9\"", strcmp(sas_str, "4234-56C9") == 0);
 
     session_wipe(&sa1);
     session_wipe(&sb1);

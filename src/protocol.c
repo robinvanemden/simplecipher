@@ -21,7 +21,7 @@ static_assert(HEADER_SZ + 2 + MAX_MSG == CT_SZ);
 static_assert(HEADER_SZ + KEY + 2 + MAX_MSG_RATCHET == CT_SZ);
 
 /* IKM for session_init: dh + init_pub + resp_pub + init_nonce + resp_nonce */
-static_assert(KEY * 5 == 160);
+static_assert(KEY * 5 + 1 == 161); /* IKM = dh || init_pub || resp_pub || init_nonce || resp_nonce || version */
 
 /* Commitment buffer: pub + nonce */
 static_assert(KEY * 2 == 64);
@@ -96,6 +96,8 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]) {
  *
  * Binding both public keys into ikm ensures a MITM who replaces a key
  * produces a different prk and therefore a different safety code.
+ * The protocol version byte is appended to prevent version-downgrade
+ * attacks: a MITM who rewrites the version produces a different prk.
  *
  * Returns 0, or -1 if dh is all-zero (small-subgroup / malicious key). */
 [[nodiscard]] int session_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
@@ -108,8 +110,11 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]) {
         return -1;
     }
 
-    uint8_t prk[KEY], ikm[KEY * 5];
-    /* Canonical ordering (initiator first) so both sides build identical IKM. */
+    uint8_t prk[KEY], ikm[KEY * 5 + 1];
+    /* Canonical ordering (initiator first) so both sides build identical IKM.
+     * The protocol version byte is appended to bind the negotiated version
+     * into the session key, preventing version-downgrade attacks if future
+     * protocol versions are introduced. */
     const uint8_t *init_pub   = we_init ? self_pub : peer_pub;
     const uint8_t *resp_pub   = we_init ? peer_pub : self_pub;
     const uint8_t *init_nonce = we_init ? self_nonce : peer_nonce;
@@ -119,6 +124,7 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]) {
     memcpy(ikm + KEY * 2, resp_pub, KEY);
     memcpy(ikm + KEY * 3, init_nonce, KEY);
     memcpy(ikm + KEY * 4, resp_nonce, KEY);
+    ikm[KEY * 5] = (uint8_t)PROTOCOL_VERSION;
     domain_hash(prk, "cipher x25519 sas root v1", ikm, sizeof ikm);
 
     /* Derive a root key that persists across DH ratchet steps, then

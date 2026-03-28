@@ -104,7 +104,7 @@ This is what goes over the wire. Each arrow is one exchange round. Payload sizes
           |  verify H(pub_A) == commitment   |
           |                                  |
           |  dh  = X25519(priv, peer_pub)    |  both compute
-          |  ikm = dh || both pubs || both nonces
+          |  ikm = dh || both pubs || both nonces || version
           |  prk = BLAKE2b(ikm)              |  domain-separated
           |  SAS = expand(prk, "sas")[:4]    |  same value
           |                                  |

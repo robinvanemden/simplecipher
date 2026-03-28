@@ -153,8 +153,10 @@ void format_sas(char out[SAS_STR_SZ], const uint8_t key[KEY]) {
  *
  * Hashes the public key with a distinct domain label, then formats the first
  * 8 bytes (64 bits) as four dash-separated groups of 4 hex digits.  64 bits
- * is sufficient for interactive verification: with the commitment scheme in
- * place, an attacker cannot brute-force a matching fingerprint.
+ * provides ~2^64 second-preimage resistance against offline key generation
+ * (an attacker trying to forge a matching fingerprint).  The commitment
+ * scheme protects the 32-bit SAS against online brute-force during a
+ * session, but does not apply to the pre-shared fingerprint.
  *
  * The fingerprint lets users verify peer identity out-of-band (paper, QR code,
  * Signal) before the session starts, adding a second layer of trust beyond

@@ -25,7 +25,7 @@
  *
  * Session key derivation (see session_init in protocol.c):
  *   ikm      = dh_shared_secret || initiator_pub || responder_pub
- *              || initiator_nonce || responder_nonce
+ *              || initiator_nonce || responder_nonce || version_byte
  *   prk      = domain_hash("cipher x25519 sas root v1", ikm)
  *   sas_key  = expand(prk, "sas")
  *   root_key = expand(prk, "root")
