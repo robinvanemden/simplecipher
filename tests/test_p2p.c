@@ -6046,9 +6046,10 @@ static void test_identity_save_load_roundtrip(void) {
     format_fingerprint(fp_before, pub);
 
     const char *pass = "tuna sandwich at midnight";
-    const char *path = "/tmp/test_identity.key";
+    char        path[PATH_MAX];
+    snprintf(path, sizeof path, "/tmp/test_identity_%d.key", (int)getpid());
 
-    /* Clean up stale files from previous runs (O_EXCL blocks on stale .tmp) */
+    /* Clean up stale files (O_EXCL blocks on stale .tmp) */
     unlink(path);
     {
         char tmp[PATH_MAX];
