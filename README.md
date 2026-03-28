@@ -170,7 +170,17 @@ TUI mode works on Linux, macOS, and Windows 10+. No dependencies — pure ANSI e
 
 **Interactive connect**: running `simplecipher connect` without a host prompts for it on stdin. The target address never appears in `argv`, shell history, or `/proc/*/cmdline`.
 
-**Peer [fingerprint](docs/GLOSSARY.md#fingerprint)** (`--peer-fingerprint`): the listener's fingerprint is shown on the listen screen *before* any connection is made, so it can be shared while waiting for a peer. The connector passes it as a flag. After the handshake, the peer's public key is hashed and compared — mismatch aborts the connection. This is optional additional verification on top of the SAS code, useful when you can pre-share a fingerprint but can't make a phone call.
+**Peer [fingerprint](docs/GLOSSARY.md#fingerprint)** (`--peer-fingerprint`): the listener's fingerprint is shown on the listen screen *before* any connection is made, so it can be shared while waiting for a peer. The connector passes it as a flag. After the handshake, the peer's public key is hashed and compared — mismatch aborts the connection. Works for both listen and connect modes. This is optional additional verification on top of the SAS code, useful when you can pre-share a fingerprint but can't make a phone call.
+
+**Trust fingerprint** (`--trust-fingerprint`): when combined with `--peer-fingerprint`, skips the interactive SAS verification entirely if the fingerprint matches. The 64-bit fingerprint is cryptographically stronger than the 32-bit SAS code, so this is safe when the fingerprint was exchanged through a trusted channel (e.g., paper, in person). Both sides can use it for fully non-interactive mutual verification:
+
+```bash
+# Alice (listener) has Bob's fingerprint on paper:
+simplecipher listen --peer-fingerprint B7E2-04AC-F931-8D56 --trust-fingerprint
+
+# Bob (connector) has Alice's fingerprint on paper:
+simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678 --trust-fingerprint 192.168.1.208
+```
 
 On Android, the same flow happens through the app UI: choose Listen or Connect, enter the host/port, verify the safety code, and chat.
 

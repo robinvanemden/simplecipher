@@ -104,15 +104,17 @@ The strongest verification method is **fingerprints exchanged on paper** when yo
 **Each session:**
 
 ```bash
-# Listener
-simplecipher listen
+# Listener (also verifies connector's fingerprint)
+simplecipher listen --peer-fingerprint YYYY-YYYY-YYYY-YYYY --trust-fingerprint
 
 # Connector (uses the paper fingerprint — interactive to keep address off argv)
-simplecipher connect --peer-fingerprint XXXX-XXXX-XXXX-XXXX
+simplecipher connect --peer-fingerprint XXXX-XXXX-XXXX-XXXX --trust-fingerprint
 #   Host: <address>
 ```
 
-If the fingerprint matches, the connection proceeds to the safety code screen (defence in depth — both layers verify). If it doesn't match, the connection is aborted — someone is intercepting.
+With `--trust-fingerprint`, the 64-bit fingerprint verification is treated as sufficient — the interactive SAS screen is skipped and the session goes straight to encrypted chat. This is the ideal mode for pre-shared paper fingerprints: no phone call needed at session time.
+
+Without `--trust-fingerprint`, the fingerprint is verified first, then the SAS screen appears as a second layer (defence in depth). If the fingerprint doesn't match, the connection is aborted immediately — someone is intercepting.
 
 **Important:** Fingerprints are [ephemeral](PROTOCOL.md#ephemeral). They change every session. A printed fingerprint works exactly once. Exchange new ones when you meet again, or fall back to the safety code (voice/video call) for sessions where you don't have a current fingerprint.
 
