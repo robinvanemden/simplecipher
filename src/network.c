@@ -165,7 +165,7 @@ void set_sock_opts(socket_t fd) {
  * Wire format: [pad_len(1)][payload][random_padding].
  * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
 static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t dl) {
-    uint8_t buf[1 + 33 + 255]; /* max: hdr(1) + largest payload(33) + pad(255) */
+    uint8_t buf[1 + 65 + 255]; /* max: hdr(1) + largest payload(65) + pad(255) */
     uint8_t r;
     fill_random(&r, 1);
     buf[0] = r;

@@ -38,8 +38,8 @@
  *   1. Parse args, init platform, optionally harden the process.
  *   2. Open TCP connection (connect or listen for one peer).
  *   3. Handshake with 30-second timeout (2 rounds):
- *        a. Exchange version + commitment  (33 bytes each way)
- *        b. Exchange public keys           (32 bytes each way)
+ *        a. Exchange version + commitment + session nonce  (65 bytes each way)
+ *        b. Exchange public keys                           (32 bytes each way)
  *        c. Verify version, commitment, derive keys; abort on mismatch.
  *   4. Derive session keys (X25519 + transcript hash).
  *   5. Show safety code; wait for user to confirm out-of-band.
@@ -348,8 +348,8 @@ int main(int argc, char *argv[]) {
      * ------------------------------------------------------------------ */
 
     /* Two-round handshake:
-     *   Round 1: version || commitment  (33 bytes each way)
-     *   Round 2: public key             (32 bytes each way)
+     *   Round 1: version || commitment || session_nonce  (65 bytes each way)
+     *   Round 2: public key                              (32 bytes each way)
      *
      * Both rounds always complete before any verification.  This makes
      * version-mismatch and commitment-mismatch failures indistinguishable
@@ -358,19 +358,27 @@ int main(int argc, char *argv[]) {
      *
      * The commitment scheme is preserved: both sides commit (round 1)
      * before either reveals (round 2). */
+    /* Generate a session nonce — mixed into IKM to ensure each session
+     * produces unique keys even with the same identity keypair. */
+    uint8_t self_nonce[KEY], peer_nonce[KEY];
+    fill_random(self_nonce, KEY);
+
     {
-        uint8_t out1[1 + KEY], in1[1 + KEY];
+        uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
         out1[0] = (uint8_t)PROTOCOL_VERSION;
         memcpy(out1 + 1, commit_self, KEY);
+        memcpy(out1 + 1 + KEY, self_nonce, KEY);
         if (exchange(g_fd, cfg.we_init, out1, sizeof out1, in1, sizeof in1) != 0) {
-            fprintf(stderr, "handshake error (round 1: version + commitment)\n");
+            fprintf(stderr, "handshake error (round 1: version + commitment + nonce)\n");
             crypto_wipe(out1, sizeof out1);
             crypto_wipe(in1, sizeof in1);
+            crypto_wipe(self_nonce, sizeof self_nonce);
             rc = EXIT_HANDSHAKE;
             goto out;
         }
         uint8_t peer_ver = in1[0];
         memcpy(commit_peer, in1 + 1, KEY);
+        memcpy(peer_nonce, in1 + 1 + KEY, KEY);
         crypto_wipe(out1, sizeof out1);
         crypto_wipe(in1, sizeof in1);
 
@@ -404,11 +412,13 @@ int main(int argc, char *argv[]) {
      * STEP 3: Session key derivation
      * ------------------------------------------------------------------ */
 
-    if (session_init(&g_sess, cfg.we_init, self_priv, self_pub, peer_pub, sas_key) != 0) {
+    if (session_init(&g_sess, cfg.we_init, self_priv, self_pub, peer_pub, self_nonce, peer_nonce, sas_key) != 0) {
         fprintf(stderr, "key agreement failed (bad peer key)\n");
         rc = EXIT_HANDSHAKE;
         goto out;
     }
+    crypto_wipe(self_nonce, sizeof self_nonce);
+    crypto_wipe(peer_nonce, sizeof peer_nonce);
     crypto_wipe(self_priv, sizeof self_priv); /* private key no longer needed */
 
     /* Fingerprint verification: an optional second layer of identity assurance.
@@ -523,6 +533,8 @@ out:
     crypto_wipe(peer_pub, sizeof peer_pub);
     crypto_wipe(commit_self, sizeof commit_self);
     crypto_wipe(commit_peer, sizeof commit_peer);
+    crypto_wipe(self_nonce, sizeof self_nonce);
+    crypto_wipe(peer_nonce, sizeof peer_nonce);
     crypto_wipe(sas_key, sizeof sas_key);
     crypto_wipe(sas, sizeof sas);
     args_wipe(); /* wipe host addresses and port buffers */

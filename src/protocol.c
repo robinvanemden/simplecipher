@@ -67,8 +67,8 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]) {
 /* Derive all session keys from the X25519 output and both public keys.
  *
  * dh      = X25519(self_priv, peer_pub)
- * ikm     = dh || init_pub || resp_pub   (ikm = "input key material";
- *                                         || means byte concatenation)
+ * ikm     = dh || init_pub || resp_pub || init_nonce || resp_nonce
+ *           (ikm = "input key material"; || means byte concatenation)
  * prk     = domain_hash("cipher x25519 sas root v1", ikm)
  *           (prk = "pseudo-random key" -- a single 32-byte secret that
  *            acts as the root from which all session keys are derived)
@@ -81,7 +81,8 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]) {
  *
  * Returns 0, or -1 if dh is all-zero (small-subgroup / malicious key). */
 [[nodiscard]] int session_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
-                               const uint8_t peer_pub[KEY], uint8_t sas_key_out[KEY]) {
+                               const uint8_t peer_pub[KEY], const uint8_t self_nonce[KEY],
+                               const uint8_t peer_nonce[KEY], uint8_t sas_key_out[KEY]) {
     uint8_t dh[KEY];
     crypto_x25519(dh, self_priv, peer_pub);
     if (is_zero32(dh)) {
@@ -89,13 +90,17 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]) {
         return -1;
     }
 
-    uint8_t prk[KEY], ikm[KEY * 3];
+    uint8_t prk[KEY], ikm[KEY * 5];
     /* Canonical ordering (initiator first) so both sides build identical IKM. */
-    const uint8_t *init_pub = we_init ? self_pub : peer_pub;
-    const uint8_t *resp_pub = we_init ? peer_pub : self_pub;
+    const uint8_t *init_pub   = we_init ? self_pub : peer_pub;
+    const uint8_t *resp_pub   = we_init ? peer_pub : self_pub;
+    const uint8_t *init_nonce = we_init ? self_nonce : peer_nonce;
+    const uint8_t *resp_nonce = we_init ? peer_nonce : self_nonce;
     memcpy(ikm, dh, KEY);
     memcpy(ikm + KEY, init_pub, KEY);
     memcpy(ikm + KEY * 2, resp_pub, KEY);
+    memcpy(ikm + KEY * 3, init_nonce, KEY);
+    memcpy(ikm + KEY * 4, resp_nonce, KEY);
     domain_hash(prk, "cipher x25519 sas root v1", ikm, sizeof ikm);
 
     /* Derive a root key that persists across DH ratchet steps, then

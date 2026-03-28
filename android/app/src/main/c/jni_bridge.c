@@ -632,24 +632,29 @@ static void *session_thread(void *arg) {
 
         set_sock_timeout(fd, HANDSHAKE_TIMEOUT_S);
 
-        /* Two-round handshake: version+commitment, then keys.
+        /* Two-round handshake: version+commitment+nonce, then keys.
          * Both rounds complete before any verification — timing-
          * indistinguishable failure modes from the wire. */
+        uint8_t self_nonce[KEY], peer_nonce[KEY];
+        fill_random(self_nonce, KEY);
         uint8_t peer_ver;
         {
-            uint8_t out1[1 + KEY], in1[1 + KEY];
+            uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
             out1[0] = (uint8_t)PROTOCOL_VERSION;
             memcpy(out1 + 1, commit_self, KEY);
+            memcpy(out1 + 1 + KEY, self_nonce, KEY);
             if (exchange(fd, we_init, out1, sizeof out1, in1, sizeof in1) != 0) {
                 LOGE("handshake error (round 1)");
                 crypto_wipe(out1, sizeof out1);
                 crypto_wipe(in1, sizeof in1);
                 crypto_wipe(commit_self, sizeof commit_self);
+                crypto_wipe(self_nonce, sizeof self_nonce);
                 jni_call_str(env, cb, mid_onHandshakeFailed, "Handshake failed", "hs_r1");
                 goto cleanup_keys;
             }
             peer_ver = in1[0];
             memcpy(commit_peer, in1 + 1, KEY);
+            memcpy(peer_nonce, in1 + 1 + KEY, KEY);
             crypto_wipe(out1, sizeof out1);
             crypto_wipe(in1, sizeof in1);
         }
@@ -726,12 +731,16 @@ static void *session_thread(void *arg) {
         }
 
         /* Derive session keys */
-        if (session_init(&sess, we_init, self_priv, self_pub, peer_pub, sas_key) != 0) {
+        if (session_init(&sess, we_init, self_priv, self_pub, peer_pub, self_nonce, peer_nonce, sas_key) != 0) {
             LOGE("key agreement failed (bad peer key)");
             crypto_wipe(sas_key, sizeof sas_key);
+            crypto_wipe(self_nonce, sizeof self_nonce);
+            crypto_wipe(peer_nonce, sizeof peer_nonce);
             jni_call_str(env, cb, mid_onHandshakeFailed, "Key agreement failed", "key_agree");
             goto cleanup_keys;
         }
+        crypto_wipe(self_nonce, sizeof self_nonce);
+        crypto_wipe(peer_nonce, sizeof peer_nonce);
 
         /* Wipe the private key immediately — no longer needed. */
         crypto_wipe(self_priv, sizeof self_priv);

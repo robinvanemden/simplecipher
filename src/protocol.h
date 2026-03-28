@@ -22,6 +22,7 @@
  *
  * Session key derivation (see session_init in protocol.c):
  *   ikm      = dh_shared_secret || initiator_pub || responder_pub
+ *              || initiator_nonce || responder_nonce
  *   prk      = domain_hash("cipher x25519 sas root v1", ikm)
  *   sas_key  = expand(prk, "sas")
  *   root_key = expand(prk, "root")
@@ -84,11 +85,14 @@ static_assert(MAC_SZ == 16);
  * be decrypted after the private key is wiped. */
 void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]);
 
-/* Derive all session keys from the X25519 output and both public keys.
+/* Derive all session keys from the X25519 output, both public keys, and
+ * both session nonces.  Session nonces ensure unique keys even when the
+ * same identity keypair is reused across sessions.
  * See protocol.c for the full IKM construction and derivation steps.
  * Returns 0, or -1 if dh is all-zero (small-subgroup / malicious key). */
 [[nodiscard]] int session_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
-                               const uint8_t peer_pub[KEY], uint8_t sas_key_out[KEY]);
+                               const uint8_t peer_pub[KEY], const uint8_t self_nonce[KEY],
+                               const uint8_t peer_nonce[KEY], uint8_t sas_key_out[KEY]);
 
 /* Wipe the entire session state at shutdown. */
 void session_wipe(session_t *s);

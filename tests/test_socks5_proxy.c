@@ -158,15 +158,20 @@ static void *server_thread(void *arg) {
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    uint8_t out1[1 + KEY], in1[1 + KEY];
+    uint8_t self_nonce[KEY], peer_nonce[KEY];
+    fill_random(self_nonce, KEY);
+
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
+    memcpy(out1 + 1 + KEY, self_nonce, KEY);
     if (exchange(ctx->fd, 0, out1, sizeof out1, in1, sizeof in1) != 0) goto done;
     memcpy(commit_peer, in1 + 1, KEY);
+    memcpy(peer_nonce, in1 + 1 + KEY, KEY);
     if (exchange(ctx->fd, 0, pub, KEY, peer_pub, KEY) != 0) goto done;
     if (in1[0] != PROTOCOL_VERSION) goto done;
     if (!verify_commit(commit_peer, peer_pub)) goto done;
-    if (session_init(&ctx->sess, 0, priv, pub, peer_pub, ctx->sas_key) != 0) goto done;
+    if (session_init(&ctx->sess, 0, priv, pub, peer_pub, self_nonce, peer_nonce, ctx->sas_key) != 0) goto done;
     ctx->ok = 1;
 done:
     crypto_wipe(priv, sizeof priv);
@@ -243,12 +248,17 @@ int main(void) {
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    uint8_t out1[1 + KEY], in1[1 + KEY];
+    uint8_t s5_self_nonce[KEY], s5_peer_nonce[KEY];
+    fill_random(s5_self_nonce, KEY);
+
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
+    memcpy(out1 + 1 + KEY, s5_self_nonce, KEY);
 
     int hs_ok = (exchange(client, 1, out1, sizeof out1, in1, sizeof in1) == 0);
     memcpy(commit_peer, in1 + 1, KEY);
+    memcpy(s5_peer_nonce, in1 + 1 + KEY, KEY);
     hs_ok = hs_ok && (exchange(client, 1, pub, KEY, peer_pub, KEY) == 0);
     hs_ok = hs_ok && (in1[0] == PROTOCOL_VERSION);
     hs_ok = hs_ok && verify_commit(commit_peer, peer_pub);
@@ -260,7 +270,7 @@ int main(void) {
     if (hs_ok && srv.ok) {
         session_t sess_c;
         uint8_t   sas_c[KEY];
-        TEST("session_init", session_init(&sess_c, 1, priv, pub, peer_pub, sas_c) == 0);
+        TEST("session_init", session_init(&sess_c, 1, priv, pub, peer_pub, s5_self_nonce, s5_peer_nonce, sas_c) == 0);
         TEST("SAS match", memcmp(sas_c, srv.sas_key, KEY) == 0);
 
         /* Exchange a message through the proxy */

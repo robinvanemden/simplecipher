@@ -46,7 +46,8 @@ static void random_port(char buf[8]) {
         if (s < 0) continue;
         int one = 1;
         setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
-        struct sockaddr_in a = {.sin_family = AF_INET, .sin_port = htons((uint16_t)port), .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
+        struct sockaddr_in a = {
+            .sin_family = AF_INET, .sin_port = htons((uint16_t)port), .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
         int ok = bind(s, (struct sockaddr *)&a, sizeof a);
         close(s);
         if (ok == 0) {
@@ -105,8 +106,11 @@ static void test_crypto_basics(void) {
     /* Session init produces matching SAS for both sides */
     session_t sa, sb;
     uint8_t   sas_a[KEY], sas_b[KEY];
-    TEST("session_init (initiator) succeeds", session_init(&sa, 1, priv, pub, pub2, sas_a) == 0);
-    TEST("session_init (responder) succeeds", session_init(&sb, 0, priv2, pub2, pub, sas_b) == 0);
+    uint8_t   n1[KEY], n2[KEY];
+    fill_random(n1, KEY);
+    fill_random(n2, KEY);
+    TEST("session_init (initiator) succeeds", session_init(&sa, 1, priv, pub, pub2, n1, n2, sas_a) == 0);
+    TEST("session_init (responder) succeeds", session_init(&sb, 0, priv2, pub2, pub, n2, n1, sas_b) == 0);
     TEST("SAS keys match", crypto_verify32(sas_a, sas_b) == 0);
 
     /* Initiator TX matches responder RX and vice versa */
@@ -220,13 +224,18 @@ static void *peer_thread(void *arg) {
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    /* Two-round handshake: version+commitment, then keys */
-    uint8_t out1[1 + KEY], in1[1 + KEY];
+    /* Two-round handshake: version+commitment+nonce, then keys */
+    uint8_t self_nonce[KEY], peer_nonce[KEY];
+    fill_random(self_nonce, KEY);
+
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
+    memcpy(out1 + 1 + KEY, self_nonce, KEY);
     if (exchange(ctx->fd, ctx->is_initiator, out1, sizeof out1, in1, sizeof in1) != 0) return nullptr;
     uint8_t peer_ver = in1[0];
     memcpy(commit_peer, in1 + 1, KEY);
+    memcpy(peer_nonce, in1 + 1 + KEY, KEY);
 
     if (exchange(ctx->fd, ctx->is_initiator, pub, KEY, peer_pub, KEY) != 0) return nullptr;
 
@@ -234,8 +243,11 @@ static void *peer_thread(void *arg) {
     if (!verify_commit(commit_peer, peer_pub)) return nullptr;
 
     /* Derive session */
-    if (session_init(&ctx->sess, ctx->is_initiator, priv, pub, peer_pub, ctx->sas_key) != 0) return nullptr;
+    if (session_init(&ctx->sess, ctx->is_initiator, priv, pub, peer_pub, self_nonce, peer_nonce, ctx->sas_key) != 0)
+        return nullptr;
 
+    crypto_wipe(self_nonce, sizeof self_nonce);
+    crypto_wipe(peer_nonce, sizeof peer_nonce);
     crypto_wipe(priv, sizeof priv);
     crypto_wipe(commit_self, sizeof commit_self);
     crypto_wipe(commit_peer, sizeof commit_peer);
@@ -523,7 +535,10 @@ static void test_zero_dh_rejection(void) {
 
     session_t s;
     uint8_t   sas[KEY];
-    TEST("session_init rejects all-zero peer pubkey", session_init(&s, 1, priv, pub, zero_pub, sas) == -1);
+    uint8_t   zn1[KEY], zn2[KEY];
+    fill_random(zn1, KEY);
+    fill_random(zn2, KEY);
+    TEST("session_init rejects all-zero peer pubkey", session_init(&s, 1, priv, pub, zero_pub, zn1, zn2, sas) == -1);
 
     /* Verify is_zero32 itself */
     uint8_t all_zero[32] = {0};
@@ -635,7 +650,10 @@ static void test_session_wipe(void) {
 
     session_t s;
     uint8_t   sas[KEY];
-    TEST("session_init for wipe test", session_init(&s, 1, priv, pub, pub2, sas) == 0);
+    uint8_t   wn1[KEY], wn2[KEY];
+    fill_random(wn1, KEY);
+    fill_random(wn2, KEY);
+    TEST("session_init for wipe test", session_init(&s, 1, priv, pub, pub2, wn1, wn2, sas) == 0);
 
     /* Session should have non-zero state */
     TEST("session has non-zero tx before wipe", !is_zero32(s.tx));
@@ -755,7 +773,10 @@ static void test_cross_session_isolation(void) {
     /* Session 1: A initiates to B */
     session_t s1;
     uint8_t   sas1[KEY];
-    TEST("session 1 init succeeds", session_init(&s1, 1, priv_a, pub_a, pub_b, sas1) == 0);
+    uint8_t   cn1[KEY], cn2[KEY];
+    fill_random(cn1, KEY);
+    fill_random(cn2, KEY);
+    TEST("session 1 init succeeds", session_init(&s1, 1, priv_a, pub_a, pub_b, cn1, cn2, sas1) == 0);
 
     /* Session 2: fresh keypairs */
     uint8_t priv_c[KEY], pub_c[KEY], priv_d[KEY], pub_d[KEY];
@@ -764,7 +785,10 @@ static void test_cross_session_isolation(void) {
 
     session_t s2;
     uint8_t   sas2[KEY];
-    TEST("session 2 init succeeds", session_init(&s2, 1, priv_c, pub_c, pub_d, sas2) == 0);
+    uint8_t   cn3[KEY], cn4[KEY];
+    fill_random(cn3, KEY);
+    fill_random(cn4, KEY);
+    TEST("session 2 init succeeds", session_init(&s2, 1, priv_c, pub_c, pub_d, cn3, cn4, sas2) == 0);
 
     TEST("different sessions have different tx chains", crypto_verify32(s1.tx, s2.tx) != 0);
     TEST("different sessions have different rx chains", crypto_verify32(s1.rx, s2.rx) != 0);
@@ -799,8 +823,11 @@ static void test_bidirectional_chains(void) {
 
     session_t init_s, resp_s;
     uint8_t   sas_i[KEY], sas_r[KEY];
-    TEST("initiator session init", session_init(&init_s, 1, priv_a, pub_a, pub_b, sas_i) == 0);
-    TEST("responder session init", session_init(&resp_s, 0, priv_b, pub_b, pub_a, sas_r) == 0);
+    uint8_t   bn1[KEY], bn2[KEY];
+    fill_random(bn1, KEY);
+    fill_random(bn2, KEY);
+    TEST("initiator session init", session_init(&init_s, 1, priv_a, pub_a, pub_b, bn1, bn2, sas_i) == 0);
+    TEST("responder session init", session_init(&resp_s, 0, priv_b, pub_b, pub_a, bn2, bn1, sas_r) == 0);
 
     /* tx and rx within the same session must differ */
     TEST("initiator tx != rx", crypto_verify32(init_s.tx, init_s.rx) != 0);
@@ -1004,8 +1031,11 @@ static void test_forward_secrecy_key_erasure(void) {
 
     session_t sender, receiver;
     uint8_t   sas_s[KEY], sas_r[KEY];
-    (void)session_init(&sender, 1, priv_a, pub_a, pub_b, sas_s);
-    (void)session_init(&receiver, 0, priv_b, pub_b, pub_a, sas_r);
+    uint8_t   fn1[KEY], fn2[KEY];
+    fill_random(fn1, KEY);
+    fill_random(fn2, KEY);
+    (void)session_init(&sender, 1, priv_a, pub_a, pub_b, fn1, fn2, sas_s);
+    (void)session_init(&receiver, 0, priv_b, pub_b, pub_a, fn2, fn1, sas_r);
 
     /* Save the initial chain key */
     uint8_t saved_chain[KEY];
@@ -1381,9 +1411,12 @@ static void test_session_init_wipes_intermediates(void) {
 
     session_t s1, s2;
     uint8_t   sas1[KEY], sas2[KEY];
+    uint8_t   wn1[KEY], wn2[KEY];
+    fill_random(wn1, KEY);
+    fill_random(wn2, KEY);
 
-    TEST("session_init initiator", session_init(&s1, 1, priv_a, pub_a, pub_b, sas1) == 0);
-    TEST("session_init responder", session_init(&s2, 0, priv_b, pub_b, pub_a, sas2) == 0);
+    TEST("session_init initiator", session_init(&s1, 1, priv_a, pub_a, pub_b, wn1, wn2, sas1) == 0);
+    TEST("session_init responder", session_init(&s2, 0, priv_b, pub_b, pub_a, wn2, wn1, sas2) == 0);
 
     /* Both sides must agree on SAS */
     TEST("SAS keys match", crypto_verify32(sas1, sas2) == 0);
@@ -1396,7 +1429,7 @@ static void test_session_init_wipes_intermediates(void) {
      * the derivation (a common bug: wiping before the final expand). */
     session_t s1_redo;
     uint8_t   sas1_redo[KEY];
-    TEST("session_init re-derive", session_init(&s1_redo, 1, priv_a, pub_a, pub_b, sas1_redo) == 0);
+    TEST("session_init re-derive", session_init(&s1_redo, 1, priv_a, pub_a, pub_b, wn1, wn2, sas1_redo) == 0);
     TEST("re-derived tx matches", crypto_verify32(s1_redo.tx, s1.tx) == 0);
     TEST("re-derived rx matches", crypto_verify32(s1_redo.rx, s1.rx) == 0);
     TEST("re-derived SAS matches", crypto_verify32(sas1_redo, sas1) == 0);
@@ -1577,8 +1610,11 @@ static void test_sequential_chain_advancement(void) {
 
     session_t sender, receiver;
     uint8_t   sas_s[KEY], sas_r[KEY];
-    (void)session_init(&sender, 1, priv_a, pub_a, pub_b, sas_s);
-    (void)session_init(&receiver, 0, priv_b, pub_b, pub_a, sas_r);
+    uint8_t   sn1[KEY], sn2[KEY];
+    fill_random(sn1, KEY);
+    fill_random(sn2, KEY);
+    (void)session_init(&sender, 1, priv_a, pub_a, pub_b, sn1, sn2, sas_s);
+    (void)session_init(&receiver, 0, priv_b, pub_b, pub_a, sn2, sn1, sas_r);
 
     uint8_t prev_rx[KEY];
     memcpy(prev_rx, receiver.rx, KEY);
@@ -1634,7 +1670,7 @@ static void test_sequential_chain_advancement(void) {
         /* Re-derive the original chain to build frame at seq=0 */
         session_t fresh_sender;
         uint8_t   dummy_sas[KEY];
-        (void)session_init(&fresh_sender, 1, priv_a, pub_a, pub_b, dummy_sas);
+        (void)session_init(&fresh_sender, 1, priv_a, pub_a, pub_b, sn1, sn2, dummy_sas);
         uint8_t replay_frame[FRAME_SZ], replay_next[KEY];
         (void)frame_build(&fresh_sender, (const uint8_t *)"message 0", 9, replay_frame, replay_next);
 
@@ -1674,7 +1710,10 @@ static void test_session_init_zero_dh_no_state_write(void) {
     uint8_t sas_backup[KEY];
     memcpy(sas_backup, sas, KEY);
 
-    TEST("session_init rejects zero pubkey", session_init(&s, 1, priv, pub, zero_pub, sas) == -1);
+    uint8_t zdn1[KEY], zdn2[KEY];
+    fill_random(zdn1, KEY);
+    fill_random(zdn2, KEY);
+    TEST("session_init rejects zero pubkey", session_init(&s, 1, priv, pub, zero_pub, zdn1, zdn2, sas) == -1);
 
     /* Session struct should not have been touched */
     TEST("session untouched after zero-DH rejection", memcmp(&s, s_backup, sizeof s) == 0);
@@ -1732,7 +1771,10 @@ static void test_global_session_wipe(void) {
     gen_keypair(priv_a, pub_a);
     gen_keypair(priv_b, pub_b);
     uint8_t sas[KEY];
-    TEST("sess init succeeds", session_init(&sess, 1, priv_a, pub_a, pub_b, sas) == 0);
+    uint8_t gn1[KEY], gn2[KEY];
+    fill_random(gn1, KEY);
+    fill_random(gn2, KEY);
+    TEST("sess init succeeds", session_init(&sess, 1, priv_a, pub_a, pub_b, gn1, gn2, sas) == 0);
 
     TEST("sess tx is non-zero", !is_zero32(sess.tx));
     TEST("sess rx is non-zero", !is_zero32(sess.rx));
@@ -1915,10 +1957,11 @@ static void *bad_version_peer(void *arg) {
 
     set_sock_timeout(ctx->fd, 5);
 
-    /* Send wrong version byte bundled with a dummy commitment */
-    uint8_t out1[1 + KEY], in1[1 + KEY];
-    out1[0] = 255;              /* bad version */
-    fill_random(out1 + 1, KEY); /* dummy commitment */
+    /* Send wrong version byte bundled with a dummy commitment + nonce */
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
+    out1[0] = 255;                    /* bad version */
+    fill_random(out1 + 1, KEY);       /* dummy commitment */
+    fill_random(out1 + 1 + KEY, KEY); /* dummy nonce */
     if (exchange(ctx->fd, 1, out1, sizeof out1, in1, sizeof in1) != 0) return nullptr;
 
     /* Send a dummy key for round 2 so both rounds complete */
@@ -1949,10 +1992,11 @@ static void *bad_commit_peer(void *arg) {
     gen_keypair(priv, pub);
     fill_random(fake_commit, KEY); /* not derived from pub */
 
-    /* Bundle version + fake commitment in round 1 */
-    uint8_t out1[1 + KEY], in1[1 + KEY];
+    /* Bundle version + fake commitment + nonce in round 1 */
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, fake_commit, KEY);
+    fill_random(out1 + 1 + KEY, KEY); /* dummy nonce */
     if (exchange(ctx->fd, 1, out1, sizeof out1, in1, sizeof in1) != 0) {
         crypto_wipe(priv, sizeof priv);
         return nullptr;
@@ -1984,15 +2028,20 @@ static void *honest_listener(void *arg) {
     make_commit(commit_self, pub);
 
     /* Two-round handshake */
-    uint8_t out1[1 + KEY], in1[1 + KEY];
+    uint8_t self_nonce[KEY], peer_nonce[KEY];
+    fill_random(self_nonce, KEY);
+
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
+    memcpy(out1 + 1 + KEY, self_nonce, KEY);
     if (exchange(ctx->fd, 0, out1, sizeof out1, in1, sizeof in1) != 0) {
         crypto_wipe(priv, sizeof priv);
         return nullptr;
     }
     uint8_t peer_ver = in1[0];
     memcpy(commit_peer, in1 + 1, KEY);
+    memcpy(peer_nonce, in1 + 1 + KEY, KEY);
 
     if (exchange(ctx->fd, 0, pub, KEY, peer_pub, KEY) != 0) {
         crypto_wipe(priv, sizeof priv);
@@ -2015,11 +2064,13 @@ static void *honest_listener(void *arg) {
         return nullptr;
     }
 
-    if (session_init(&ctx->sess, 0, priv, pub, peer_pub, ctx->sas_key) != 0) {
+    if (session_init(&ctx->sess, 0, priv, pub, peer_pub, self_nonce, peer_nonce, ctx->sas_key) != 0) {
         crypto_wipe(priv, sizeof priv);
         return nullptr;
     }
 
+    crypto_wipe(self_nonce, sizeof self_nonce);
+    crypto_wipe(peer_nonce, sizeof peer_nonce);
     crypto_wipe(priv, sizeof priv);
     crypto_wipe(commit_self, sizeof commit_self);
     crypto_wipe(commit_peer, sizeof commit_peer);
@@ -2483,10 +2534,13 @@ static void test_harden_codepath(void) {
 /* Helper: create a matched session pair for ratchet tests. */
 static void make_session_pair(session_t *alice, session_t *bob, uint8_t alice_priv[KEY], uint8_t bob_priv[KEY]) {
     uint8_t alice_pub[KEY], bob_pub[KEY], sas_a[KEY], sas_b[KEY];
+    uint8_t na[KEY], nb[KEY];
     gen_keypair(alice_priv, alice_pub);
     gen_keypair(bob_priv, bob_pub);
-    (void)session_init(alice, 1, alice_priv, alice_pub, bob_pub, sas_a);
-    (void)session_init(bob, 0, bob_priv, bob_pub, alice_pub, sas_b);
+    fill_random(na, KEY);
+    fill_random(nb, KEY);
+    (void)session_init(alice, 1, alice_priv, alice_pub, bob_pub, na, nb, sas_a);
+    (void)session_init(bob, 0, bob_priv, bob_pub, alice_pub, nb, na, sas_b);
 }
 
 /* Helper: send a message from src to dst (frame_build + commit + frame_open). */
@@ -3367,8 +3421,11 @@ static void test_dh_ratchet_bootstrap_chain_symmetry(void) {
 
     session_t alice, bob;
     uint8_t   sas_a[KEY], sas_b[KEY];
-    (void)session_init(&alice, 1, alice_priv, alice_pub, bob_pub, sas_a);
-    (void)session_init(&bob, 0, bob_priv, bob_pub, alice_pub, sas_b);
+    uint8_t   bna[KEY], bnb[KEY];
+    fill_random(bna, KEY);
+    fill_random(bnb, KEY);
+    (void)session_init(&alice, 1, alice_priv, alice_pub, bob_pub, bna, bnb, sas_a);
+    (void)session_init(&bob, 0, bob_priv, bob_pub, alice_pub, bnb, bna, sas_b);
 
     /* Bootstrap chain: alice.rx ("resp->init") == bob.tx ("resp->init") */
     TEST("bootstrap: alice.rx == bob.tx", crypto_verify32(alice.rx, bob.tx) == 0);
@@ -3539,11 +3596,18 @@ static void test_deterministic_session_vector(void) {
     crypto_x25519_public_key(alice_pub, alice_priv);
     crypto_x25519_public_key(bob_pub, bob_priv);
 
+    /* Fixed nonces for deterministic test */
+    uint8_t alice_nonce[KEY], bob_nonce[KEY];
+    memset(alice_nonce, 0x03, KEY);
+    memset(bob_nonce, 0x04, KEY);
+
     /* First run */
     session_t sa1, sb1;
     uint8_t   sas_a1[KEY], sas_b1[KEY];
-    TEST("session_init alice (run 1) succeeds", session_init(&sa1, 1, alice_priv, alice_pub, bob_pub, sas_a1) == 0);
-    TEST("session_init bob (run 1) succeeds", session_init(&sb1, 0, bob_priv, bob_pub, alice_pub, sas_b1) == 0);
+    TEST("session_init alice (run 1) succeeds",
+         session_init(&sa1, 1, alice_priv, alice_pub, bob_pub, alice_nonce, bob_nonce, sas_a1) == 0);
+    TEST("session_init bob (run 1) succeeds",
+         session_init(&sb1, 0, bob_priv, bob_pub, alice_pub, bob_nonce, alice_nonce, sas_b1) == 0);
 
     /* SAS keys match */
     TEST("SAS keys match (run 1)", crypto_verify32(sas_a1, sas_b1) == 0);
@@ -3555,18 +3619,20 @@ static void test_deterministic_session_vector(void) {
     /* Second run: verify determinism */
     session_t sa2, sb2;
     uint8_t   sas_a2[KEY], sas_b2[KEY];
-    TEST("session_init alice (run 2) succeeds", session_init(&sa2, 1, alice_priv, alice_pub, bob_pub, sas_a2) == 0);
-    TEST("session_init bob (run 2) succeeds", session_init(&sb2, 0, bob_priv, bob_pub, alice_pub, sas_b2) == 0);
+    TEST("session_init alice (run 2) succeeds",
+         session_init(&sa2, 1, alice_priv, alice_pub, bob_pub, alice_nonce, bob_nonce, sas_a2) == 0);
+    TEST("session_init bob (run 2) succeeds",
+         session_init(&sb2, 0, bob_priv, bob_pub, alice_pub, bob_nonce, alice_nonce, sas_b2) == 0);
 
     TEST("SAS deterministic across runs", crypto_verify32(sas_a1, sas_a2) == 0);
     TEST("alice.tx deterministic across runs", crypto_verify32(sa1.tx, sa2.tx) == 0);
     TEST("alice.rx deterministic across runs", crypto_verify32(sa1.rx, sa2.rx) == 0);
     TEST("alice.root deterministic across runs", crypto_verify32(sa1.root, sa2.root) == 0);
 
-    /* True KAT: verify the exact SAS string */
+    /* True KAT: verify the exact SAS string (nonces 0x03/0x04 in IKM) */
     char sas_str[20];
     format_sas(sas_str, sas_a1);
-    TEST("KAT SAS string is \"9052-EF29\"", strcmp(sas_str, "9052-EF29") == 0);
+    TEST("KAT SAS string is \"7392-01D4\"", strcmp(sas_str, "7392-01D4") == 0);
 
     session_wipe(&sa1);
     session_wipe(&sb1);
@@ -4220,12 +4286,17 @@ static void *fp_peer_thread(void *arg) {
     make_commit(commit_self, pub);
 
     /* Two-round handshake */
-    uint8_t out1[1 + KEY], in1[1 + KEY];
+    uint8_t self_nonce[KEY], peer_nonce[KEY];
+    fill_random(self_nonce, KEY);
+
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
+    memcpy(out1 + 1 + KEY, self_nonce, KEY);
     if (exchange(ctx->fd, ctx->is_initiator, out1, sizeof out1, in1, sizeof in1) != 0) return nullptr;
     uint8_t peer_ver = in1[0];
     memcpy(commit_peer, in1 + 1, KEY);
+    memcpy(peer_nonce, in1 + 1 + KEY, KEY);
 
     if (exchange(ctx->fd, ctx->is_initiator, pub, KEY, peer_pub, KEY) != 0) return nullptr;
     if (peer_ver != PROTOCOL_VERSION) return nullptr;
@@ -4255,8 +4326,11 @@ static void *fp_peer_thread(void *arg) {
         crypto_wipe(peer_hash, sizeof peer_hash);
     }
 
-    if (session_init(&ctx->sess, ctx->is_initiator, priv, pub, peer_pub, ctx->sas_key) != 0) return nullptr;
+    if (session_init(&ctx->sess, ctx->is_initiator, priv, pub, peer_pub, self_nonce, peer_nonce, ctx->sas_key) != 0)
+        return nullptr;
 
+    crypto_wipe(self_nonce, sizeof self_nonce);
+    crypto_wipe(peer_nonce, sizeof peer_nonce);
     crypto_wipe(priv, sizeof priv);
     crypto_wipe(commit_self, sizeof commit_self);
     crypto_wipe(commit_peer, sizeof commit_peer);
@@ -4911,16 +4985,21 @@ static void *socks5_server_thread(void *arg) {
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    uint8_t out1[1 + KEY], in1[1 + KEY];
+    uint8_t self_nonce[KEY], peer_nonce[KEY];
+    fill_random(self_nonce, KEY);
+
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
+    memcpy(out1 + 1 + KEY, self_nonce, KEY);
     if (exchange(ctx->fd, 0, out1, sizeof out1, in1, sizeof in1) != 0) goto done;
     memcpy(commit_peer, in1 + 1, KEY);
+    memcpy(peer_nonce, in1 + 1 + KEY, KEY);
 
     if (exchange(ctx->fd, 0, pub, KEY, peer_pub, KEY) != 0) goto done;
     if (in1[0] != PROTOCOL_VERSION) goto done;
     if (!verify_commit(commit_peer, peer_pub)) goto done;
-    if (session_init(&ctx->sess, 0, priv, pub, peer_pub, ctx->sas_key) != 0) goto done;
+    if (session_init(&ctx->sess, 0, priv, pub, peer_pub, self_nonce, peer_nonce, ctx->sas_key) != 0) goto done;
     ctx->ok = 1;
 done:
     crypto_wipe(priv, sizeof priv);
@@ -4993,13 +5072,18 @@ static void test_socks5_loopback(void) {
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    uint8_t out1[1 + KEY], in1[1 + KEY];
+    uint8_t s5_self_nonce[KEY], s5_peer_nonce[KEY];
+    fill_random(s5_self_nonce, KEY);
+
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
+    memcpy(out1 + 1 + KEY, s5_self_nonce, KEY);
 
     int     hs_ok    = (exchange(client, 1, out1, sizeof out1, in1, sizeof in1) == 0);
     uint8_t peer_ver = in1[0];
     memcpy(commit_peer, in1 + 1, KEY);
+    memcpy(s5_peer_nonce, in1 + 1 + KEY, KEY);
     hs_ok = hs_ok && (exchange(client, 1, pub, KEY, peer_pub, KEY) == 0);
     hs_ok = hs_ok && (peer_ver == PROTOCOL_VERSION);
     hs_ok = hs_ok && verify_commit(commit_peer, peer_pub);
@@ -5012,7 +5096,8 @@ static void test_socks5_loopback(void) {
     if (hs_ok && srv_ctx.ok) {
         session_t sess_c;
         uint8_t   sas_c[KEY];
-        TEST("SOCKS5 session_init", session_init(&sess_c, 1, priv, pub, peer_pub, sas_c) == 0);
+        TEST("SOCKS5 session_init",
+             session_init(&sess_c, 1, priv, pub, peer_pub, s5_self_nonce, s5_peer_nonce, sas_c) == 0);
         TEST("SOCKS5 SAS match", memcmp(sas_c, srv_ctx.sas_key, KEY) == 0);
 
         /* Exchange a message through the proxy */
@@ -5070,8 +5155,11 @@ static void test_cover_traffic(void) {
 
     gen_keypair(priv_a, pub_a);
     gen_keypair(priv_b, pub_b);
-    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, sas_a);
-    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, sas_b);
+    uint8_t ctn1[KEY], ctn2[KEY];
+    fill_random(ctn1, KEY);
+    fill_random(ctn2, KEY);
+    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, ctn1, ctn2, sas_a);
+    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, ctn2, ctn1, sas_b);
 
     uint8_t  frame[FRAME_SZ], next_tx[KEY];
     uint8_t  plain[MAX_MSG + 1];
@@ -5134,8 +5222,11 @@ static void test_cover_traffic(void) {
     uint8_t   cover_frame[FRAME_SZ], real_frame[FRAME_SZ];
     uint8_t   ntx1[KEY], ntx2[KEY];
     session_t a2, b2;
-    (void)session_init(&a2, 1, priv_a, pub_a, pub_b, sas_a);
-    (void)session_init(&b2, 0, priv_b, pub_b, pub_a, sas_b);
+    uint8_t   ctn3[KEY], ctn4[KEY];
+    fill_random(ctn3, KEY);
+    fill_random(ctn4, KEY);
+    (void)session_init(&a2, 1, priv_a, pub_a, pub_b, ctn3, ctn4, sas_a);
+    (void)session_init(&b2, 0, priv_b, pub_b, pub_a, ctn4, ctn3, sas_b);
 
     (void)frame_build(&a2, NULL, 0, cover_frame, ntx1);
     memcpy(a2.tx, ntx1, KEY);
@@ -5148,8 +5239,11 @@ static void test_cover_traffic(void) {
 
     /* Cover frames advance the DH ratchet correctly */
     session_t ar, br;
-    (void)session_init(&ar, 1, priv_a, pub_a, pub_b, sas_a);
-    (void)session_init(&br, 0, priv_b, pub_b, pub_a, sas_b);
+    uint8_t   ctn5[KEY], ctn6[KEY];
+    fill_random(ctn5, KEY);
+    fill_random(ctn6, KEY);
+    (void)session_init(&ar, 1, priv_a, pub_a, pub_b, ctn5, ctn6, sas_a);
+    (void)session_init(&br, 0, priv_b, pub_b, pub_a, ctn6, ctn5, sas_b);
 
     /* First send triggers ratchet (need_send_ratchet starts at 1) */
     rc = frame_build(&ar, NULL, 0, frame, next_tx);
@@ -5189,8 +5283,11 @@ static void test_ratchet_receive_atomic(void) {
 
     gen_keypair(priv_a, pub_a);
     gen_keypair(priv_b, pub_b);
-    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, sas_a);
-    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, sas_b);
+    uint8_t ran1[KEY], ran2[KEY];
+    fill_random(ran1, KEY);
+    fill_random(ran2, KEY);
+    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, ran1, ran2, sas_a);
+    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, ran2, ran1, sas_b);
 
     /* Alice sends a normal ratcheted message to Bob */
     uint8_t  frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
@@ -5268,12 +5365,18 @@ static void test_ratchet_stalling_guard(void) {
         char msg[32];
         snprintf(msg, sizeof msg, "msg %d", i);
         uint16_t mlen = (uint16_t)strlen(msg);
-        rc = frame_build(&alice, (const uint8_t *)msg, mlen, frame, next_tx);
-        if (rc != 0) { all_ok = 0; break; }
+        rc            = frame_build(&alice, (const uint8_t *)msg, mlen, frame, next_tx);
+        if (rc != 0) {
+            all_ok = 0;
+            break;
+        }
         memcpy(alice.tx, next_tx, KEY);
         alice.tx_seq++;
         rc = frame_open(&bob, frame, plain, &plen);
-        if (rc != 0) { all_ok = 0; break; }
+        if (rc != 0) {
+            all_ok = 0;
+            break;
+        }
     }
     TEST("50 non-ratchet frames accepted", all_ok);
     TEST("counter at threshold", bob.rx_no_ratchet == MAX_FRAMES_WITHOUT_RATCHET);
@@ -5303,8 +5406,11 @@ static void test_mac_failure_tolerance(void) {
 
     gen_keypair(priv_a, pub_a);
     gen_keypair(priv_b, pub_b);
-    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, sas_a);
-    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, sas_b);
+    uint8_t mfn1[KEY], mfn2[KEY];
+    fill_random(mfn1, KEY);
+    fill_random(mfn2, KEY);
+    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, mfn1, mfn2, sas_a);
+    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, mfn2, mfn1, sas_b);
 
     /* Send a real message to establish the session */
     uint8_t  frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
@@ -5360,8 +5466,11 @@ static void test_frame_open_ratchet_dh_fatal(void) {
 
     gen_keypair(priv_a, pub_a);
     gen_keypair(priv_b, pub_b);
-    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, sas_a);
-    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, sas_b);
+    uint8_t dfn1[KEY], dfn2[KEY];
+    fill_random(dfn1, KEY);
+    fill_random(dfn2, KEY);
+    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, dfn1, dfn2, sas_a);
+    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, dfn2, dfn1, sas_b);
 
     /* Alice sends a valid ratcheted message to bootstrap */
     uint8_t  frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
@@ -5420,8 +5529,11 @@ static void test_mac_failure_exact_boundary(void) {
 
     gen_keypair(priv_a, pub_a);
     gen_keypair(priv_b, pub_b);
-    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, sas_a);
-    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, sas_b);
+    uint8_t mbn1[KEY], mbn2[KEY];
+    fill_random(mbn1, KEY);
+    fill_random(mbn2, KEY);
+    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, mbn1, mbn2, sas_a);
+    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, mbn2, mbn1, sas_b);
 
     /* Bootstrap with a real message */
     uint8_t  frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
@@ -5497,8 +5609,11 @@ static void test_cover_ratchet_interleave(void) {
 
     gen_keypair(priv_a, pub_a);
     gen_keypair(priv_b, pub_b);
-    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, sas_a);
-    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, sas_b);
+    uint8_t cin1[KEY], cin2[KEY];
+    fill_random(cin1, KEY);
+    fill_random(cin2, KEY);
+    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, cin1, cin2, sas_a);
+    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, cin2, cin1, sas_b);
 
     uint8_t  frame[FRAME_SZ], next_tx[KEY], plain[MAX_MSG + 1];
     uint16_t plen;
@@ -5650,7 +5765,10 @@ static void test_frame_build_wipe_on_ratchet_fail(void) {
 
     gen_keypair(priv_a, pub_a);
     gen_keypair(priv_b, pub_b);
-    (void)session_init(&sess, 1, priv_a, pub_a, pub_b, sas_a);
+    uint8_t wrn1[KEY], wrn2[KEY];
+    fill_random(wrn1, KEY);
+    fill_random(wrn2, KEY);
+    (void)session_init(&sess, 1, priv_a, pub_a, pub_b, wrn1, wrn2, sas_a);
 
     /* Poison peer_dh with all zeros — ratchet_send will compute
      * DH(our_priv, zero) = zero, which is_zero32 catches. */
@@ -5686,14 +5804,20 @@ static void *fast_peer_thread(void *arg) {
     gen_keypair(priv, pub);
     make_commit(commit_self, pub);
 
-    uint8_t out1[1 + KEY], in1[1 + KEY];
+    uint8_t fp_self_nonce[KEY], fp_peer_nonce[KEY];
+    fill_random(fp_self_nonce, KEY);
+
+    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
+    memcpy(out1 + 1 + KEY, fp_self_nonce, KEY);
     if (exchange(ctx->fd, 1, out1, sizeof out1, in1, sizeof in1) != 0) return nullptr;
     memcpy(commit_peer, in1 + 1, KEY);
+    memcpy(fp_peer_nonce, in1 + 1 + KEY, KEY);
     if (exchange(ctx->fd, 1, pub, KEY, peer_pub, KEY) != 0) return nullptr;
     if (!verify_commit(commit_peer, peer_pub)) return nullptr;
-    if (session_init(&ctx->sess, 1, priv, pub, peer_pub, ctx->sas_key) != 0) return nullptr;
+    if (session_init(&ctx->sess, 1, priv, pub, peer_pub, fp_self_nonce, fp_peer_nonce, ctx->sas_key) != 0)
+        return nullptr;
 
     /* Immediately send a chat frame — this is what the "fast peer" does
      * after confirming SAS while the slow peer is still at the SAS prompt. */
@@ -5829,29 +5953,22 @@ static void test_normalize_hex(void) {
     char out[32];
 
     /* Basic: strip dashes and uppercase */
-    TEST("dashes stripped", normalize_hex("A3F2-91BC", out, sizeof out) == 8
-                           && strcmp(out, "A3F291BC") == 0);
-    TEST("lowercase uppercased", normalize_hex("a3f291bc", out, sizeof out) == 8
-                                 && strcmp(out, "A3F291BC") == 0);
-    TEST("mixed case + dashes", normalize_hex("a3F2-91bC", out, sizeof out) == 8
-                                && strcmp(out, "A3F291BC") == 0);
-    TEST("no dashes passthrough", normalize_hex("DEADBEEF", out, sizeof out) == 8
-                                  && strcmp(out, "DEADBEEF") == 0);
-    TEST("empty string", normalize_hex("", out, sizeof out) == 0
-                         && out[0] == '\0');
-    TEST("only dashes", normalize_hex("---", out, sizeof out) == 0
-                        && out[0] == '\0');
-    TEST("single char", normalize_hex("f", out, sizeof out) == 1
-                        && strcmp(out, "F") == 0);
+    TEST("dashes stripped", normalize_hex("A3F2-91BC", out, sizeof out) == 8 && strcmp(out, "A3F291BC") == 0);
+    TEST("lowercase uppercased", normalize_hex("a3f291bc", out, sizeof out) == 8 && strcmp(out, "A3F291BC") == 0);
+    TEST("mixed case + dashes", normalize_hex("a3F2-91bC", out, sizeof out) == 8 && strcmp(out, "A3F291BC") == 0);
+    TEST("no dashes passthrough", normalize_hex("DEADBEEF", out, sizeof out) == 8 && strcmp(out, "DEADBEEF") == 0);
+    TEST("empty string", normalize_hex("", out, sizeof out) == 0 && out[0] == '\0');
+    TEST("only dashes", normalize_hex("---", out, sizeof out) == 0 && out[0] == '\0');
+    TEST("single char", normalize_hex("f", out, sizeof out) == 1 && strcmp(out, "F") == 0);
 
     /* Truncation: output buffer too small */
     char tiny[4];
-    int n = normalize_hex("AABBCCDD", tiny, sizeof tiny);
+    int  n = normalize_hex("AABBCCDD", tiny, sizeof tiny);
     TEST("truncated to bufsz-1", n == 3 && tiny[3] == '\0');
 
     /* Full fingerprint format */
-    TEST("full fingerprint", normalize_hex("A3F2-91BC-D4E5-F678", out, sizeof out) == 16
-                             && strcmp(out, "A3F291BCD4E5F678") == 0);
+    TEST("full fingerprint",
+         normalize_hex("A3F2-91BC-D4E5-F678", out, sizeof out) == 16 && strcmp(out, "A3F291BCD4E5F678") == 0);
 
     crypto_wipe(out, sizeof out);
     crypto_wipe(tiny, sizeof tiny);
@@ -5873,7 +5990,7 @@ static void test_verify_peer_fingerprint(void) {
 
     /* Matching with dashes removed should pass */
     char no_dashes[20];
-    int j = 0;
+    int  j = 0;
     for (int i = 0; fp[i]; i++)
         if (fp[i] != '-') no_dashes[j++] = fp[i];
     no_dashes[j] = '\0';
@@ -5881,8 +5998,7 @@ static void test_verify_peer_fingerprint(void) {
 
     /* Lowercase should match (case-insensitive) */
     char lower[20];
-    for (int i = 0; fp[i]; i++)
-        lower[i] = (fp[i] >= 'A' && fp[i] <= 'Z') ? (char)(fp[i] + 32) : fp[i];
+    for (int i = 0; fp[i]; i++) lower[i] = (fp[i] >= 'A' && fp[i] <= 'Z') ? (char)(fp[i] + 32) : fp[i];
     lower[strlen(fp)] = '\0';
     TEST("lowercase fingerprint passes", verify_peer_fingerprint(pub, lower, 0) == 0);
 
@@ -5918,27 +6034,21 @@ static void test_identity_save_load_roundtrip(void) {
     const char *pass = "tuna sandwich at midnight";
     const char *path = "/tmp/test_identity.key";
 
-    TEST("identity_save succeeds",
-         identity_save(path, priv, pass, strlen(pass)) == 0);
+    TEST("identity_save succeeds", identity_save(path, priv, pass, strlen(pass)) == 0);
 
     uint8_t loaded_priv[KEY], loaded_pub[KEY];
-    TEST("identity_load succeeds",
-         identity_load(path, loaded_priv, loaded_pub, pass, strlen(pass)) == 0);
+    TEST("identity_load succeeds", identity_load(path, loaded_priv, loaded_pub, pass, strlen(pass)) == 0);
 
-    TEST("loaded private key matches",
-         crypto_verify32(priv, loaded_priv) == 0);
-    TEST("loaded public key matches",
-         crypto_verify32(pub, loaded_pub) == 0);
+    TEST("loaded private key matches", crypto_verify32(priv, loaded_priv) == 0);
+    TEST("loaded public key matches", crypto_verify32(pub, loaded_pub) == 0);
 
     char fp_after[20];
     format_fingerprint(fp_after, loaded_pub);
-    TEST("fingerprint stable after save/load",
-         strcmp(fp_before, fp_after) == 0);
+    TEST("fingerprint stable after save/load", strcmp(fp_before, fp_after) == 0);
 
     /* Wrong passphrase */
     uint8_t bad_priv[KEY], bad_pub[KEY];
-    TEST("wrong passphrase rejected",
-         identity_load(path, bad_priv, bad_pub, "wrong", 5) != 0);
+    TEST("wrong passphrase rejected", identity_load(path, bad_priv, bad_pub, "wrong", 5) != 0);
 
     /* Corrupt file */
     {
@@ -5949,8 +6059,7 @@ static void test_identity_save_load_roundtrip(void) {
             fwrite(&garbage, 1, 1, f);
             fclose(f);
         }
-        TEST("corrupt file rejected",
-             identity_load(path, bad_priv, bad_pub, pass, strlen(pass)) != 0);
+        TEST("corrupt file rejected", identity_load(path, bad_priv, bad_pub, pass, strlen(pass)) != 0);
     }
 
     /* Missing file */
@@ -5960,9 +6069,11 @@ static void test_identity_save_load_roundtrip(void) {
     /* Truncated file */
     {
         FILE *f = fopen(path, "wb");
-        if (f) { fwrite(priv, 1, 10, f); fclose(f); }
-        TEST("truncated file rejected",
-             identity_load(path, bad_priv, bad_pub, pass, strlen(pass)) != 0);
+        if (f) {
+            fwrite(priv, 1, 10, f);
+            fclose(f);
+        }
+        TEST("truncated file rejected", identity_load(path, bad_priv, bad_pub, pass, strlen(pass)) != 0);
     }
 
     unlink(path);
@@ -5972,6 +6083,52 @@ static void test_identity_save_load_roundtrip(void) {
     crypto_wipe(loaded_pub, sizeof loaded_pub);
     crypto_wipe(fp_before, sizeof fp_before);
     crypto_wipe(fp_after, sizeof fp_after);
+}
+
+/* ---- test: session nonce uniqueness -------------------------------------- */
+
+static void test_session_nonce_uniqueness(void) {
+    printf("\n=== Session nonce uniqueness ===\n");
+
+    /* Same identity keys but different nonces must produce different session
+     * keys and different SAS keys.  This verifies that session nonces break
+     * first-frame determinism when persistent identity keys are reused. */
+    uint8_t priv_a[KEY], pub_a[KEY], priv_b[KEY], pub_b[KEY];
+    gen_keypair(priv_a, pub_a);
+    gen_keypair(priv_b, pub_b);
+
+    /* Session 1: nonces na1, nb1 */
+    uint8_t na1[KEY], nb1[KEY];
+    fill_random(na1, KEY);
+    fill_random(nb1, KEY);
+    session_t s1a, s1b;
+    uint8_t   sas1a[KEY], sas1b[KEY];
+    TEST("session 1 init (initiator)", session_init(&s1a, 1, priv_a, pub_a, pub_b, na1, nb1, sas1a) == 0);
+    TEST("session 1 init (responder)", session_init(&s1b, 0, priv_b, pub_b, pub_a, nb1, na1, sas1b) == 0);
+    TEST("session 1 SAS match", crypto_verify32(sas1a, sas1b) == 0);
+
+    /* Session 2: same keys, different nonces */
+    uint8_t na2[KEY], nb2[KEY];
+    fill_random(na2, KEY);
+    fill_random(nb2, KEY);
+    session_t s2a, s2b;
+    uint8_t   sas2a[KEY], sas2b[KEY];
+    TEST("session 2 init (initiator)", session_init(&s2a, 1, priv_a, pub_a, pub_b, na2, nb2, sas2a) == 0);
+    TEST("session 2 init (responder)", session_init(&s2b, 0, priv_b, pub_b, pub_a, nb2, na2, sas2b) == 0);
+    TEST("session 2 SAS match", crypto_verify32(sas2a, sas2b) == 0);
+
+    /* The two sessions must differ in all derived keys */
+    TEST("different nonces produce different SAS keys", crypto_verify32(sas1a, sas2a) != 0);
+    TEST("different nonces produce different tx chains", crypto_verify32(s1a.tx, s2a.tx) != 0);
+    TEST("different nonces produce different rx chains", crypto_verify32(s1a.rx, s2a.rx) != 0);
+    TEST("different nonces produce different root keys", crypto_verify32(s1a.root, s2a.root) != 0);
+
+    session_wipe(&s1a);
+    session_wipe(&s1b);
+    session_wipe(&s2a);
+    session_wipe(&s2b);
+    crypto_wipe(priv_a, KEY);
+    crypto_wipe(priv_b, KEY);
 }
 
 /* ---- main --------------------------------------------------------------- */
@@ -6076,6 +6233,7 @@ int main(void) {
     test_normalize_hex();
     test_verify_peer_fingerprint();
     test_identity_save_load_roundtrip();
+    test_session_nonce_uniqueness();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();
     test_dudect_is_zero32();
