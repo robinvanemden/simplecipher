@@ -179,7 +179,11 @@ void set_sock_opts(socket_t fd) {
  * Wire format: [pad_len(1)][payload][random_padding].
  * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
 static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t deadline) {
-    uint8_t buf[1 + 1 + 2 * KEY + WIRE_PAD_MAX];              /* hdr(1) + version(1) + 2*KEY + pad */
+    /* Buffer: pad_len(1) + max_payload + max_padding.
+     * EXCHANGE_PAYLOAD_MAX is defined in protocol.h and tracks the largest
+     * handshake payload (version + commit + nonce = 65 bytes). */
+    uint8_t buf[1 + EXCHANGE_PAYLOAD_MAX + WIRE_PAD_MAX];
+    static_assert(1 + EXCHANGE_PAYLOAD_MAX + WIRE_PAD_MAX == 321);
     if (1 + payload_n + WIRE_PAD_MAX > sizeof buf) return -1; /* defensive: payload must fit */
     uint8_t r;
     fill_random(&r, 1);
@@ -201,7 +205,8 @@ static int exchange_recv(socket_t fd, uint8_t *payload, size_t expected_n, uint6
     if (read_exact_dl(fd, payload, expected_n, deadline) != 0) return -1;
 
     if (pad_len > 0) {
-        uint8_t drain[255];
+        uint8_t drain[WIRE_PAD_MAX];
+        static_assert(WIRE_PAD_MAX == 255); /* pad_len is uint8_t, max 255 */
         if (read_exact_dl(fd, drain, pad_len, deadline) != 0) return -1;
         crypto_wipe(drain, sizeof drain);
     }
@@ -500,8 +505,9 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     }
 
     /* Phase 2: Build and send CONNECT request. */
-    uint8_t req[4 + 1 + 255 + 2];
-    int     req_len = socks5_build_request(req, sizeof req, target_host, target_port);
+    uint8_t req[SOCKS5_REQ_MAX];
+    static_assert(SOCKS5_REQ_MAX == 4 + 1 + 255 + 2); /* hdr + len + max_host + port */
+    int req_len = socks5_build_request(req, sizeof req, target_host, target_port);
     if (req_len <= 0) {
         fprintf(stderr, "  SOCKS5: invalid target address\n");
         close_sock(fd);

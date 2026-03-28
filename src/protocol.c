@@ -13,6 +13,19 @@
 #include "ratchet.h"
 #include <math.h> /* log() for exponential cover traffic distribution */
 
+/* ---- compile-time buffer-size invariants -------------------------------- */
+
+/* Plaintext slot: flags(1) + len(2) + message fits in CT_SZ.
+ * With ratchet: flags(1) + ratchet_pub(KEY) + len(2) + message fits too. */
+static_assert(HEADER_SZ + 2 + MAX_MSG == CT_SZ);
+static_assert(HEADER_SZ + KEY + 2 + MAX_MSG_RATCHET == CT_SZ);
+
+/* IKM for session_init: dh + init_pub + resp_pub + init_nonce + resp_nonce */
+static_assert(KEY * 5 == 160);
+
+/* Commitment buffer: pub + nonce */
+static_assert(KEY * 2 == 64);
+
 /* ---- input validation --------------------------------------------------- */
 
 /* Return 1 if s is a decimal integer in [1, 65535], 0 otherwise.

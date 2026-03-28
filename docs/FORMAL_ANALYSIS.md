@@ -309,6 +309,8 @@ The AD binds the sequence number to the ciphertext cryptographically. Modifying 
 
 The check is performed before `chain_step` or `crypto_aead_unlock`, so rejected frames incur no cryptographic cost and do not advance the chain.
 
+**Sequence number overflow rejection.** Both `frame_build` and `frame_open` check for `seq == UINT64_MAX` before incrementing and reject the frame if the counter would wrap. This prevents nonce reuse after 2<sup>64</sup> frames (an astronomically large number, but the check ensures correctness even under adversarial conditions).
+
 **Limitation:** This strict ordering means SimpleCipher does not tolerate packet reordering. This is acceptable because the protocol runs over TCP, which guarantees in-order delivery.
 
 ### 6.4 Tamper detection

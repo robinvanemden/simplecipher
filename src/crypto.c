@@ -144,6 +144,8 @@ void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY], const uint8_t nonc
  * cannot search for a matching code after committing.  The hex format reads
  * clearly over a voice call: "A-3-F-2 dash 9-1-B-C". */
 void format_sas(char out[SAS_STR_SZ], const uint8_t key[KEY]) {
+    /* "XXXX-XXXX" = 9 chars + NUL = 10 bytes; SAS_STR_SZ = 20 (oversized). */
+    static_assert(SAS_STR_SZ >= 10);
     snprintf(out, SAS_STR_SZ, "%02X%02X-%02X%02X", key[0], key[1], key[2], key[3]);
 }
 
@@ -158,6 +160,8 @@ void format_sas(char out[SAS_STR_SZ], const uint8_t key[KEY]) {
  * Signal) before the session starts, adding a second layer of trust beyond
  * the in-session SAS code. */
 void format_fingerprint(char out[FINGERPRINT_STR_SZ], const uint8_t pub[KEY]) {
+    /* "XXXX-XXXX-XXXX-XXXX" = 19 chars + NUL = 20 bytes. */
+    static_assert(FINGERPRINT_STR_SZ >= 20);
     uint8_t hash[32];
     domain_hash(hash, "cipher fingerprint v2", pub, KEY);
     snprintf(out, FINGERPRINT_STR_SZ, "%02X%02X-%02X%02X-%02X%02X-%02X%02X", hash[0], hash[1], hash[2], hash[3],
@@ -261,7 +265,9 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
     chmod(path, 0600);
     return 0;
 #else
-    /* Build temp path in the same directory for atomic rename. */
+    /* Build temp path in the same directory for atomic rename.
+     * PATH_MAX covers any realistic path; overflow is checked below. */
+    static_assert(PATH_MAX >= 256);
     char tmp_path[PATH_MAX];
     int  n = snprintf(tmp_path, sizeof tmp_path, "%s.tmp", path);
     if (n < 0 || (size_t)n >= sizeof tmp_path) {

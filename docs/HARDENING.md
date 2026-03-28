@@ -46,7 +46,11 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Wipe all keys after use (`crypto_wipe`) | yes | yes | yes (native layer) |
 | Ephemeral keys only (nothing on disk) | yes | yes | yes |
 | Passphrase-protected identity key (Argon2id, 100 MB, 3 passes) | yes | yes | — |
+| Atomic identity key save (temp file + rename) | yes | — | — |
+| Sequence number overflow rejection (UINT64_MAX) | yes | yes | yes |
+| Terminal restore on exit (`atexit` handler in verify.c) | yes | — | — |
 | **Android-specific** | | | |
+| Frame-level rate limiting before AEAD (50 frames/sec) | — | — | yes |
 | Block screenshots / screen recording | — | — | `FLAG_SECURE` |
 | Block overlay windows (tapjacking) | — | — | `setHideOverlayWindows` |
 | Custom in-app keyboard (no IME logging) | — | — | yes |
@@ -114,8 +118,8 @@ The runtime sandbox tightens in phases. Each phase drops privileges that are no 
 ### Unit and integration tests (CI, blocking)
 
 ```bash
-make test                      # 700 P2P tests (test_p2p only)
-make test-all                  # 727 total: 700 P2P + 11 SOCKS5 + 16 CLI flag tests
+make test                      # 703 P2P tests (test_p2p only)
+make test-all                  # 732 total: 703 P2P + 11 SOCKS5 + 18 CLI flag tests
 ```
 
 Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultaneous send), TCP loopback, tamper/replay/reserved-flag rejection, forward secrecy, KDF known-answer vectors, fingerprint verification, SOCKS5 request building, deterministic session vectors.

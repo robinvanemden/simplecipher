@@ -212,7 +212,7 @@ Every frame is exactly 512 bytes regardless of message length:
 [ sequence: 8 bytes | ciphertext: 488 bytes | MAC: 16 bytes ]
 ```
 
-This hides message length from network observers. The sequence number is authenticated (tamper-proof) but not encrypted, enabling replay and reorder detection before any crypto work.
+This hides message length from network observers. The sequence number is authenticated (tamper-proof) but not encrypted, enabling replay and reorder detection before any crypto work. Both `frame_build` and `frame_open` reject frames when the sequence counter reaches UINT64_MAX, preventing nonce reuse from counter overflow.
 
 ### 6. Wire padding (DPI resistance)
 
@@ -274,6 +274,8 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 | **Frame injection resistance** | [MAC](#mac) failures are tolerated (up to 3); a single forged frame does not kill the session |
 | **Handshake indistinguishability** | Version and [commitment](#commitment-scheme) bundled in one round; all failure modes have identical timing |
 | **[Ephemeral](#ephemeral) keys** | New keypair every session; nothing stored to disk |
+| **Sequence overflow rejection** | `frame_build` and `frame_open` reject at UINT64_MAX to prevent nonce reuse |
+| **Terminal restore** | `verify.c` registers an `atexit` handler to restore terminal echo if the process exits during passphrase input |
 
 ### Key lifecycle
 
@@ -292,7 +294,7 @@ Every key and secret has a defined lifetime. Nothing persists beyond its purpose
 | fingerprint hash   | domain_hash()     | after compare/format  | immediate      |
 | peer fingerprint   | nativeSetPeerFp() | after compare         | handshake only |
 
-By default, nothing is stored to disk. The optional `keygen` command saves a passphrase-protected identity key file.
+By default, nothing is stored to disk. The optional `keygen` command saves a passphrase-protected identity key file. On POSIX systems, `identity_save` writes to a temporary file and atomically renames it to the target path, preventing partial writes from corrupting an existing key file.
 
 ### Fingerprint verification (optional)
 

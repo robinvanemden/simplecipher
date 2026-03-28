@@ -155,6 +155,7 @@ The chat is still encrypted. But without verification, you can't be sure who you
 | No persistent storage | Nothing written to disk — no databases, no saved keys, no logs |
 | Anti-debugging (`PR_SET_DUMPABLE=0`) | Memory dumping of crypto keys by a debugger or compromised app |
 | No core dumps (`RLIMIT_CORE=0`) | Crash dumps writing key material to disk |
+| Frame-level rate limiting (50 frames/sec before AEAD) | CPU exhaustion from ratchet or cover frame flooding by a malicious peer |
 | Constant-time comparison | Timing attacks on fingerprint verification |
 
 ### What the app cannot guarantee

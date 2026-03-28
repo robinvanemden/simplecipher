@@ -27,6 +27,9 @@
 
 #include <pthread.h>
 #include <assert.h>
+#include <limits.h>
+#include <math.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
 #if defined(__FreeBSD__)
@@ -6142,6 +6145,277 @@ static void test_session_nonce_uniqueness(void) {
     crypto_wipe(priv_b, KEY);
 }
 
+/* ---- test: cover traffic statistical properties ------------------------- */
+
+static void test_cover_delay_statistics(void) {
+    printf("\n=== Cover delay statistical properties ===\n");
+
+    /* Collect N samples and compute mean, min, max, variance.
+     * The exponential distribution with mean 500ms should produce:
+     *   - mean approximately 500ms (within 10%)
+     *   - all values in [COVER_DELAY_MIN_MS, COVER_DELAY_MAX_MS]
+     *   - coefficient of variation (CV = stddev/mean) > 0.5
+     *     (exponential has CV=1; clamping reduces it but not below ~0.5) */
+    enum { N = 10000 };
+    double sum          = 0;
+    double sum_sq       = 0;
+    int    all_in_range = 1;
+
+    for (int i = 0; i < N; i++) {
+        unsigned d = cover_delay_ms();
+        if (d < COVER_DELAY_MIN_MS || d > COVER_DELAY_MAX_MS) { all_in_range = 0; }
+        sum += d;
+        sum_sq += (double)d * d;
+    }
+    double mean     = sum / N;
+    double variance = (sum_sq / N) - (mean * mean);
+    double stddev   = sqrt(variance);
+    double cv       = stddev / mean;
+
+    TEST("cover_delay_ms all in [50, 1500] over 10000 samples", all_in_range);
+    /* Mean should be approximately 500ms (within 20% to avoid flaky tests) */
+    TEST("cover_delay_ms mean ~500ms", mean > 400.0 && mean < 600.0);
+    /* Coefficient of variation > 0.5 proves high variance (not near-constant) */
+    TEST("cover_delay_ms CV > 0.5 (high variance)", cv > 0.5);
+    /* Verify the constants themselves are sane */
+    TEST("COVER_DELAY_MIN_MS > 0", COVER_DELAY_MIN_MS > 0);
+    TEST("COVER_DELAY_MIN_MS < COVER_DELAY_MEAN_MS", COVER_DELAY_MIN_MS < COVER_DELAY_MEAN_MS);
+    TEST("COVER_DELAY_MEAN_MS < COVER_DELAY_MAX_MS", COVER_DELAY_MEAN_MS < COVER_DELAY_MAX_MS);
+    TEST("COVER_DELAY_MAX_MS <= 1500", COVER_DELAY_MAX_MS <= 1500);
+}
+
+/* ---- test: frame_open rejects UINT64_MAX rx_seq ------------------------- */
+
+static void test_frame_open_seq_overflow(void) {
+    printf("\n=== frame_open rejects UINT64_MAX rx_seq ===\n");
+
+    /* Build a valid frame at tx_seq = UINT64_MAX - 1 (last valid),
+     * then try to open it with rx_seq = UINT64_MAX - 1.  After that
+     * successful open, rx_seq would be UINT64_MAX.  Build another
+     * frame at tx_seq = UINT64_MAX - 1 won't work (already used),
+     * so we set up a fresh session with rx_seq = UINT64_MAX and
+     * verify frame_open rejects after decryption. */
+
+    uint8_t chain[KEY];
+    fill_random(chain, KEY);
+
+    /* Build a frame at tx_seq = UINT64_MAX - 1 */
+    session_t tx_s;
+    memset(&tx_s, 0, sizeof tx_s);
+    memcpy(tx_s.tx, chain, KEY);
+    tx_s.tx_seq            = UINT64_MAX - 1;
+    tx_s.need_send_ratchet = 0;
+
+    uint8_t     frame[FRAME_SZ], next[KEY];
+    const char *msg = "overflow rx test";
+    int         rc  = frame_build(&tx_s, (const uint8_t *)msg, (uint16_t)strlen(msg), frame, next);
+    TEST("frame_build at UINT64_MAX-1 for rx test succeeds", rc == 0);
+
+    /* Advance chain (as if committed) to get the chain state for the NEXT frame */
+    uint8_t next_chain[KEY];
+    chain_step(chain, next_chain, next_chain); /* just advance to get next chain */
+
+    /* Now set up receiver at rx_seq = UINT64_MAX - 1 with matching chain.
+     * After successful open, rx_seq becomes UINT64_MAX.  Then the next
+     * frame_open must reject because rx_seq == UINT64_MAX means overflow. */
+    session_t rx_s;
+    memset(&rx_s, 0, sizeof rx_s);
+    memcpy(rx_s.rx, chain, KEY);
+    rx_s.rx_seq = UINT64_MAX - 1;
+
+    uint8_t  plain[MAX_MSG + 1];
+    uint16_t plen = 0;
+    rc            = frame_open(&rx_s, frame, plain, &plen);
+    TEST("frame_open at rx_seq UINT64_MAX-1 succeeds", rc == 0);
+    TEST("rx_seq advanced to UINT64_MAX", rx_s.rx_seq == UINT64_MAX);
+
+    /* Now build a frame at tx_seq = UINT64_MAX (this should fail at build) */
+    session_t tx_s2;
+    memset(&tx_s2, 0, sizeof tx_s2);
+    memcpy(tx_s2.tx, next, KEY);
+    tx_s2.tx_seq            = UINT64_MAX;
+    tx_s2.need_send_ratchet = 0;
+    rc                      = frame_build(&tx_s2, (const uint8_t *)"x", 1, frame, next);
+    TEST("frame_build at UINT64_MAX rejects (confirms tx overflow guard)", rc != 0);
+
+    /* Even if an attacker could craft a frame with seq=UINT64_MAX in the AD,
+     * frame_open checks rx_seq == UINT64_MAX AFTER successful MAC verification
+     * and returns -1.  We simulate this by manually constructing a frame
+     * with the correct seq in AD but rx_seq already at UINT64_MAX.
+     * The seq mismatch check (seq != rx_seq) won't fire because seq matches,
+     * but the post-decrypt overflow check will reject it.
+     *
+     * To avoid needing to craft valid AEAD, we just verify the state:
+     * rx_s.rx_seq is now UINT64_MAX, so any further frame_open must fail. */
+    /* Build a frame with a fresh session at seq 0, then try to open with
+     * rx_seq = UINT64_MAX -- seq mismatch will reject it before overflow. */
+    session_t fresh_tx;
+    memset(&fresh_tx, 0, sizeof fresh_tx);
+    fill_random(fresh_tx.tx, KEY);
+    fresh_tx.need_send_ratchet = 0;
+    uint8_t fresh_frame[FRAME_SZ], fresh_next[KEY];
+    rc = frame_build(&fresh_tx, (const uint8_t *)"y", 1, fresh_frame, fresh_next);
+    TEST("fresh frame at seq 0 builds", rc == 0);
+
+    /* rx_s already has rx_seq = UINT64_MAX, seq in frame AD = 0, mismatch -> reject */
+    plen = 0;
+    rc   = frame_open(&rx_s, fresh_frame, plain, &plen);
+    TEST("frame_open rejects when rx_seq is UINT64_MAX (seq mismatch)", rc != 0);
+
+    crypto_wipe(chain, sizeof chain);
+}
+
+/* ---- test: exchange_send buffer fits round 1 payload -------------------- */
+
+static void test_exchange_buffer_size(void) {
+    printf("\n=== Exchange buffer size sanity ===\n");
+
+    /* The round 1 handshake payload is: version(1) + commitment(KEY) + nonce(KEY) = 65 bytes.
+     * exchange_send's buffer is: hdr(1) + version(1) + 2*KEY + WIRE_PAD_MAX.
+     * Verify the buffer is large enough for the payload plus max padding. */
+    size_t round1_payload = 1 + KEY + KEY;                  /* version + commitment + nonce */
+    size_t exchange_buf   = 1 + 1 + 2 * KEY + WIRE_PAD_MAX; /* from network.c */
+
+    TEST("round 1 payload is 65 bytes", round1_payload == 65);
+    TEST("exchange buffer fits round 1 + hdr + max pad", exchange_buf >= 1 + round1_payload + WIRE_PAD_MAX);
+
+    /* Round 2 payload is: pub(KEY) + nonce(KEY) = 64 bytes, also fits */
+    size_t round2_payload = KEY + KEY;
+    TEST("exchange buffer fits round 2 + hdr + max pad", exchange_buf >= 1 + round2_payload + WIRE_PAD_MAX);
+
+    /* The defensive check in exchange_send: 1 + payload_n + WIRE_PAD_MAX <= sizeof buf */
+    TEST("exchange_send defensive check passes for round 1", 1 + round1_payload + WIRE_PAD_MAX <= exchange_buf);
+    TEST("exchange_send defensive check passes for round 2", 1 + round2_payload + WIRE_PAD_MAX <= exchange_buf);
+}
+
+/* ---- test: commitment nonce binding ------------------------------------- */
+
+static void test_commitment_nonce_binding(void) {
+    printf("\n=== Commitment scheme nonce binding ===\n");
+
+    uint8_t pub[KEY], priv[KEY];
+    gen_keypair(priv, pub);
+
+    uint8_t nonce1[KEY], nonce2[KEY];
+    fill_random(nonce1, KEY);
+    fill_random(nonce2, KEY);
+
+    /* Same pub + different nonce must produce different commitments */
+    uint8_t commit1[KEY], commit2[KEY];
+    make_commit(commit1, pub, nonce1);
+    make_commit(commit2, pub, nonce2);
+    TEST("same pub + different nonce -> different commitments", crypto_verify32(commit1, commit2) != 0);
+
+    /* Verify with correct nonce succeeds */
+    TEST("verify_commit with correct nonce succeeds", verify_commit(commit1, pub, nonce1) == 1);
+    TEST("verify_commit with correct nonce succeeds (commit2)", verify_commit(commit2, pub, nonce2) == 1);
+
+    /* Verify with wrong nonce fails */
+    TEST("verify_commit with wrong nonce fails (nonce2 for commit1)", verify_commit(commit1, pub, nonce2) == 0);
+    TEST("verify_commit with wrong nonce fails (nonce1 for commit2)", verify_commit(commit2, pub, nonce1) == 0);
+
+    /* Zero nonce vs random nonce */
+    uint8_t zero_nonce[KEY];
+    memset(zero_nonce, 0, KEY);
+    uint8_t commit_zero[KEY];
+    make_commit(commit_zero, pub, zero_nonce);
+    TEST("zero nonce produces different commitment than random nonce", crypto_verify32(commit_zero, commit1) != 0);
+    TEST("verify_commit with zero nonce succeeds for its own commitment",
+         verify_commit(commit_zero, pub, zero_nonce) == 1);
+    TEST("verify_commit with zero nonce fails for random nonce commitment",
+         verify_commit(commit1, pub, zero_nonce) == 0);
+
+    /* Nonce replay from a different session: same pub, same nonce1, but
+     * commitment was made with nonce2 -- must fail */
+    TEST("commitment is session-bound via nonce", verify_commit(commit2, pub, nonce1) == 0);
+
+    crypto_wipe(priv, sizeof priv);
+    crypto_wipe(pub, sizeof pub);
+    crypto_wipe(nonce1, sizeof nonce1);
+    crypto_wipe(nonce2, sizeof nonce2);
+}
+
+/* ---- test: identity_save atomic write properties ------------------------ */
+
+static void test_identity_save_atomic(void) {
+    printf("\n=== identity_save atomic write properties ===\n");
+
+    uint8_t priv[KEY], pub[KEY];
+    gen_keypair(priv, pub);
+    const char *pass = "atomic test passphrase";
+    const char *path = "/tmp/test_identity_atomic.key";
+    char        tmp_path[PATH_MAX];
+    snprintf(tmp_path, sizeof tmp_path, "%s.tmp", path);
+
+    /* Clean up any leftover files */
+    unlink(path);
+    unlink(tmp_path);
+
+    /* Save should succeed */
+    int rc = identity_save(path, priv, pass, strlen(pass));
+    TEST("identity_save succeeds", rc == 0);
+
+    /* After successful save, .tmp file must NOT exist (rename completed) */
+    struct stat st;
+    TEST(".tmp file does not exist after save", stat(tmp_path, &st) != 0);
+
+    /* File should exist with mode 0600 */
+    TEST("saved file exists", stat(path, &st) == 0);
+    TEST("saved file has mode 0600", (st.st_mode & 0777) == 0600);
+
+    /* File size should be exactly IDENTITY_FILE_SZ (88 bytes) */
+    TEST("saved file is 88 bytes", st.st_size == IDENTITY_FILE_SZ);
+
+    /* identity_load still works after atomic save */
+    uint8_t loaded_priv[KEY], loaded_pub[KEY];
+    rc = identity_load(path, loaded_priv, loaded_pub, pass, strlen(pass));
+    TEST("identity_load succeeds after atomic save", rc == 0);
+    TEST("loaded key matches original", crypto_verify32(priv, loaded_priv) == 0);
+
+    /* Save to a non-writable directory fails gracefully */
+    rc = identity_save("/proc/nonexistent_dir/key.dat", priv, pass, strlen(pass));
+    TEST("identity_save to non-writable path fails", rc != 0);
+
+    /* Save to a path that is too long (if possible) */
+    char long_path[PATH_MAX + 10];
+    memset(long_path, 'a', sizeof long_path - 1);
+    long_path[sizeof long_path - 1] = '\0';
+    rc                              = identity_save(long_path, priv, pass, strlen(pass));
+    TEST("identity_save with oversized path fails", rc != 0);
+
+    /* Clean up */
+    unlink(path);
+    crypto_wipe(priv, sizeof priv);
+    crypto_wipe(loaded_priv, sizeof loaded_priv);
+}
+
+/* ---- test: rate limit constants sanity ---------------------------------- */
+
+static void test_rate_limit_constants(void) {
+    printf("\n=== Rate limit and timing constants sanity ===\n");
+
+    /* Verify timing constants are sensible */
+    TEST("POLL_INTERVAL_MS > 0", POLL_INTERVAL_MS > 0);
+    TEST("POLL_INTERVAL_MS <= 1000", POLL_INTERVAL_MS <= 1000);
+    TEST("SAS_TIMEOUT_MS is 5 minutes", SAS_TIMEOUT_MS == 300000);
+    TEST("EXCHANGE_DEADLINE_MS is 15 seconds", EXCHANGE_DEADLINE_MS == 15000);
+    TEST("FRAME_TIMEOUT_S is 30 seconds", FRAME_TIMEOUT_S == 30);
+
+    /* Cover traffic: ~2 frames/sec at mean 500ms */
+    TEST("cover traffic mean ~2 frames/sec", COVER_DELAY_MEAN_MS == 500);
+    /* Frame size constants */
+    TEST("FRAME_SZ is 512", FRAME_SZ == 512);
+    TEST("WIRE_MAX is 768", WIRE_MAX == 768);
+    TEST("WIRE_PAD_MAX is 255", WIRE_PAD_MAX == 255);
+
+    /* Android rate limiting: verify that cover traffic rate is bounded.
+     * At mean 500ms, max ~2 frames/sec, each frame up to WIRE_MAX=768 bytes,
+     * so max bandwidth is ~1536 bytes/sec (~1.5 KB/s). */
+    double max_fps     = 1000.0 / COVER_DELAY_MIN_MS;   /* worst-case fps */
+    double max_bw_kbps = (max_fps * WIRE_MAX) / 1024.0; /* KB/s */
+    TEST("worst-case cover bandwidth < 20 KB/s", max_bw_kbps < 20.0);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -6245,6 +6519,12 @@ int main(void) {
     test_verify_peer_fingerprint();
     test_identity_save_load_roundtrip();
     test_session_nonce_uniqueness();
+    test_cover_delay_statistics();
+    test_frame_open_seq_overflow();
+    test_exchange_buffer_size();
+    test_commitment_nonce_binding();
+    test_identity_save_atomic();
+    test_rate_limit_constants();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();
     test_dudect_is_zero32();

@@ -58,8 +58,10 @@ static void gen_frame_open_corpus(const char *base) {
     gen_keypair(priv2, pub2);
 
     session_t s;
-    uint8_t   sas[KEY];
-    (void)session_init(&s, 1, priv, pub, pub2, sas);
+    uint8_t   sas[KEY], nonce1[KEY], nonce2[KEY];
+    fill_random(nonce1, KEY);
+    fill_random(nonce2, KEY);
+    (void)session_init(&s, 1, priv, pub, pub2, nonce1, nonce2, sas);
 
     /* Seed 1: valid frame with short message (frame + chain key for fuzzer) */
     {

@@ -71,6 +71,12 @@ enum {
     WIRE_PAD_MAX = 255,                                /* max random padding      */
     WIRE_MAX     = WIRE_HDR + FRAME_SZ + WIRE_PAD_MAX, /* 768 bytes   */
 
+    /* Maximum handshake exchange payload: version(1) + commit(KEY) + nonce(KEY).
+     * exchange_send sizes its buffer from this.  If the handshake payload
+     * grows, update this constant -- the static_assert in network.c will
+     * catch any mismatch. */
+    EXCHANGE_PAYLOAD_MAX = 1 + KEY + KEY, /* 65 bytes    */
+
     /* ---- timing constants ------------------------------------------------ */
     POLL_INTERVAL_MS     = 250,    /* event loop poll/wait granularity        */
     SAS_TIMEOUT_MS       = 300000, /* 5-minute SAS verification deadline     */
@@ -88,6 +94,7 @@ static_assert(KEY == 32);
 static_assert(NONCE_SZ == 24);
 static_assert(MAC_SZ == 16);
 static_assert(WIRE_MAX == 768);
+static_assert(EXCHANGE_PAYLOAD_MAX == 65);
 
 /* ---- protocol function declarations ------------------------------------ */
 
@@ -150,7 +157,7 @@ void session_wipe(session_t *s);
 void sanitize_peer_text(uint8_t *buf, uint16_t len);
 
 /* Random delay for cover traffic scheduling, drawn from a clamped
- * exponential distribution (mean 500 ms, clamped to [50, 3000] ms).
+ * exponential distribution (mean 500 ms, clamped to [50, 1500] ms).
  * Exponential inter-arrivals mimic natural Poisson traffic (CV ≈ 1),
  * making the cover stream much harder to fingerprint than a uniform
  * or near-constant interval.  Clamped to [50, 1500] ms to keep
