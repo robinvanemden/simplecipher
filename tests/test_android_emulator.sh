@@ -160,10 +160,20 @@ if tap_by_id "${PKG}:id/fpToggle"; then
     fi
 
     # 3.6.2 - Enter peer fingerprint → checkbox should appear
-    # Scroll down so fpManualInput is visible (small emulator screens)
-    adb shell input swipe 160 500 160 200 300
-    sleep 1
-    if tap_by_id "${PKG}:id/fpManualInput"; then
+    # Scroll down so fpManualInput is visible (small emulator screens).
+    # Retry up to 3 times — the element may need multiple scrolls or
+    # more time to settle on slow emulators.
+    FP_INPUT_FOUND=false
+    for _attempt in 1 2 3; do
+        adb shell input swipe 160 500 160 200 300
+        sleep 1
+        if tap_by_id "${PKG}:id/fpManualInput"; then
+            FP_INPUT_FOUND=true
+            break
+        fi
+        sleep 1
+    done
+    if $FP_INPUT_FOUND; then
         sleep 1
         adb shell input text "A3F291BCD4E5F678"
         sleep 2
