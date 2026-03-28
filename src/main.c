@@ -216,13 +216,15 @@ int main(int argc, char *argv[]) {
         if (plen <= 0) {
             crypto_wipe(pass, sizeof pass);
             fprintf(stderr, "  Empty passphrase.\n");
-            return EXIT_USAGE;
+            rc = EXIT_USAGE;
+            goto out;
         }
         if (identity_load(cfg.identity_path, self_priv, self_pub, pass, (size_t)plen) != 0) {
             crypto_wipe(pass, sizeof pass);
             fprintf(stderr, "  Failed to load identity key %s — wrong passphrase or corrupt file.\n",
                     cfg.identity_path);
-            return EXIT_INTERNAL;
+            rc = EXIT_INTERNAL;
+            goto out;
         }
         crypto_wipe(pass, sizeof pass);
         /* Recompute commitment and fingerprint with the persistent key */
