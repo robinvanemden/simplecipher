@@ -165,7 +165,7 @@ void set_sock_opts(socket_t fd) {
  * Wire format: [pad_len(1)][payload][random_padding].
  * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
 static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t dl) {
-    uint8_t buf[1 + 65 + 255]; /* max: hdr(1) + largest payload(65) + pad(255) */
+    uint8_t buf[1 + 2 * KEY + WIRE_PAD_MAX]; /* max: hdr(1) + commitment(KEY) + nonce(KEY) + pad */
     uint8_t r;
     fill_random(&r, 1);
     buf[0] = r;
@@ -197,7 +197,6 @@ static int exchange_recv(socket_t fd, uint8_t *payload, size_t expected_n, uint6
      * set_sock_timeout (per-syscall), this bounds total wall-clock time
      * even if an adversary dribbles one byte just under the per-call
      * timeout.  15 seconds is generous for a padded handshake round. */
-    enum { EXCHANGE_DEADLINE_MS = 15000 };
     uint64_t dl = monotonic_ms() + EXCHANGE_DEADLINE_MS;
     if (we_init) {
         if (exchange_send(fd, out, out_n, dl) != 0) return -1;
@@ -704,14 +703,14 @@ static socket_t connect_socket_flags(const char *host, const char *port, int ai_
         /* poll() instead of select() — no FD_SETSIZE limit.
          * select() overflows its fd_set bitmap if srv >= FD_SETSIZE (typically 1024). */
         struct pollfd pfd = {srv, POLLIN, 0};
-        sr                = poll(&pfd, 1, 250);
+        sr                = poll(&pfd, 1, POLL_INTERVAL_MS);
 #else
         fd_set         rfds;
         struct timeval tv;
         FD_ZERO(&rfds);
         FD_SET(srv, &rfds);
         tv.tv_sec  = 0;
-        tv.tv_usec = 250000;
+        tv.tv_usec = POLL_INTERVAL_MS * 1000;
         sr         = select((int)(srv + 1), &rfds, nullptr, nullptr, &tv);
 #endif
         if (sr < 0) {

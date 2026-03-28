@@ -192,10 +192,9 @@ extern int g_require_sandbox;
  * it to set per-fd capability rights; Linux seccomp and OpenBSD pledge
  * ignore it (they operate at the syscall/process level).
  *
- * sandbox() is kept for backward compatibility — calls sandbox_phase2(-1). */
+ */
 [[nodiscard]] int sandbox_phase1(int sock_fd);
 [[nodiscard]] int sandbox_phase2(int sock_fd);
-void              sandbox(void); /* legacy: equivalent to sandbox_phase2(-1) */
 
 /* Signal handler: set the stop flag so the main loop exits on its next
  * iteration.  See platform.c for details on POSIX vs Windows behavior. */
@@ -206,6 +205,9 @@ void on_sig(int sig);
  * user logoff, and system shutdown.  See platform.c for full explanation. */
 BOOL WINAPI on_console_ctrl(DWORD event);
 #endif
+
+/* Buffer size for "HH:MM:SS" timestamp strings (including NUL). */
+enum { TIMESTAMP_BUF = 16 };
 
 /* Write the current local time as "HH:MM:SS" into buf (size n).
  * Uses the thread-safe localtime_r (POSIX) / localtime_s (Windows). */

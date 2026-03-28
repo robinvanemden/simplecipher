@@ -9,6 +9,13 @@
 #include "args.h"
 #include "tui.h"
 
+/* ---- file-scope constants ----------------------------------------------- */
+
+enum {
+    SAS_LINE_BUF  = 64, /* buffer for SAS display line in CLI mode  */
+    TYPED_SAS_BUF = 16, /* buffer for user-typed SAS + normalization */
+};
+
 #if defined(_WIN32) || defined(_WIN64)
 #    include <io.h>    /* _read — bypass libc FILE* buffer for SAS input */
 #    include <conio.h> /* _getch — read passphrase without echo */
@@ -84,7 +91,7 @@ int normalize_hex(const char *in, char *out, size_t out_sz) {
 
 /* Handle the keygen subcommand: generate a passphrase-protected identity key. */
 int keygen_main(const char *path) {
-    char pass1[256], pass2[256];
+    char pass1[PASSPHRASE_MAX], pass2[PASSPHRASE_MAX];
     int  p1 = read_passphrase("  Enter passphrase: ", pass1, sizeof pass1);
     if (p1 <= 0) {
         crypto_wipe(pass1, sizeof pass1);
@@ -118,7 +125,7 @@ int keygen_main(const char *path) {
         return EXIT_INTERNAL;
     }
 
-    char fp[20];
+    char fp[FINGERPRINT_STR_SZ];
     format_fingerprint(fp, pub);
     printf("  Identity key saved to %s\n", path);
     printf("  Your fingerprint: %s\n", fp);
@@ -133,11 +140,11 @@ int keygen_main(const char *path) {
 /* Verify the peer's public key fingerprint against the expected value.
  * Returns 0 if OK (or no fingerprint expected), -1 on mismatch. */
 int verify_peer_fingerprint(const uint8_t peer_pub[KEY], const char *expected, int tui_mode) {
-    char peer_fp[20];
+    char peer_fp[FINGERPRINT_STR_SZ];
     format_fingerprint(peer_fp, peer_pub);
 
     if (expected) {
-        char ne[20] = {0}, np[20] = {0};
+        char ne[FINGERPRINT_STR_SZ] = {0}, np[FINGERPRINT_STR_SZ] = {0};
         int  ei       = normalize_hex(expected, ne, sizeof ne);
         int  pi       = normalize_hex(peer_fp, np, sizeof np);
         int  mismatch = (ei != pi) || ct_compare((const uint8_t *)ne, (const uint8_t *)np, (size_t)ei) != 0;
@@ -167,7 +174,7 @@ int verify_peer_fingerprint(const uint8_t peer_pub[KEY], const char *expected, i
  * EXIT_ABORT (7) on timeout/cancel/Ctrl+C/Ctrl+D,
  * EXIT_NET (2) on peer disconnect. */
 int cli_sas_verify(const char *sas, socket_t fd) {
-    char typed_sas[16] = {0};
+    char typed_sas[TYPED_SAS_BUF] = {0};
 
     printf("\n");
     printf("  +----------------------------------------------+\n");
@@ -175,7 +182,7 @@ int cli_sas_verify(const char *sas, socket_t fd) {
     printf("  |              SAFETY CODE                     |\n");
     /* write() instead of printf to keep SAS out of libc's stdio buffer */
     {
-        char sas_line[64];
+        char sas_line[SAS_LINE_BUF];
         int  sn = snprintf(sas_line, sizeof sas_line, "  |              %-9s                        |\n", sas);
         if (sn > 0) {
             fflush(stdout);
@@ -220,7 +227,7 @@ int cli_sas_verify(const char *sas, socket_t fd) {
          * Also watches peer socket for disconnect and enforces 5-min deadline. */
         HANDLE   h_stdin    = GetStdHandle(STD_INPUT_HANDLE);
         WSAEVENT sas_ev     = WSACreateEvent();
-        uint64_t sas_dl_win = GetTickCount64() + 300000;
+        uint64_t sas_dl_win = GetTickCount64() + SAS_TIMEOUT_MS;
         int      rn         = -1;
         WSAEventSelect(fd, sas_ev, FD_CLOSE);
         {
@@ -260,7 +267,7 @@ int cli_sas_verify(const char *sas, socket_t fd) {
         ssize_t rn = -1;
         {
             struct pollfd sas_fds[2]   = {{STDIN_FILENO, POLLIN, 0}, {fd, POLLIN, 0}};
-            uint64_t      sas_deadline = monotonic_ms() + 300000; /* 5-minute timeout */
+            uint64_t      sas_deadline = monotonic_ms() + SAS_TIMEOUT_MS;
             while (g_running) {
                 int64_t remain = (int64_t)(sas_deadline - monotonic_ms());
                 if (remain <= 0) {
@@ -318,7 +325,7 @@ int cli_sas_verify(const char *sas, socket_t fd) {
     }
     {
         /* Strip dashes and uppercase both strings before comparing. */
-        char nt[16] = {0}, ns[16] = {0};
+        char nt[TYPED_SAS_BUF] = {0}, ns[TYPED_SAS_BUF] = {0};
         int  ti       = normalize_hex(typed_sas, nt, sizeof nt);
         int  si       = normalize_hex(sas, ns, sizeof ns);
         int  mismatch = (ti != si || ct_compare((const uint8_t *)nt, (const uint8_t *)ns, (size_t)ti) != 0);

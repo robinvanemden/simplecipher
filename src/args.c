@@ -22,15 +22,17 @@
 #    include <unistd.h>
 #endif
 
-/* ---- file-scope static buffers ------------------------------------------ */
+/* ---- file-scope constants and static buffers ----------------------------- */
+
+enum { ARGS_HOST_BUF = 256, ARGS_PORT_BUF = 8 };
 
 /* These must survive after parse_args() returns, because config_t holds
  * pointers into them.  File-scope static keeps them alive for the
  * entire program lifetime without dynamic allocation. */
-static char s5host[256];
-static char s5port[8];
-static char prompt_host[256];
-static char prompt_port[8];
+static char s5host[ARGS_HOST_BUF];
+static char s5port[ARGS_PORT_BUF];
+static char prompt_host[ARGS_HOST_BUF];
+static char prompt_port[ARGS_PORT_BUF];
 
 /* ---- usage ---------------------------------------------------------------- */
 

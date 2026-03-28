@@ -14,6 +14,8 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 
+enum { CONSOLE_INPUT_RECORDS = 32 }; /* batch size for ReadConsoleInputA */
+
 /* ---- Windows console / socket event helpers ---------------------------- */
 
 /* Get the interactive console input handle and remember its current mode.
@@ -197,7 +199,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
             /* 250 ms timeout keeps Ctrl+C responsive even though Win32 wait
              * APIs are not interrupted like poll()/select() on POSIX. */
             {
-                DWORD wait_ms = 250;
+                DWORD wait_ms = POLL_INTERVAL_MS;
                 if (cover) {
                     int64_t remain = (int64_t)(next_cover - GetTickCount64());
                     if (remain <= 0) wait_ms = 0;
@@ -266,11 +268,11 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
 
             /* ----- Local keyboard input ----- */
             if (wr == WAIT_OBJECT_0) {
-                INPUT_RECORD recs[32];
+                INPUT_RECORD recs[CONSOLE_INPUT_RECORDS];
                 DWORD        nrec = 0;
                 DWORD        i;
 
-                if (!ReadConsoleInputA(h_in, recs, 32, &nrec)) {
+                if (!ReadConsoleInputA(h_in, recs, CONSOLE_INPUT_RECORDS, &nrec)) {
                     loop_error = 1;
                     break;
                 }

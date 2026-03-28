@@ -30,7 +30,7 @@
 int cover_delay_ms(void) {
     uint8_t r[2];
     fill_random(r, 2);
-    int d = 500 + ((r[0] | (r[1] << 8)) % 2001);
+    int d = COVER_DELAY_MIN_MS + ((r[0] | (r[1] << 8)) % (COVER_DELAY_MAX_MS - COVER_DELAY_MIN_MS + 1));
     crypto_wipe(r, sizeof r);
     return d;
 }
@@ -124,7 +124,7 @@ void gen_keypair(uint8_t priv[KEY], uint8_t pub[KEY]) {
     s->tx_seq = 0;
     s->rx_seq = 0;
 
-    ratchet_init(s, we_init, self_priv, self_pub, peer_pub);
+    ratchet_init(s, self_priv, self_pub, peer_pub);
 
     crypto_wipe(dh, sizeof dh);
     crypto_wipe(prk, sizeof prk);

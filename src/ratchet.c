@@ -50,7 +50,7 @@ static int ratchet_step(uint8_t root[KEY], uint8_t chain_out[KEY], const uint8_t
     return 0;
 }
 
-void ratchet_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
+void ratchet_init(session_t *s, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
                   const uint8_t peer_pub[KEY]) {
     /* Both sides start with peer_dh set to the other's handshake public key.
      * This is a public value (not secret) and is overwritten as soon as the
@@ -67,7 +67,6 @@ void ratchet_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const
      * The handshake private key is retained here because it is needed for
      * the first ratchet_receive DH computation when the peer's ratchet
      * key arrives. */
-    (void)we_init;
     memcpy(s->dh_priv, self_priv, KEY);
     memcpy(s->dh_pub, self_pub, KEY);
 

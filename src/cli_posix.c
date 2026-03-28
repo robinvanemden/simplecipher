@@ -144,7 +144,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
         fds[1].fd     = STDIN_FILENO;
         fds[1].events = POLLIN;
 
-        int timeout = 250;
+        int timeout = POLL_INTERVAL_MS;
         if (cover) {
             int64_t remain = (int64_t)(next_cover - monotonic_ms());
             if (remain <= 0) timeout = 0;
@@ -364,7 +364,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
         fds[1].fd     = STDIN_FILENO;
         fds[1].events = POLLIN;
 
-        int timeout = cover ? 250 : -1;
+        int timeout = cover ? POLL_INTERVAL_MS : -1;
         if (cover) {
             int64_t remain = (int64_t)(next_cover - monotonic_ms());
             if (remain <= 0) timeout = 0;

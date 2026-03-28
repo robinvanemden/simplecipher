@@ -65,9 +65,16 @@ enum {
     MAX_FRAMES_WITHOUT_RATCHET = 50,
     /* Wire padding: each chat frame is sent as [pad_len(1)][frame][random_pad].
      * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
-    WIRE_HDR     = 1,                                 /* pad_len byte            */
-    WIRE_PAD_MAX = 255,                               /* max random padding      */
-    WIRE_MAX     = WIRE_HDR + FRAME_SZ + WIRE_PAD_MAX /* 768 bytes    */
+    WIRE_HDR     = 1,                                  /* pad_len byte            */
+    WIRE_PAD_MAX = 255,                                /* max random padding      */
+    WIRE_MAX     = WIRE_HDR + FRAME_SZ + WIRE_PAD_MAX, /* 768 bytes   */
+
+    /* ---- timing constants ------------------------------------------------ */
+    POLL_INTERVAL_MS     = 250,    /* event loop poll/wait granularity        */
+    SAS_TIMEOUT_MS       = 300000, /* 5-minute SAS verification deadline     */
+    EXCHANGE_DEADLINE_MS = 15000,  /* per-round handshake deadline            */
+    COVER_DELAY_MIN_MS   = 500,
+    COVER_DELAY_MAX_MS   = 2500
 };
 static const uint8_t FLAG_RATCHET = 0x01; /* bit 0: ratchet key follows */
 
@@ -77,6 +84,7 @@ static_assert(MAX_MSG_RATCHET == 453);
 static_assert(KEY == 32);
 static_assert(NONCE_SZ == 24);
 static_assert(MAC_SZ == 16);
+static_assert(WIRE_MAX == 768);
 
 /* ---- protocol function declarations ------------------------------------ */
 

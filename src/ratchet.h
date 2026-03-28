@@ -64,15 +64,13 @@
  * need_send_ratchet is set to 1.  The first frame_build on either side
  * triggers ratchet_send, which generates a fresh keypair, performs the
  * DH ratchet step, and includes the new public key in the frame
- * (FLAG_RATCHET).  The we_init parameter is accepted for API symmetry
- * with session_init but is currently unused (both roles are identical).
+ * (FLAG_RATCHET).
  *
  * self_priv/self_pub are the HANDSHAKE keypair — copied into s->dh_priv
  * and s->dh_pub for use in the first ratchet step.  The handshake private
  * key is retained until the first ratchet_send overwrites it with a fresh
  * keypair.  The caller's copy of self_priv should be wiped after this call. */
-void ratchet_init(session_t *s, int we_init, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
-                  const uint8_t peer_pub[KEY]);
+void ratchet_init(session_t *s, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY], const uint8_t peer_pub[KEY]);
 
 /* Prepare to send a frame.
  *

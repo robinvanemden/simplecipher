@@ -64,6 +64,11 @@
 #include "tui.h"
 #include "cli.h"
 
+enum {
+    STATUS_MSG_BUF = 80,   /* buffer for TUI status messages        */
+    LOCAL_IPS_BUF  = 1024, /* buffer for local IP address list       */
+};
+
 /* g_fd and g_sess are file-scope statics, passed as parameters to the
  * event loops.  They are static here so the cleanup code at the bottom
  * of main() can always reach them. */
@@ -113,8 +118,8 @@ static int start_chat_phase(socket_t fd, session_t *sess, int cover, int tui) {
 int main(int argc, char *argv[]) {
     uint8_t self_priv[KEY], self_pub[KEY], peer_pub[KEY];
     uint8_t commit_self[KEY], commit_peer[KEY];
-    uint8_t sas_key[KEY]; /* SAS = Short Authentication String */
-    char    sas[20];      /* formatted as "XXXX-XXXX" (32 bits, human-verifiable) */
+    uint8_t sas_key[KEY];    /* SAS = Short Authentication String */
+    char    sas[SAS_STR_SZ]; /* formatted as "XXXX-XXXX" (32 bits, human-verifiable) */
     int     rc = EXIT_INTERNAL;
 
     config_t cfg = parse_args(argc, argv);
@@ -190,7 +195,7 @@ int main(int argc, char *argv[]) {
     gen_keypair(self_priv, self_pub);
     make_commit(commit_self, self_pub);
 
-    char self_fp[20];
+    char self_fp[FINGERPRINT_STR_SZ];
     format_fingerprint(self_fp, self_pub);
 
     if (!cfg.tui_mode) {
@@ -204,7 +209,7 @@ int main(int argc, char *argv[]) {
      * one just generated.  The persistent key gives a stable fingerprint
      * across sessions, enabling the paper fingerprint workflow. */
     if (cfg.identity_path) {
-        char pass[256];
+        char pass[PASSPHRASE_MAX];
         int  plen = read_passphrase("  Enter passphrase: ", pass, sizeof pass);
         if (plen <= 0) {
             crypto_wipe(pass, sizeof pass);
@@ -231,7 +236,7 @@ int main(int argc, char *argv[]) {
 
     if (cfg.we_init) {
         if (cfg.tui_mode) {
-            char msg[80];
+            char msg[STATUS_MSG_BUF];
             snprintf(msg, sizeof msg, "Connecting to %s:%s ...", cfg.host, cfg.port);
             tui_status_screen(msg, "Ctrl+C to cancel");
             crypto_wipe(msg, sizeof msg); /* contains peer address */
@@ -279,7 +284,7 @@ int main(int argc, char *argv[]) {
         if (!cfg.tui_mode) printf(" ok\n");
     } else {
         if (cfg.tui_mode) {
-            char ipbuf[1024];
+            char ipbuf[LOCAL_IPS_BUF];
             get_local_ips(ipbuf, sizeof ipbuf);
             tui_listen_screen(cfg.port, ipbuf);
             struct listen_ctx lc = {cfg.port, ipbuf};

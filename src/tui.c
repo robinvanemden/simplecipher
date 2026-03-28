@@ -14,6 +14,19 @@
 #    include <unistd.h> /* write */
 #endif
 
+/* ---- file-scope constants ----------------------------------------------- */
+
+enum {
+    SECURE_PRINTF_BUF    = 1024, /* stack buffer for tui_secure_printf          */
+    LISTEN_MSG_BUF       = 80,   /* buffer for listen screen status message      */
+    LISTEN_CMD_BUF       = 128,  /* buffer for listen screen connect commands    */
+    MSG_PREFIX_WIDTH     = 17,   /* continuation-line indent (matches label width) */
+    MSG_OVERHEAD         = 21,   /* border + timestamp + label + separators     */
+    INPUT_OVERHEAD       = 5,    /* border + " > " prefix + border              */
+    STATUS_PADDING       = 4,    /* border + spaces around status text           */
+    SAS_MISMATCH_MSG_LEN = 20,   /* centering width for "Code mismatch!" text   */
+};
+
 /* ---- ring buffer state (extern declarations in tui.h) ------------------- */
 
 struct tui_msg_entry tui_msgs[TUI_MSG_MAX];
@@ -21,7 +34,7 @@ struct tui_msg_entry tui_msgs[TUI_MSG_MAX];
 int tui_msg_count = 0; /* total messages stored (up to TUI_MSG_MAX) */
 int tui_msg_start = 0; /* index of oldest message in the ring */
 
-int tui_w = 80, tui_h = 24; /* cached terminal dimensions */
+int tui_w = TUI_DEFAULT_WIDTH, tui_h = TUI_DEFAULT_HEIGHT; /* cached terminal dimensions */
 
 /* ---- secure write helper ------------------------------------------------ */
 
@@ -39,7 +52,7 @@ static void tui_secure_printf(const char *fmt, ...) {
      * use printf (buffered), so we must flush before write() to prevent
      * out-of-order output on the terminal. */
     fflush(stdout);
-    char    buf[1024];
+    char    buf[SECURE_PRINTF_BUF];
     va_list ap;
     va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof buf, fmt, ap);
@@ -77,7 +90,7 @@ void tui_msg_wipe(void) {
  * Example: "this is a secret plan" (22 bytes) overwritten by "hi" would
  * leave "hi\0s is a secret plan" in memory -- 19 bytes of old plaintext. */
 void tui_msg_add(enum tui_sender who, const char *text) {
-    char t[16];
+    char t[TIMESTAMP_BUF];
     int  idx;
     ts(t, sizeof t);
     if (tui_msg_count < TUI_MSG_MAX) {
@@ -104,8 +117,8 @@ void tui_get_size(int *w, int *h) {
         *w = ws.ws_col;
         *h = ws.ws_row;
     } else {
-        *w = 80;
-        *h = 24;
+        *w = TUI_DEFAULT_WIDTH;
+        *h = TUI_DEFAULT_HEIGHT;
     }
 #else
     CONSOLE_SCREEN_BUFFER_INFO ci;
@@ -113,8 +126,8 @@ void tui_get_size(int *w, int *h) {
         *w = ci.srWindow.Right - ci.srWindow.Left + 1;
         *h = ci.srWindow.Bottom - ci.srWindow.Top + 1;
     } else {
-        *w = 80;
-        *h = 24;
+        *w = TUI_DEFAULT_WIDTH;
+        *h = TUI_DEFAULT_HEIGHT;
     }
 #endif
 }
@@ -151,13 +164,13 @@ void tui_draw_title(void) {
     TUI_GOTO(1, 1);
     TUI_CLEAR_LINE();
     printf("%s\xe2\x94\x8c\xe2\x94\x80 %sSimpleCipher%s ", TUI_COLOR_DIM, TUI_COLOR_RESET, TUI_COLOR_DIM);
-    for (i = 16; i < tui_w - 1; i++) printf("\xe2\x94\x80");
+    for (i = TUI_TITLE_OFFSET; i < tui_w - 1; i++) printf("\xe2\x94\x80");
     printf("\xe2\x94\x90%s", TUI_COLOR_RESET);
 }
 
 /* Draw the status bar (row 2): connection state and instructions. */
 void tui_draw_status(const char *status) {
-    int max_len = tui_w - 4;
+    int max_len = tui_w - STATUS_PADDING;
     TUI_GOTO(2, 1);
     TUI_CLEAR_LINE();
     printf("%s\xe2\x94\x82%s %s%-*.*s%s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET, TUI_COLOR_GREEN, max_len,
@@ -174,12 +187,12 @@ void tui_draw_status(const char *status) {
 void tui_draw_messages(void) {
     int max_row  = tui_h - 2;
     int total    = tui_msg_count < TUI_MSG_MAX ? tui_msg_count : TUI_MSG_MAX;
-    int max_text = tui_w - 21;
+    int max_text = tui_w - MSG_OVERHEAD;
     int i;
 
     if (max_text < 1) max_text = 1;
 
-    int msg_rows  = max_row - 4 + 1; /* available screen rows for messages */
+    int msg_rows  = max_row - TUI_MSG_AREA_TOP + 1; /* available screen rows for messages */
     int start_msg = 0;
     /* Find the first message to display so that the last messages fit */
     {
@@ -197,7 +210,7 @@ void tui_draw_messages(void) {
         }
     }
 
-    int row = 4;
+    int row = TUI_MSG_AREA_TOP;
 
     for (i = start_msg; i < total && row <= max_row; i++) {
         int         idx   = (tui_msg_start + i) % TUI_MSG_MAX;
@@ -239,8 +252,8 @@ void tui_draw_messages(void) {
             } else {
                 /* 17 spaces + 1 leading space = 18 chars, matching the first line's
                  * " [HH:MM:SS] label: " prefix (19 chars after the │ border). */
-                tui_secure_printf("%s\xe2\x94\x82%s %*s%-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET, 17, "",
-                                  max_text, chunk, text + offset, TUI_COLOR_DIM, TUI_COLOR_RESET);
+                tui_secure_printf("%s\xe2\x94\x82%s %*s%-*.*s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET,
+                                  MSG_PREFIX_WIDTH, "", max_text, chunk, text + offset, TUI_COLOR_DIM, TUI_COLOR_RESET);
             }
             offset += chunk;
             row++;
@@ -270,7 +283,7 @@ void tui_draw_messages(void) {
  * is re-shown and positioned at the end of the visible text so the user
  * can see where they are typing. */
 void tui_draw_input(const char *line, size_t len) {
-    int max_input   = tui_w - 5;
+    int max_input   = tui_w - INPUT_OVERHEAD;
     int show_start  = (int)len > max_input ? (int)len - max_input : 0;
     int visible_len = (int)len - show_start;
     int pad         = max_input - visible_len;
@@ -281,7 +294,7 @@ void tui_draw_input(const char *line, size_t len) {
                       line + show_start, pad, "", TUI_COLOR_DIM, TUI_COLOR_RESET);
     printf("\033[?25h"); /* show cursor */
     printf("\033[1 q");  /* block cursor (more visible than line) */
-    TUI_GOTO(tui_h, 5 + visible_len);
+    TUI_GOTO(tui_h, INPUT_OVERHEAD + visible_len);
     fflush(stdout);
 }
 
@@ -291,10 +304,10 @@ void tui_draw_input(const char *line, size_t len) {
  * at the input position when done. */
 void tui_draw_screen(const char *status, const char *line, size_t line_len) {
     tui_get_size(&tui_w, &tui_h);
-    if (tui_w < 40 || tui_h < 14) {
+    if (tui_w < TUI_MIN_WIDTH || tui_h < TUI_MIN_HEIGHT) {
         printf("\033[2J");
         TUI_GOTO(1, 1);
-        printf("Terminal too small (need 40x14)");
+        printf("Terminal too small (need %dx%d)", TUI_MIN_WIDTH, TUI_MIN_HEIGHT);
         fflush(stdout);
         return;
     }
@@ -312,9 +325,9 @@ void tui_draw_screen(const char *status, const char *line, size_t line_len) {
 void tui_status_screen(const char *line1, const char *line2) {
     int cy;
     tui_get_size(&tui_w, &tui_h);
-    if (tui_w < 40 || tui_h < 10) {
+    if (tui_w < TUI_MIN_WIDTH || tui_h < TUI_MIN_STATUS_HEIGHT) {
         printf("\033[2J\033[H");
-        printf("Terminal too small (need 40x10)\n");
+        printf("Terminal too small (need %dx%d)\n", TUI_MIN_WIDTH, TUI_MIN_STATUS_HEIGHT);
         return;
     }
     printf("\033[2J");
@@ -335,9 +348,9 @@ void tui_status_screen(const char *line1, const char *line2) {
 void tui_listen_screen(const char *port, const char *ips) {
     int cy;
     tui_get_size(&tui_w, &tui_h);
-    if (tui_w < 40 || tui_h < 10) {
+    if (tui_w < TUI_MIN_WIDTH || tui_h < TUI_MIN_STATUS_HEIGHT) {
         printf("\033[2J\033[H");
-        printf("Terminal too small (need 40x10)\n");
+        printf("Terminal too small (need %dx%d)\n", TUI_MIN_WIDTH, TUI_MIN_STATUS_HEIGHT);
         return;
     }
     printf("\033[2J");
@@ -359,7 +372,7 @@ void tui_listen_screen(const char *port, const char *ips) {
 
     /* "Listening on port XXXX" */
     {
-        char msg[80];
+        char msg[LISTEN_MSG_BUF];
         snprintf(msg, sizeof msg, "Listening on port %s", port);
         TUI_GOTO(cy, (tui_w - (int)strlen(msg)) / 2);
         printf("%s", msg);
@@ -378,7 +391,7 @@ void tui_listen_screen(const char *port, const char *ips) {
         while (*p) {
             const char *nl = p;
             while (*nl && *nl != '\n') nl++;
-            char cmd[128];
+            char cmd[LISTEN_CMD_BUF];
             snprintf(cmd, sizeof cmd, "simplecipher connect %.*s %s", (int)(nl - p), p, port);
             TUI_GOTO(cy, (tui_w - (int)strlen(cmd)) / 2);
             printf("%s%s%s", TUI_COLOR_CYAN, cmd, TUI_COLOR_RESET);
@@ -412,15 +425,15 @@ void tui_listen_screen(const char *port, const char *ips) {
  *
  * Returns 1 if the user typed a matching code, 0 on mismatch or abort. */
 int tui_sas_screen(const char *sas, socket_t sas_fd) {
-    int  sas_len   = (int)strlen(sas); /* 9 for "XXXX-XXXX" */
-    char typed[20] = {0};
-    int  pos       = 0;
+    int  sas_len           = (int)strlen(sas); /* 9 for "XXXX-XXXX" */
+    char typed[SAS_STR_SZ] = {0};
+    int  pos               = 0;
     int  cy;
 
     tui_get_size(&tui_w, &tui_h);
-    if (tui_w < 40 || tui_h < 14) {
+    if (tui_w < TUI_MIN_WIDTH || tui_h < TUI_MIN_HEIGHT) {
         printf("\033[2J\033[H");
-        printf("Terminal too small (need 40x14)\n");
+        printf("Terminal too small (need %dx%d)\n", TUI_MIN_WIDTH, TUI_MIN_HEIGHT);
         return 0;
     }
     cy = tui_h / 2 - 6;
@@ -472,7 +485,7 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
     WSAEventSelect(sas_fd, sas_ev_win, FD_CLOSE); /* only disconnect, not data */
 #endif
 
-    uint64_t sas_deadline = monotonic_ms() + 300000; /* 5-minute timeout */
+    uint64_t sas_deadline = monotonic_ms() + SAS_TIMEOUT_MS;
 
     while (pos < (int)sizeof(typed) - 1 && g_running) {
         /* Check deadline on every iteration */
@@ -486,7 +499,7 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
         }
 #ifndef _WIN32
         struct pollfd pfd[2] = {{STDIN_FILENO, POLLIN, 0}, {(int)sas_fd, 0, 0}};
-        int           pr     = poll(pfd, 2, 250);
+        int           pr     = poll(pfd, 2, POLL_INTERVAL_MS);
         if (pr <= 0) continue;
         if (pfd[1].revents & (POLLHUP | POLLERR)) {
             crypto_wipe(typed, sizeof typed);
@@ -499,7 +512,7 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
         INPUT_RECORD rec;
         DWORD        nread        = 0;
         HANDLE       sas_waits[2] = {h_in_sas, sas_ev_win};
-        DWORD        wr           = WaitForMultipleObjects(2, sas_waits, FALSE, 250);
+        DWORD        wr           = WaitForMultipleObjects(2, sas_waits, FALSE, POLL_INTERVAL_MS);
         if (wr == WAIT_OBJECT_0 + 1) {
             WSAEventSelect(sas_fd, sas_ev_win, 0);
             WSACloseEvent(sas_ev_win);
@@ -530,7 +543,7 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
         }
         /* Enter submits whatever has been typed (must have at least 4 chars
          * to prevent accidental empty submits). */
-        if ((ch == '\r' || ch == '\n') && pos >= 4) break;
+        if ((ch == '\r' || ch == '\n') && pos >= TUI_MIN_SAS_LEN) break;
         if (ch >= 0x20 && ch <= 0x7E) {
             typed[pos++] = (char)ch;
             /* write() instead of putchar() to keep typed SAS characters
@@ -564,7 +577,7 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
      * This accepts "A3F2-91BC", "A3F291BC", "a3f2-91bc" etc. — the user
      * does not need to remember whether the dash is part of the code. */
     {
-        char norm_typed[20] = {0}, norm_sas[20] = {0};
+        char norm_typed[SAS_STR_SZ] = {0}, norm_sas[SAS_STR_SZ] = {0};
         int  ti = 0, si = 0;
         for (int i = 0; typed[i] && ti < (int)sizeof(norm_typed) - 1; i++) {
             char c = typed[i];
@@ -582,7 +595,7 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
         crypto_wipe(norm_typed, sizeof norm_typed);
         crypto_wipe(norm_sas, sizeof norm_sas);
         if (!ok) {
-            TUI_GOTO(cy + 10, (tui_w - 20) / 2);
+            TUI_GOTO(cy + 10, (tui_w - SAS_MISMATCH_MSG_LEN) / 2);
             printf("\033[31mCode mismatch!\033[0m");
             fflush(stdout);
             crypto_wipe(typed, sizeof typed);

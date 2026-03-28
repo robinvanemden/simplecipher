@@ -66,6 +66,19 @@
 #include "protocol.h"
 #include "network.h"
 
+/* ---- TUI layout constants ----------------------------------------------- */
+
+enum {
+    TUI_DEFAULT_WIDTH     = 80, /* classic VT100 fallback width             */
+    TUI_DEFAULT_HEIGHT    = 24, /* classic VT100 fallback height            */
+    TUI_MIN_WIDTH         = 40, /* minimum usable terminal width            */
+    TUI_MIN_HEIGHT        = 14, /* minimum height for full chat UI          */
+    TUI_MIN_STATUS_HEIGHT = 10, /* minimum height for status/listen screens */
+    TUI_MSG_AREA_TOP      = 4,  /* row where the message area starts        */
+    TUI_TITLE_OFFSET      = 16, /* column offset for title border drawing   */
+    TUI_MIN_SAS_LEN       = 4,  /* minimum typed chars before Enter accepted */
+};
+
 /* ---- TUI: message ring buffer -------------------------------------------
  *
  * Chat messages are stored in a fixed-size circular buffer (ring buffer).
@@ -89,8 +102,8 @@ enum tui_sender { TUI_ME, TUI_PEER, TUI_SYSTEM };
 /* The ring buffer is declared as extern so both tui.c and the platform
  * event loop files (tui_posix.c / tui_win.c) can access it. */
 extern struct tui_msg_entry {
-    char            ts[16]; /* "HH:MM:SS" timestamp of the message */
-    enum tui_sender who;    /* who sent it: local user, peer, or system */
+    char            ts[TIMESTAMP_BUF]; /* "HH:MM:SS" timestamp of the message */
+    enum tui_sender who;               /* who sent it: local user, peer, or system */
     char            text[TUI_MSG_TEXT];
 } tui_msgs[TUI_MSG_MAX];
 

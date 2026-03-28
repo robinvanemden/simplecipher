@@ -54,7 +54,12 @@
 enum {
     KEY      = 32, /* bytes in any key or hash                          */
     NONCE_SZ = 24, /* XChaCha20 nonce size                              */
-    MAC_SZ   = 16  /* Poly1305 MAC — proves ciphertext is untampered   */
+    MAC_SZ   = 16, /* Poly1305 MAC — proves ciphertext is untampered   */
+
+    /* ---- formatted string sizes ----------------------------------------- */
+    FINGERPRINT_STR_SZ = 20, /* "XXXX-XXXX-XXXX-XXXX" + NUL             */
+    SAS_STR_SZ         = 20, /* "XXXX-XXXX" + NUL (oversized for safety) */
+    PASSPHRASE_MAX     = 256
 };
 
 /* =========================================================================
@@ -203,7 +208,7 @@ void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]);
  * 32 bits is sufficient because commitment prevents brute-forcing: Mallory
  * cannot search for a matching code after committing.  The hex format reads
  * clearly over a voice call: "A-3-F-2 dash 9-1-B-C". */
-void format_sas(char out[20], const uint8_t key[KEY]);
+void format_sas(char out[SAS_STR_SZ], const uint8_t key[KEY]);
 
 /* Format a public key fingerprint as "XXXX-XXXX-XXXX-XXXX" (16 hex chars
  * with dashes).  Uses the first 8 bytes of BLAKE2b(pub) for 64-bit
@@ -213,7 +218,7 @@ void format_sas(char out[20], const uint8_t key[KEY]);
  * The fingerprint can be shared out-of-band (paper, QR code, Signal message)
  * and verified with --peer-fingerprint to confirm peer identity without
  * relying solely on the SAS code. */
-void format_fingerprint(char out[20], const uint8_t pub[KEY]);
+void format_fingerprint(char out[FINGERPRINT_STR_SZ], const uint8_t pub[KEY]);
 
 /* =========================================================================
  * PERSISTENT IDENTITY KEYS
@@ -233,6 +238,8 @@ enum {
     IDENTITY_SALT_SZ = 16,
     IDENTITY_FILE_SZ = IDENTITY_SALT_SZ + NONCE_SZ + KEY + MAC_SZ /* 88 */
 };
+
+static_assert(IDENTITY_FILE_SZ == 88);
 
 /* Save an encrypted identity key to a file.  Returns 0 on success. */
 [[nodiscard]] int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, size_t pass_len);

@@ -1167,7 +1167,7 @@ static void test_sanitize_edge_cases(void) {
     /* Empty buffer — must not crash */
     uint8_t empty[1] = {0};
     sanitize_peer_text(empty, 0);
-    TEST("sanitize empty buffer does not crash", 1);
+    TEST("sanitize empty buffer does not crash", empty[0] == 0);
 
     /* All control characters */
     uint8_t all_ctrl[16];
@@ -5235,8 +5235,7 @@ static void test_cover_traffic(void) {
     (void)frame_build(&a2, (const uint8_t *)"hi", 2, real_frame, ntx2);
 
     /* Both are exactly FRAME_SZ bytes — no size difference */
-    int size_match = 1; /* they're both FRAME_SZ by construction */
-    TEST("cover and real frames are same size (512 bytes)", size_match);
+    TEST("cover and real frames are same size (512 bytes)", sizeof(cover_frame) == FRAME_SZ && sizeof(real_frame) == FRAME_SZ);
 
     /* Cover frames advance the DH ratchet correctly */
     session_t ar, br;

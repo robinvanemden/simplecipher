@@ -11,6 +11,8 @@
 #include "tui.h"
 #include "cli.h" /* for win_try_send() */
 
+enum { CONSOLE_INPUT_RECORDS = 32 }; /* batch size for ReadConsoleInputA */
+
 /* ---- TUI: terminal setup (Windows) --------------------------------------
  *
  * Windows consoles do not use termios.  Instead, we:
@@ -116,7 +118,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
 
     while (g_running) {
         HANDLE waits[2] = {h_in, net_ev};
-        DWORD  wait_ms  = 250;
+        DWORD  wait_ms  = POLL_INTERVAL_MS;
         if (cover) {
             int64_t remain = (int64_t)(next_cover - GetTickCount64());
             if (remain <= 0) wait_ms = 0;
@@ -149,9 +151,9 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
 
         /* ----- Console input ----- */
         if (wr == WAIT_OBJECT_0) {
-            INPUT_RECORD recs[32];
+            INPUT_RECORD recs[CONSOLE_INPUT_RECORDS];
             DWORD        nrec = 0, i;
-            if (!ReadConsoleInputA(h_in, recs, 32, &nrec)) break;
+            if (!ReadConsoleInputA(h_in, recs, CONSOLE_INPUT_RECORDS, &nrec)) break;
 
             for (i = 0; i < nrec && g_running; i++) {
                 if (recs[i].EventType == WINDOW_BUFFER_SIZE_EVENT) {

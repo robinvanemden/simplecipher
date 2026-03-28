@@ -13,6 +13,8 @@
 #include <termios.h>
 #include <sys/ioctl.h>
 
+enum { RAW_INPUT_BUF = 256 }; /* batch keyboard read buffer size */
+
 /* ---- TUI: terminal setup (POSIX) ----------------------------------------
  *
  * On POSIX systems, terminal behaviour is controlled by the termios
@@ -125,7 +127,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
         fds[1].fd     = STDIN_FILENO;
         fds[1].events = POLLIN;
 
-        int timeout = 250;
+        int timeout = POLL_INTERVAL_MS;
         if (cover) {
             int64_t remain = (int64_t)(next_cover - monotonic_ms());
             if (remain <= 0) timeout = 0;
@@ -177,7 +179,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
 
         /* ----- Keyboard input (batch: read multiple bytes for paste) ----- */
         if (g_running && (fds[1].revents & POLLIN)) {
-            unsigned char inbuf[256];
+            unsigned char inbuf[RAW_INPUT_BUF];
             ssize_t       sr = read(STDIN_FILENO, inbuf, sizeof inbuf);
             if (sr <= 0) continue;
 
