@@ -45,6 +45,7 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | **Key management** | | | |
 | Wipe all keys after use (`crypto_wipe`) | yes | yes | yes (native layer) |
 | Ephemeral keys only (nothing on disk) | yes | yes | yes |
+| Passphrase-protected identity key (Argon2id, 100 MB, 3 passes) | yes | yes | — |
 | **Android-specific** | | | |
 | Block screenshots / screen recording | — | — | `FLAG_SECURE` |
 | Block overlay windows (tapjacking) | — | — | `setHideOverlayWindows` |
@@ -114,7 +115,7 @@ The runtime sandbox tightens in phases. Each phase drops privileges that are no 
 
 ```bash
 make test                      # 669 C tests (659 core + 10 SOCKS5)
-bash tests/test_cli_flags.sh   # 11 CLI flag integration tests
+bash tests/test_cli_flags.sh   # 16 CLI flag integration tests
 ```
 
 Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultaneous send), TCP loopback, tamper/replay/reserved-flag rejection, forward secrecy, KDF known-answer vectors, fingerprint verification, SOCKS5 request building, deterministic session vectors.

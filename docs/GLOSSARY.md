@@ -28,6 +28,10 @@ Temporary and not stored. SimpleCipher generates fresh [keys](#key) for every [s
 
 A short, human-readable summary of a [key](#key), formatted as `XXXX-XXXX-XXXX-XXXX`. SimpleCipher derives fingerprints by hashing the public key with [BLAKE2b](#blake2b), producing 64 bits of entropy. Fingerprints can be shared out-of-band (on paper, via QR code) to verify a peer's identity before connecting. *See [PROTOCOL.md](PROTOCOL.md#fingerprint-verification-optional)*
 
+### Identity key
+
+A persistent private key stored in a passphrase-protected file, created by `simplecipher keygen`. Unlike [ephemeral](#ephemeral) keys (generated fresh each session), an identity key survives across reboots. It is used only to derive a stable [fingerprint](#fingerprint) — the actual message encryption still uses fresh [ephemeral](#ephemeral) keys every session, so [forward secrecy](#forward-secrecy) is preserved. The key file is encrypted with [Argon2id](#argon2id) + [XChaCha20-Poly1305](#xchacha20-poly1305), requiring both the file (something you have) and the passphrase (something you know). *See [DEPLOYMENT.md](DEPLOYMENT.md)*
+
 ### Forward secrecy
 
 A property ensuring that compromising today's [key](#key) cannot decrypt yesterday's messages. SimpleCipher achieves this through a [chain ratchet](#ratchet-symmetricchain) that derives a fresh key for each message and wipes the old one immediately. *See [PROTOCOL.md](PROTOCOL.md#forward-secrecy)*
@@ -159,6 +163,10 @@ An [AEAD](#aead-authenticated-encryption-with-associated-data) cipher that combi
 ## Systems Security
 
 Terms for developers and auditors reviewing SimpleCipher's hardening, build, and deployment.
+
+### Argon2id
+
+A password hashing algorithm designed to be slow and memory-intensive, making brute-force attacks expensive. SimpleCipher uses Argon2id (100 MB memory, 3 passes) to derive an encryption key from the passphrase that protects an [identity key](#identity-key) file. Even a weak passphrase takes significant time and memory to crack. Part of [Monocypher](#monocypher). *See [HARDENING.md](HARDENING.md)*
 
 ### APK (Android Package)
 

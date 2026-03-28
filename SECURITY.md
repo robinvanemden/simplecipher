@@ -30,6 +30,7 @@ The following are in scope for security reports:
 - Memory safety bugs in `src/` (buffer overflow, use-after-free, etc.)
 - Cryptographic misuse (nonce reuse, missing wipe, timing leak)
 - Android-specific issues (key leakage, UI bypass, intent injection)
+- Identity key management (keygen, passphrase handling, file security)
 - Build/CI supply chain issues (unsigned releases, toolchain compromise)
 
 The following are out of scope:
@@ -43,7 +44,7 @@ The following are out of scope:
 
 SimpleCipher's verification stack is documented in the README. If you're auditing:
 
-- `make test` — 659 unit/integration tests + `make test-socks5` — 10 SOCKS5 proxy tests + `bash tests/test_cli_flags.sh` — 11 CLI flag tests
+- `make test` — 659 unit/integration tests + `make test-socks5` — 10 SOCKS5 proxy tests + `bash tests/test_cli_flags.sh` — 16 CLI flag tests
 - `python3 tests/cbmc_harness.py` — CBMC formal verification (57K properties)
 - `valgrind --track-origins=yes ./test_timecop` — [constant-time](docs/GLOSSARY.md#constant-time) verification
 - [ASan + UBSan + MSan](docs/GLOSSARY.md#sanitizer) run in CI on every push

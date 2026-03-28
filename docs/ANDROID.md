@@ -99,6 +99,8 @@ A fingerprint is derived from a public key — the same key that's exchanged ope
 
 Fingerprints are [ephemeral](PROTOCOL.md#ephemeral). They change every session. A printed code works exactly once — for the session it was generated in.
 
+**Skip safety code (trust fingerprint):** When a peer fingerprint is entered (scanned or typed), a checkbox appears: "Skip safety code (fingerprint is enough)." When checked, the app skips the safety code screen and goes straight to chat if the fingerprint matches. The 64-bit fingerprint is cryptographically stronger than the 32-bit safety code, so this is safe when the fingerprint was exchanged in person.
+
 ### What if you skip verification?
 
 The chat is still encrypted. But without verification, you can't be sure who you're talking to. An attacker sitting between you could intercept and read everything. Verification is how you catch them.
