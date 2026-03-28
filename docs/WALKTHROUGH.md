@@ -12,10 +12,10 @@ A guided tour through SimpleCipher's source code. Start here if you want to unde
 
 If you only read 4 functions, read these:
 
-1. **`session_init()`** in `protocol.c` — derives all session keys from the X25519 shared secret
+1. **`session_init()`** in `protocol.c` — derives all session keys from the [X25519](GLOSSARY.md#x25519) shared secret
 2. **`frame_build()`** in `protocol.c` — encrypts one message into a 512-byte frame
 3. **`frame_open()`** in `protocol.c` — decrypts and authenticates a received frame
-4. **`chain_step()`** in `crypto.c` — the symmetric ratchet (forward secrecy in 3 lines)
+4. **`chain_step()`** in `crypto.c` — the symmetric ratchet ([forward secrecy](GLOSSARY.md#forward-secrecy) in 3 lines)
 
 These 4 functions are the entire protocol. Everything else is I/O, UI, or hardening.
 
@@ -39,7 +39,7 @@ Each side generates a fresh X25519 keypair from the OS random number generator. 
 main.c → make_commit(commit_self, self_pub)
 ```
 
-Before sending our public key, we send a *commitment* — a hash of the key. This prevents a man-in-the-middle from seeing our key and adaptively choosing their own to produce a matching safety code. The commitment is binding: once sent, we can't change the key without the hash mismatching.
+Before sending our public key, we send a *[commitment](GLOSSARY.md#commitment-scheme)* — a hash of the key. This prevents a man-in-the-middle from seeing our key and adaptively choosing their own to produce a matching safety code. The commitment is binding: once sent, we can't change the key without the hash mismatching.
 
 ### Step 3: Exchange commitments, then keys
 
@@ -58,8 +58,8 @@ protocol.c → session_init()
 ```
 
 Both sides compute the same shared secret via X25519, then derive:
-- **SAS key** — Short Authentication String for human verification (32 bits)
-- **Root key** — persists across DH ratchet steps
+- **[SAS](GLOSSARY.md#sas-short-authentication-string) key** — Short Authentication String for human verification (32 bits)
+- **Root key** — persists across [DH ratchet](GLOSSARY.md#ratchet-dh) steps
 - **TX/RX chains** — per-direction, per-message forward secrecy
 
 See the key derivation tree in `crypto.h` for the full picture.
@@ -83,7 +83,7 @@ protocol.c → frame_build(session, plaintext, len, frame_out, next_chain)
 1. Check if a DH ratchet step is needed (see Part 3)
 2. Derive a one-time message key: `chain_step(tx_chain) → message_key + next_chain`
 3. Build the plaintext slot: `[flags | optional_ratchet_key | length | message | zero_padding]`
-4. Encrypt with XChaCha20-Poly1305: `crypto_aead_lock(plaintext → ciphertext + MAC)`
+4. Encrypt with [XChaCha20-Poly1305](GLOSSARY.md#xchacha20-poly1305): `crypto_aead_lock(plaintext → ciphertext + MAC)`
 5. Output: exactly 512 bytes — always, regardless of message length
 
 The caller sends the frame via `frame_send()`, which wraps it in random padding on the wire (514-769 bytes total), then commits the chain advance (`tx = next_chain; tx_seq++`). If the send fails, the chain is not advanced — both sides stay in sync.
@@ -96,7 +96,7 @@ protocol.c → frame_open(session, frame_in, plaintext_out, len_out)
 
 1. Check sequence number (cheap replay rejection — no crypto needed)
 2. Derive the expected message key from the RX chain
-3. Decrypt and verify MAC: `crypto_aead_unlock(ciphertext → plaintext)`
+3. Decrypt and verify [MAC](GLOSSARY.md#mac-message-authentication-code): `crypto_aead_unlock(ciphertext → plaintext)`
 4. Parse flags, optional ratchet key, length, message
 5. Only on success: advance the RX chain and sequence number. On failure (tampered frame, wrong sequence number), nothing changes — the session state is untouched and the next legitimate frame still works.
 
@@ -156,8 +156,8 @@ After the TCP connection is established:
 - **Phase 2 sandbox**: drops setup-only syscalls (no setsockopt after handshake)
 
 Implementation varies by OS:
-- Linux: seccomp-BPF (kernel-level syscall filter, ~120 lines of BPF bytecode)
-- FreeBSD: Capsicum (per-fd capability rights)
+- Linux: [seccomp](GLOSSARY.md#seccomp-secure-computing-mode)-BPF (kernel-level syscall filter, ~120 lines of BPF bytecode)
+- FreeBSD: [Capsicum](GLOSSARY.md#capsicum) (per-fd capability rights)
 - OpenBSD: pledge("stdio") + unveil(NULL, NULL)
 
 Also: `mlockall` (prevent key pages from swapping), `RLIMIT_CORE=0` (no crash dumps with keys), `PR_SET_DUMPABLE=0` (block ptrace).
@@ -171,4 +171,4 @@ Skip all of this on first reading — the protocol is complete without it.
 - **PROTOCOL.md** — formal protocol specification with glossary
 - **HARDENING.md** — platform-specific security measures
 - **tests/test_p2p.c** — 659 test assertions covering every code path
-- **Monocypher documentation** — https://monocypher.org/ (the underlying crypto library)
+- **[Monocypher](GLOSSARY.md#monocypher) documentation** — https://monocypher.org/ (the underlying crypto library)

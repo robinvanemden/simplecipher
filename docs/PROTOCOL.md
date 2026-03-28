@@ -190,8 +190,8 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 - Active MITM — commitment scheme + SAS verification prevents key substitution
 - Harvest-now-decrypt-later — forward secrecy (chain ratchet wipes old keys)
 - Post-session device seizure — no keys on disk; OS-level traces (swap, scrollback, Android heap) are best-effort mitigated but not guaranteed (see limitations below)
-- Mid-session RAM compromise — DH ratchet recovers after the next direction switch
-- Frame injection during idle — MAC failure tolerance (3 consecutive failures before teardown) prevents a single forged frame from killing the session
+- Mid-session RAM compromise — [DH ratchet](GLOSSARY.md#ratchet-dh) recovers after the next direction switch
+- Frame injection during idle — [MAC](GLOSSARY.md#mac-message-authentication-code) failure tolerance (3 consecutive failures before teardown) prevents a single forged frame from killing the session
 
 **SimpleCipher does NOT defend against:**
 - An adversary present at session start who can substitute keys AND prevent SAS verification (if the user skips verification, all bets are off)
@@ -216,7 +216,7 @@ SimpleCipher protects the contents and authenticity of a conversation between tw
 | **[Forward secrecy](#forward-secrecy)** | Chain-key [ratchet](#ratchet); each message key is used once then wiped |
 | **Integrity** | Poly1305 [MAC](#mac) detects any tampering; sequence numbers reject replays |
 | **Message-length hiding** | Fixed 512-byte frames prevent length-based analysis |
-| **DPI resistance** | 1-byte CSPRNG pad_len header + random padding; entire wire stream indistinguishable from random |
+| **[DPI](GLOSSARY.md#dpi-deep-packet-inspection) resistance** | 1-byte CSPRNG pad_len header + random padding; entire wire stream indistinguishable from random |
 | **Terminal safety** | Peer messages are sanitized (non-printable bytes replaced with `.`) |
 | **[Post-compromise security](#post-compromise-security)** | DH [ratchet](#ratchet) mixes fresh [X25519](#x25519) entropy on each direction switch |
 | **Frame injection resistance** | [MAC](#mac) failures are tolerated (up to 3); a single forged frame does not kill the session |
@@ -246,14 +246,14 @@ Nothing is stored to disk, ever.
 
 In addition to [SAS](#sas) comparison, peers can exchange fingerprints out-of-band before connecting. A fingerprint is the first 8 bytes of [BLAKE2b](#blake2b)`_keyed(label="cipher fingerprint v2", pub_key)` formatted as `XXXX-XXXX-XXXX-XXXX`. The domain label ensures the fingerprint hash is distinct from all other hashes in the protocol. Since the fingerprint is derived from the public key (which is exchanged openly during the handshake), it has zero secret value — sharing it on paper, QR code, or any channel carries no risk.
 
-After the commitment and key exchange phases, the native layer compares the received peer public key's fingerprint against the pre-shared value using a constant-time comparison. If they match, the connection proceeds to the SAS verification step (defence in depth — both layers verify). If they don't match, the connection is aborted immediately.
+After the commitment and key exchange phases, the native layer compares the received peer public key's fingerprint against the pre-shared value using a [constant-time](GLOSSARY.md#constant-time) comparison. If they match, the connection proceeds to the SAS verification step (defence in depth — both layers verify). If they don't match, the connection is aborted immediately.
 
 This provides 64 bits of entropy (vs 32 for SAS). Combined with SAS confirmation, both automated and human verification must pass before the session begins.
 
 ### What it does NOT provide
 
 - **Post-compromise security is per-session**: the DH ratchet recovers from key theft within a session, but there is no cross-session recovery. Each session starts fresh — if an attacker is present at session start, the entire session is compromised. This is inherent to the ephemeral design.
-- **Anonymity**: IP addresses are visible on the network. For anonymity, run over Tor: `simplecipher connect --socks5 127.0.0.1:9050` (enables cover traffic automatically). Listeners behind onion services should add `--cover-traffic`.
+- **Anonymity**: IP addresses are visible on the network. For anonymity, run over Tor: `simplecipher connect --socks5 127.0.0.1:9050` (enables [cover traffic](GLOSSARY.md#cover-traffic) automatically). Listeners behind onion services should add `--cover-traffic`.
 - **Identity persistence**: there are no long-term keys or contacts. Each session is independent. This is deliberate — a stored identity key is a forensic artifact (proof you use the tool, and a target for impersonation if seized). The SAS verification on every connect *is* the identity model: human-verified, not key-pinned, and it leaves nothing on disk. If you need persistent contacts with key pinning, use Signal.
 - **Android memory hygiene**: the desktop builds use `crypto_wipe()` on every buffer to ensure plaintext and keys do not linger in RAM. The Android build runs on the JVM, where Strings are immutable and garbage-collected — sensitive data cannot be reliably zeroed. The app clears widgets and blocks screenshots (`FLAG_SECURE`), but this is best-effort. Android also lacks `mlockall()`, so key material can be swapped to disk under memory pressure. For the strongest memory guarantees, use the desktop CLI or TUI.
 - **Forced termination**: if the process is killed by `SIGKILL` (kill -9), the OOM killer, or a system force-stop, `crypto_wipe()` never runs — these signals cannot be caught. Key material remains in freed physical pages until the kernel reclaims and zeroes them (not guaranteed to be immediate). `CIPHER_HARDEN` mitigates: `mlockall` prevents swap, `RLIMIT_CORE=0` prevents crash dumps, `PR_SET_DUMPABLE=0` blocks ptrace. But a cold-boot attack or DMA access to physical RAM during this window is theoretically possible. Power off the device after a session if this matters.
@@ -275,7 +275,7 @@ Recommended reading order:
 
 1. `main.c` — session lifecycle, arg parsing
 2. `protocol.h` — wire format, frame layout, session key derivation
-3. `crypto.h` — cryptographic building blocks (KDF, ratchet, SAS)
+3. `crypto.h` — cryptographic building blocks ([KDF](GLOSSARY.md#kdf-key-derivation-function), ratchet, SAS)
 4. `ratchet.h` — DH ratchet for post-compromise security
 5. `network.h` — TCP socket I/O
 6. `tui.h` / `cli.h` — user interface event loops

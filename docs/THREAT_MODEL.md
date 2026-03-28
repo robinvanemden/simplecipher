@@ -9,11 +9,11 @@
 | Attacker | Protection | Mechanism |
 |----------|-----------|-----------|
 | Network observer (passive) | Message content confidential | XChaCha20-Poly1305 AEAD, fixed 512-byte frames |
-| Network observer (active, MITM) | Detected via SAS verification | Commit-then-reveal handshake, 32-bit SAS |
+| Network observer (active, [MITM](GLOSSARY.md#man-in-the-middle-mitm)) | Detected via [SAS](GLOSSARY.md#sas-short-authentication-string) verification | Commit-then-reveal handshake, 32-bit SAS |
 | Malicious peer (frame injection) | Rejected by MAC | Poly1305 authentication, sequence number check |
 | Malicious peer (replay/reorder) | Rejected | Strict sequence equality, chain ratchet |
-| Local non-root attacker | Memory protected | PR_SET_DUMPABLE=0, seccomp, Capsicum, pledge |
-| Post-compromise of chain key | Healed by DH ratchet (takes effect one message after ratchet step) | Fresh X25519 keypair on direction switch |
+| Local non-root attacker | Memory protected | PR_SET_DUMPABLE=0, [seccomp](GLOSSARY.md#seccomp-secure-computing-mode), [Capsicum](GLOSSARY.md#capsicum), [pledge](GLOSSARY.md#pledge--unveil) |
+| Post-compromise of chain key | Healed by DH ratchet (takes effect one message after ratchet step) | Fresh [X25519](GLOSSARY.md#x25519) keypair on direction switch |
 
 ## What SimpleCipher does NOT defend against
 
@@ -32,7 +32,7 @@
 
 | Limitation | Impact | Rationale |
 |-----------|--------|-----------|
-| No PIE on static musl binaries | No ASLR for code/data segments | musl toolchain lacks rcrt1.o; upgrade pending |
+| No [PIE](GLOSSARY.md#pie-position-independent-executable) on static musl binaries | No [ASLR](GLOSSARY.md#aslr-address-space-layout-randomization) for code/data segments | musl toolchain lacks rcrt1.o; upgrade pending |
 | 32-bit SAS | 1-in-4-billion chance of MITM per session | Commitment scheme prevents brute-force; adequate for interactive verification |
 | Protocol fingerprint | All wire messages use a 1-byte CSPRNG pad_len header + random padding, coalesced into single writes. The entire stream is indistinguishable from uniform random data — no fixed block sizes, no detectable header bytes, no split TCP segments. | Frames are 512 bytes internally (message-length hiding); the wire encoding wraps each with random padding. Use `--socks5` with Tor for full anonymity. |
 | Cover traffic minimum 500ms interval | Frames arriving <500ms apart are distinguishable from cover | Delaying real sends to cover boundaries would add latency |
@@ -55,7 +55,7 @@ An authenticated peer who completes the handshake legitimately can:
 
 | Assumption | What breaks if wrong | Notes |
 |-----------|---------------------|-------|
-| OS CSPRNG is unpredictable | Identical ephemeral keys across sessions | Real risk in VM snapshot restore / container checkpoint (CRIU) — kernel entropy pool is duplicated. Not fixable in userspace. getrandom(flags=0) blocks until pool is initialized but does not detect snapshot duplication. |
+| OS CSPRNG is unpredictable | Identical [ephemeral](GLOSSARY.md#ephemeral) keys across sessions | Real risk in VM snapshot restore / container checkpoint (CRIU) — kernel entropy pool is duplicated. Not fixable in userspace. getrandom(flags=0) blocks until pool is initialized but does not detect snapshot duplication. |
 | Out-of-band channel has integrity | MITM goes undetected despite SAS | The OOB channel (phone call, in-person) must resist active tampering. Deepfake voice synthesis is an emerging threat to phone-based SAS comparison. Paper exchange is the strongest method. |
 | BLAKE2b is collision-resistant | Commitment scheme breaks, SAS brute-forceable | Standard cryptographic assumption. BLAKE2b has 10+ years of analysis with no practical attacks. |
 | TCP delivers bytes in order | Protocol relies on TCP stream semantics | Transparent proxies (Tor, corporate MITM) preserve this. The protocol survives any RFC-compliant TCP stack. |

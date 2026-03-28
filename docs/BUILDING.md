@@ -39,14 +39,14 @@ cd android && ./gradlew assembleDebug
 
 ## Build flags
 
-Binaries are size-optimized: `-Os -flto -ffunction-sections -fdata-sections` with `--gc-sections` for dead code removal. Linux binaries are stripped of symbols, build-id, and compiler ident. Full RELRO and non-executable stack are enabled on all ELF binaries.
+Binaries are size-optimized: `-Os -flto -ffunction-sections -fdata-sections` with `--gc-sections` for dead code removal. Linux binaries are stripped of symbols, build-id, and compiler ident. Full [RELRO](GLOSSARY.md#relro-relocation-read-only) and non-executable stack are enabled on all ELF binaries.
 
 See [HARDENING.md](HARDENING.md) for the complete list of security compiler and linker flags.
 
 ## Tests
 
 ```bash
-# Run the P2P integration tests (659 tests)
+# Run the full test suite (669 tests: 659 P2P + 10 SOCKS5)
 make test
 
 # Run the full local test suite (P2P + build + binary analysis)
@@ -111,6 +111,7 @@ Configuration files: `.clang-format` (C style rules), `.clang-tidy` (static anal
 ├── android/                      # Android app (JNI bridge + Java UI)
 ├── tests/
 │   ├── test_p2p.c                # 659-test P2P integration suite
+│   ├── test_socks5_proxy.c       # 10-test SOCKS5 proxy suite
 │   ├── test_constant_time.c      # dudect timing side-channel verification
 │   ├── test_timecop.c            # Valgrind-based constant-time verification
 │   ├── cbmc_harness.py           # CBMC formal verification (57K properties)

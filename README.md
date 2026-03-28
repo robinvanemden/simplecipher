@@ -5,7 +5,7 @@
 
 Private chat between two people. No server. No account. Nothing stored to disk.
 
-Run the program, compare a short code over the phone to make sure nobody's listening in, and start talking. Everything is encrypted end-to-end. When the session ends, the keys are gone — even if someone recorded the entire conversation, they cannot decrypt it after the fact. No sign-up required.
+Run the program, compare a short code over the phone to make sure nobody's listening in, and start talking. Everything is [end-to-end encrypted](docs/GLOSSARY.md#end-to-end-encryption-e2ee). When the session ends, the keys are gone — even if someone recorded the entire conversation, they cannot decrypt it after the fact. No sign-up required.
 
 > **Security notice:** SimpleCipher has not been independently audited. Do not rely on it in situations where a security failure could put anyone at risk without first commissioning a professional review of the code and your deployment environment.
 
@@ -112,7 +112,7 @@ SimpleCipher encrypts your messages, but your IP address is still visible to the
 | **Tailscale** (easiest) | Different networks, quick setup | Tailscale's coordination server sees both endpoints |
 | **WireGuard** | Manual VPN tunnel between devices | Your VPN peer only |
 | **Port forwarding** | Forward port 7777 on your router | Anyone who knows the IP can attempt a connection |
-| **Tor** | Anonymity matters | Neither side learns the other's IP; network observers see Tor traffic but not the destination |
+| **[Tor](docs/GLOSSARY.md#tor)** | Anonymity matters | Neither side learns the other's IP; network observers see Tor traffic but not the destination |
 
 **If you need anonymity** — not just encryption — use Tor:
 
@@ -132,7 +132,7 @@ simplecipher connect --socks5 127.0.0.1:9050
 # Your peer connects to the .onion address via --socks5.
 ```
 
-`--socks5` automatically enables **cover traffic**: the app keeps sending encrypted empty messages at random intervals, even when you're not typing. Without this, someone watching the network can match *when* you type to *when* encrypted data flows through Tor — and figure out who's talking to whom. With cover traffic, the data flows constantly, so your typing pattern disappears into the noise.
+`--socks5` automatically enables **[cover traffic](docs/GLOSSARY.md#cover-traffic)**: the app keeps sending encrypted empty messages at random intervals, even when you're not typing. Without this, someone watching the network can match *when* you type to *when* encrypted data flows through Tor — and figure out who's talking to whom. With cover traffic, the data flows constantly, so your typing pattern disappears into the noise.
 
 Listeners behind onion services should add `--cover-traffic` explicitly (since they don't use `--socks5`). See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for onion service setup.
 
@@ -166,11 +166,11 @@ simplecipher --version
 
 TUI mode works on Linux, macOS, and Windows 10+. No dependencies — pure ANSI escape sequences.
 
-**SOCKS5 proxy** (`--socks5`): tunnels the connection through any SOCKS5 proxy. Essential for Tor — the proxy resolves DNS, so `.onion` addresses work and no DNS queries leak from your machine.
+**[SOCKS5](docs/GLOSSARY.md#socks5) proxy** (`--socks5`): tunnels the connection through any SOCKS5 proxy. Essential for Tor — the proxy resolves DNS, so `.onion` addresses work and no DNS queries leak from your machine.
 
 **Interactive connect**: running `simplecipher connect` without a host prompts for it on stdin. The target address never appears in `argv`, shell history, or `/proc/*/cmdline`.
 
-**Peer fingerprint** (`--peer-fingerprint`): the listener's fingerprint is shown on the listen screen *before* any connection is made, so it can be shared while waiting for a peer. The connector passes it as a flag. After the handshake, the peer's public key is hashed and compared — mismatch aborts the connection. This is optional additional verification on top of the SAS code, useful when you can pre-share a fingerprint but can't make a phone call.
+**Peer [fingerprint](docs/GLOSSARY.md#fingerprint)** (`--peer-fingerprint`): the listener's fingerprint is shown on the listen screen *before* any connection is made, so it can be shared while waiting for a peer. The connector passes it as a flag. After the handshake, the peer's public key is hashed and compared — mismatch aborts the connection. This is optional additional verification on top of the SAS code, useful when you can pre-share a fingerprint but can't make a phone call.
 
 On Android, the same flow happens through the app UI: choose Listen or Connect, enter the host/port, verify the safety code, and chat.
 

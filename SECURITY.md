@@ -45,6 +45,6 @@ SimpleCipher's verification stack is documented in the README. If you're auditin
 
 - `make test` — 659 unit/integration tests + `make test-socks5` — 10 SOCKS5 proxy tests
 - `python3 tests/cbmc_harness.py` — CBMC formal verification (57K properties)
-- `valgrind --track-origins=yes ./test_timecop` — constant-time verification
-- ASan + UBSan + MSan run in CI on every push
+- `valgrind --track-origins=yes ./test_timecop` — [constant-time](docs/GLOSSARY.md#constant-time) verification
+- [ASan + UBSan + MSan](docs/GLOSSARY.md#sanitizer) run in CI on every push
 - libFuzzer targets in `tests/fuzz_*.c`

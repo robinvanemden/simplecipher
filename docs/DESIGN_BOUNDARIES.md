@@ -16,7 +16,7 @@ SimpleCipher is not Signal, WhatsApp, or any persistent messaging system. The di
 | Server | Central server routes messages | None — direct peer-to-peer | A server knows who talks to whom and when |
 | Contacts | Stored on device | None | A contact list is a social graph on disk |
 | Message history | Stored (encrypted) on device | None — gone when session ends | Stored messages can be compelled or seized |
-| Identity keys | Long-term, pinned | Ephemeral, per-session | A stored key is a target for impersonation if seized |
+| Identity keys | Long-term, pinned | [Ephemeral](GLOSSARY.md#ephemeral), per-session | A stored key is a target for impersonation if seized |
 | Group chat | Yes | No — two people only | Groups add complexity and weaken the trust model |
 | File transfer | Yes | No — text only | File handling is a large attack surface |
 | Offline messages | Yes | No — both must be online | Offline delivery requires a server |
@@ -37,7 +37,7 @@ SimpleCipher is not Signal, WhatsApp, or any persistent messaging system. The di
 
 Common feature requests and why they conflict with the design:
 
-**"Add persistent identity keys"** — A stored key proves you use the tool. It's a forensic artifact and an impersonation target if seized. The SAS/fingerprint verification on every session *is* the identity model: human-verified, not key-pinned.
+**"Add persistent identity keys"** — A stored key proves you use the tool. It's a forensic artifact and an impersonation target if seized. The [SAS](GLOSSARY.md#sas-short-authentication-string)/fingerprint verification on every session *is* the identity model: human-verified, not key-pinned.
 
 **"Add a server for offline messages"** — A server is a single point of surveillance, compromise, and subpoena. SimpleCipher's value is that no third party is involved.
 

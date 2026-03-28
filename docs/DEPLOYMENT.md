@@ -4,7 +4,7 @@
 
 ## The short version
 
-Use SimpleCipher on **Tails** (USB, amnesic) or a **hardened Linux** desktop, over **Tor**, with **pre-shared fingerprints** on paper. Do not use Android if your threat model includes device seizure or memory forensics.
+Use SimpleCipher on **Tails** (USB, amnesic) or a **hardened Linux** desktop, over **[Tor](GLOSSARY.md#tor)**, with **pre-shared [fingerprint](GLOSSARY.md#fingerprint)s** on paper. Do not use Android if your threat model includes device seizure or memory forensics.
 
 ## Recommended setup
 
@@ -35,7 +35,7 @@ simplecipher connect --socks5 127.0.0.1:9050
 #   Host: <peer-onion-address>
 ```
 
-**Note:** The `--socks5` flag itself appears in `/proc/cmdline` and shell history. This reveals that you're using a SOCKS5 proxy but not who you're connecting to (the host is entered interactively). On Tails this is not a concern — the amnesic OS discards everything on shutdown.
+**Note:** The `--socks5` flag itself appears in `/proc/cmdline` and shell history. This reveals that you're using a [SOCKS5](GLOSSARY.md#socks5) proxy but not who you're connecting to (the host is entered interactively). On Tails this is not a concern — the amnesic OS discards everything on shutdown.
 
 **Listening as a Tor onion service:**
 
@@ -54,7 +54,7 @@ cat /var/lib/tor/simplecipher/hostname
 simplecipher listen --cover-traffic
 ```
 
-Your peer connects to the `.onion` address via `--socks5` (which enables cover traffic automatically). The `--cover-traffic` flag on the listener ensures both sides send dummy frames, defeating timing correlation from either direction.
+Your peer connects to the `.onion` address via `--socks5` (which enables [cover traffic](GLOSSARY.md#cover-traffic) automatically). The `--cover-traffic` flag on the listener ensures both sides send dummy frames, defeating timing correlation from either direction.
 
 ### 3. Identity verification: pre-shared fingerprints
 

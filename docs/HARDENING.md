@@ -17,30 +17,30 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Technique | Linux | Windows | Android |
 |-----------|:-----:|:-------:|:-------:|
 | **Compiler** | | | |
-| Stack canaries (`-fstack-protector-strong`) | yes | yes | yes |
+| [Stack canaries](GLOSSARY.md#stack-canary) (`-fstack-protector-strong`) | yes | yes | yes |
 | Stack clash protection | yes | — | — |
 | Zero-init all locals (`-ftrivial-auto-var-init=zero`) | yes | yes | yes |
 | Buffer overflow detection (`_FORTIFY_SOURCE`) | 3 | — | 2 |
-| Control-flow integrity | CET (x86), BTI (arm64) | CET via mingw (`-fcf-protection=full`); no MSVC CFG PE flag | BTI (arm64) |
+| Control-flow integrity | [CET](GLOSSARY.md#cet-control-flow-enforcement-technology) (x86), [BTI](GLOSSARY.md#bti-branch-target-identification) (arm64) | CET via mingw (`-fcf-protection=full`); no MSVC CFG PE flag | BTI (arm64) |
 | Strict flex array bounds (`-fstrict-flex-arrays=3`) | yes | yes | — |
 | Hidden symbol visibility | yes | yes | yes + JNI export whitelist |
-| LTO (whole-program optimization) | yes | yes | yes |
+| [LTO](GLOSSARY.md#lto-link-time-optimization) (whole-program optimization) | yes | yes | yes |
 | **Linker** | | | |
-| Full RELRO (read-only GOT) | yes | — | yes |
+| Full [RELRO](GLOSSARY.md#relro-relocation-read-only) (read-only GOT) | yes | — | yes |
 | Non-executable stack | yes | — | yes |
 | Block dlopen (`-z,nodlopen`) | yes | — | — |
-| ASLR | OS default | high-entropy | OS default |
-| DEP (W^X) | OS default | yes | OS default |
+| [ASLR](GLOSSARY.md#aslr-address-space-layout-randomization) | OS default | high-entropy | OS default |
+| [DEP](GLOSSARY.md#dep-data-execution-prevention) ([W^X](GLOSSARY.md#wx-write-xor-execute)) | OS default | yes | OS default |
 | Fully static binary | yes (musl) | yes | N/A (shared JNI lib) |
 | Stripped symbols | yes | yes | yes |
 | **Runtime** (`-DCIPHER_HARDEN`) | | | |
 | Lock memory (prevent swap) | `mlockall` | — | — |
 | Disable core dumps | `RLIMIT_CORE=0` | `SetErrorMode` (WER off) | `RLIMIT_CORE=0` (unconditional in JNI_OnLoad) |
 | Block ptrace / memory inspection | `PR_SET_DUMPABLE=0` | — | `PR_SET_DUMPABLE=0` (unconditional in JNI_OnLoad) |
-| Seccomp-BPF syscall filter (two-phase) | yes: phase 1 after TCP connect (blocks new sockets, ioctl restricted — TIOCSTI blocked), phase 2 after handshake (tightest, ioctl restricted — TIOCSTI blocked) | — | — |
+| [Seccomp](GLOSSARY.md#seccomp-secure-computing-mode)-BPF syscall filter (two-phase) | yes: phase 1 after TCP connect (blocks new sockets, ioctl restricted — TIOCSTI blocked), phase 2 after handshake (tightest, ioctl restricted — TIOCSTI blocked) | — | — |
 | Process mitigation policies (Windows) | — | ProhibitDynamicCode, DisableExtensionPoints, StrictHandleCheck | — |
-| Capsicum capability sandbox (FreeBSD only) | — (FreeBSD: two-phase `cap_enter()` + per-fd rights, CI-verified) | — | — |
-| pledge/unveil (OpenBSD only) | — (OpenBSD: `pledge("stdio")` + `unveil(NULL,NULL)`, CI-verified) | — | — |
+| [Capsicum](GLOSSARY.md#capsicum) capability sandbox (FreeBSD only) | — (FreeBSD: two-phase `cap_enter()` + per-fd rights, CI-verified) | — | — |
+| [pledge/unveil](GLOSSARY.md#pledge--unveil) (OpenBSD only) | — (OpenBSD: `pledge("stdio")` + `unveil(NULL,NULL)`, CI-verified) | — | — |
 | MAC failure tolerance (MAX_AUTH_FAILURES=3 — single forged frame does not kill session) | yes | yes | yes |
 | **Key management** | | | |
 | Wipe all keys after use (`crypto_wipe`) | yes | yes | yes (native layer) |
@@ -73,8 +73,8 @@ Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultane
 
 ### Sanitizers (CI, blocking)
 
-- **AddressSanitizer** + **UndefinedBehaviorSanitizer** on the full test suite (clang-19)
-- **MemorySanitizer** — detects uninitialized memory reads
+- **[AddressSanitizer](GLOSSARY.md#sanitizer)** + **[UndefinedBehaviorSanitizer](GLOSSARY.md#sanitizer)** on the full test suite (clang-19)
+- **[MemorySanitizer](GLOSSARY.md#sanitizer)** — detects uninitialized memory reads
 
 ### Static analysis (CI, blocking)
 
@@ -109,7 +109,7 @@ Two complementary tools that catch different classes of timing side channels:
 
 All 8 secret-handling functions pass both tools: `is_zero32`, `verify_commit`, `domain_hash`, `expand`, `chain_step`, `crypto_x25519`, `frame_build`, `ct_compare`.
 
-Known-accept: `frame_open` shows timing variance in dudect because Monocypher intentionally skips decryption on MAC failure (not exploitable — MAC comparison is constant-time).
+Known-accept: `frame_open` shows timing variance in dudect because Monocypher intentionally skips decryption on MAC failure (not exploitable — MAC comparison is [constant-time](GLOSSARY.md#constant-time)).
 
 ```bash
 # Timecop (fast)

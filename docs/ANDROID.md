@@ -1,6 +1,6 @@
 # Android App — SimpleCipher
 
-> **Audience:** Everyone — from first-time users choosing an APK, to developers building from source, to security researchers auditing the trust boundaries between Java and native code.
+> **Audience:** Everyone — from first-time users choosing an [APK](GLOSSARY.md#apk-android-package), to developers building from source, to security researchers auditing the trust boundaries between Java and native code.
 
 ## What is this?
 
@@ -16,7 +16,7 @@ There are two APKs to choose from. Both provide the same encryption. The only di
 |---|---|---|
 | **Size** | ~154 KB | ~854 KB |
 | **Permissions** | Internet only | Internet + Camera (optional) |
-| **Identity verification** | Safety code (read aloud) or type fingerprint | Safety code, type fingerprint, or scan QR code |
+| **Identity verification** | Safety code (read aloud) or type [fingerprint](GLOSSARY.md#fingerprint) | Safety code, type fingerprint, or scan QR code |
 | **Dependencies** | None (just the C crypto library) | ZXing (QR code library, Apache 2.0) |
 | **Best for** | Maximum trust — zero third-party code, zero extra permissions | Convenience — scan a QR code instead of typing |
 
@@ -134,7 +134,7 @@ The chat is still encrypted. But without verification, you can't be sure who you
 └───────────────────────────────────────────┘
 ```
 
-**Why a single native thread?** All crypto, session, and socket state lives on one POSIX thread. Java communicates through a pipe. No mutexes needed for the protocol itself, no possibility of [nonce](PROTOCOL.md#nonce) reuse. Two threads reading the same key/nonce pair breaks [XChaCha20-Poly1305](PROTOCOL.md#xchacha20-poly1305) confidentiality completely — this architecture makes that structurally impossible. A small number of lifecycle/control globals (pipe fd, listen socket, session-active flag, generation counter) are shared between the JNI calling thread and the session thread using C11 atomics. These carry no crypto material.
+**Why a single native thread?** All crypto, session, and socket state lives on one POSIX thread. Java communicates through a pipe. No mutexes needed for the protocol itself, no possibility of [nonce](PROTOCOL.md#nonce) reuse. Two threads reading the same key/nonce pair breaks [XChaCha20-Poly1305](PROTOCOL.md#xchacha20-poly1305) confidentiality completely — this architecture makes that structurally impossible. A small number of lifecycle/control globals (pipe fd, listen socket, session-active flag, generation counter) are shared between the [JNI](GLOSSARY.md#jni-java-native-interface) calling thread and the session thread using C11 atomics. These carry no crypto material.
 
 ## Security measures
 
@@ -165,7 +165,7 @@ The native C layer wipes everything it touches. But at the Java-to-native bounda
 
 ### SOCKS5 / Tor support
 
-The Android app supports SOCKS5 proxies in connect mode. Enter the proxy address (e.g. `127.0.0.1:9050`) in the "SOCKS5 proxy" field on the connect screen. This enables Tor via [Orbot](https://guardianproject.info/apps/org.torproject.android/) — neither side learns the other's IP address.
+The Android app supports [SOCKS5](GLOSSARY.md#socks5) proxies in connect mode. Enter the proxy address (e.g. `127.0.0.1:9050`) in the "SOCKS5 proxy" field on the connect screen. This enables [Tor](GLOSSARY.md#tor) via [Orbot](https://guardianproject.info/apps/org.torproject.android/) — neither side learns the other's IP address.
 
 **Setup:**
 1. Install Orbot from F-Droid or Google Play
@@ -177,7 +177,7 @@ The Android app supports SOCKS5 proxies in connect mode. Enter the proxy address
 **Limitations:**
 - SOCKS5 is connect-mode only. To accept incoming connections anonymously on Android, you would need to configure a Tor onion service, which requires root or a separate Tor daemon — use the desktop CLI for this.
 - The proxy must be on localhost (`127.0.0.1`, `localhost`, or `::1`). Remote proxies are rejected — the blocking connect could hang the session thread beyond nativeStop()'s reach. This is enforced in both the Java UI and the native JNI layer.
-- **Cover traffic is automatic** when connecting through SOCKS5 (Orbot/Tor). The app sends encrypted dummy frames at random intervals to defeat Tor timing correlation — same mechanism as the desktop `--cover-traffic` flag. Cover traffic is unit-tested (test_p2p.c) and exercised on the desktop SOCKS5 loopback path; the Android emulator CI test exercises the SOCKS5 connect path through the SAS screen but does not reach the post-SAS chat loop where cover traffic starts. Why: the emulator test has a peer (mini_socks5_daemon), but driving both sides through SAS confirmation into the chat loop would require automating the out-of-band SAS exchange between two app instances — the SAS screen deliberately blocks on human input and has no automation bypass, by design.
+- **[Cover traffic](GLOSSARY.md#cover-traffic) is automatic** when connecting through SOCKS5 (Orbot/Tor). The app sends encrypted dummy frames at random intervals to defeat Tor timing correlation — same mechanism as the desktop `--cover-traffic` flag. Cover traffic is unit-tested (test_p2p.c) and exercised on the desktop SOCKS5 loopback path; the Android emulator CI test exercises the SOCKS5 connect path through the SAS screen but does not reach the post-SAS chat loop where cover traffic starts. Why: the emulator test has a peer (mini_socks5_daemon), but driving both sides through SAS confirmation into the chat loop would require automating the out-of-band SAS exchange between two app instances — the SAS screen deliberately blocks on human input and has no automation bypass, by design.
 
 For a complete guide to high-risk deployment with Tor (including onion services), see [High-Risk Deployment](DEPLOYMENT.md).
 
@@ -186,7 +186,7 @@ For a complete guide to high-risk deployment with Tor (including onion services)
 | Property | Desktop (CLI/TUI) | Android |
 |----------|-------------------|---------|
 | Key wiping | Deterministic (`crypto_wipe` on every buffer) | Deterministic in C; best-effort in Java (GC) |
-| Keyboard safety | Terminal handles input directly | Custom keyboard bypasses system IME |
+| Keyboard safety | Terminal handles input directly | Custom keyboard bypasses system [IME](GLOSSARY.md#ime-input-method-editor) |
 | Screenshot protection | Not applicable (terminal) | `FLAG_SECURE` blocks screenshots |
 | Memory locking | `mlockall` prevents swap-to-disk | Not available on Android |
 | [Seccomp](PROTOCOL.md#seccomp) sandboxing | Enabled (Linux only) | Not available on Android |
@@ -214,7 +214,7 @@ cd android && ./gradlew assembleRelease
 
 **Requirements:**
 - Android Studio or standalone Gradle
-- NDK 28.0.13004108 (specified in `app/build.gradle`)
+- [NDK](GLOSSARY.md#ndk-native-development-kit) 28.0.13004108 (specified in `app/build.gradle`)
 - SDK 35 (compile), min SDK 28 (Android 9+)
 - CMake for NDK builds
 
