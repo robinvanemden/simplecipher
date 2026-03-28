@@ -5749,6 +5749,74 @@ static void test_peer_disconnect_detection(void) {
     session_wipe(&connector.sess);
 }
 
+static void test_identity_save_load_roundtrip(void) {
+    printf("\n=== Identity key save/load ===\n");
+
+    uint8_t priv[KEY], pub[KEY];
+    gen_keypair(priv, pub);
+
+    char fp_before[20];
+    format_fingerprint(fp_before, pub);
+
+    const char *pass = "tuna sandwich at midnight";
+    const char *path = "/tmp/test_identity.key";
+
+    TEST("identity_save succeeds",
+         identity_save(path, priv, pass, strlen(pass)) == 0);
+
+    uint8_t loaded_priv[KEY], loaded_pub[KEY];
+    TEST("identity_load succeeds",
+         identity_load(path, loaded_priv, loaded_pub, pass, strlen(pass)) == 0);
+
+    TEST("loaded private key matches",
+         crypto_verify32(priv, loaded_priv) == 0);
+    TEST("loaded public key matches",
+         crypto_verify32(pub, loaded_pub) == 0);
+
+    char fp_after[20];
+    format_fingerprint(fp_after, loaded_pub);
+    TEST("fingerprint stable after save/load",
+         strcmp(fp_before, fp_after) == 0);
+
+    /* Wrong passphrase */
+    uint8_t bad_priv[KEY], bad_pub[KEY];
+    TEST("wrong passphrase rejected",
+         identity_load(path, bad_priv, bad_pub, "wrong", 5) != 0);
+
+    /* Corrupt file */
+    {
+        FILE *f = fopen(path, "r+b");
+        if (f) {
+            fseek(f, 40, SEEK_SET);
+            uint8_t garbage = 0xFF;
+            fwrite(&garbage, 1, 1, f);
+            fclose(f);
+        }
+        TEST("corrupt file rejected",
+             identity_load(path, bad_priv, bad_pub, pass, strlen(pass)) != 0);
+    }
+
+    /* Missing file */
+    TEST("missing file rejected",
+         identity_load("/tmp/nonexistent_identity.key", bad_priv, bad_pub, pass, strlen(pass)) != 0);
+
+    /* Truncated file */
+    {
+        FILE *f = fopen(path, "wb");
+        if (f) { fwrite(priv, 1, 10, f); fclose(f); }
+        TEST("truncated file rejected",
+             identity_load(path, bad_priv, bad_pub, pass, strlen(pass)) != 0);
+    }
+
+    unlink(path);
+    crypto_wipe(priv, sizeof priv);
+    crypto_wipe(pub, sizeof pub);
+    crypto_wipe(loaded_priv, sizeof loaded_priv);
+    crypto_wipe(loaded_pub, sizeof loaded_pub);
+    crypto_wipe(fp_before, sizeof fp_before);
+    crypto_wipe(fp_after, sizeof fp_after);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -5847,6 +5915,7 @@ int main(void) {
     test_frame_build_wipe_on_ratchet_fail();
     test_peer_sends_during_sas();
     test_peer_disconnect_detection();
+    test_identity_save_load_roundtrip();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();
     test_dudect_is_zero32();
