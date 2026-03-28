@@ -56,7 +56,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | ASLR + DEP (Windows) | `CMakeLists.txt:81` `--dynamicbase --nxcompat --high-entropy-va` | `test_windows.ps1:87` (PE header check) |
 | Full RELRO (Linux) | `CMakeLists.txt` `-Wl,-z,relro,-z,now` | `ci.yml:test-linux` (readelf check) |
 | Stack canary | `-fstack-protector-strong` | `test_android.sh` (readelf `__stack_chk_fail`) |
-| FORTIFY_SOURCE | `-D_FORTIFY_SOURCE=2` | `test_android.sh` (`_chk` functions in .so) |
+| FORTIFY_SOURCE | `-D_FORTIFY_SOURCE=3` | `test_android.sh` (`_chk` functions in .so) |
 | Seccomp sandbox phase 1 (Linux) | `platform.c:sandbox_phase1()` — after TCP connection, before handshake. Blocks socket/connect/bind/listen/accept. | `test_p2p.c:test_harden_codepath` — forks child, enters sandbox, verifies `socket()` triggers SIGSYS kill. Source-level check (`test_linux.sh`). |
 | Seccomp sandbox phase 2 (Linux) | `platform.c:sandbox_phase2()` — after handshake, before chat loop. Tightened from phase 1: drops setup-only syscalls (select, nanosleep, prctl, mlock, fcntl, setrlimit, etc.) that are no longer needed during chat. | Source-level check (`test_linux.sh`). Phase 2 tightens phase 1; phase 1 enforcement is functionally tested. |
 | Capsicum sandbox (FreeBSD) | `platform.c:capsicum_phase1()` — `cap_enter()` + per-fd rights; `capsicum_phase2()` — narrows socket rights. | `test_p2p.c:test_harden_codepath` — forks child, enters capability mode, verifies `open()` returns ENOTCAPABLE. CI-verified on bare-metal FreeBSD 14.3 (Vultr via SSH; when bare-metal hosts are configured — release builds require bare-metal and fail-closed, non-release CI skips gracefully when unconfigured). |

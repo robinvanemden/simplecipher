@@ -51,8 +51,8 @@ These are non-negotiable. Violating any of them will block your PR.
 You can run them individually:
 
 ```bash
-make test              # test_p2p + test_socks5_proxy
-bash tests/test_cli_flags.sh   # CLI flag integration tests
+make test              # P2P tests only (test_p2p)
+make test-all          # all tests: P2P + SOCKS5 + CLI flags
 ```
 
 All tests must pass before any PR is merged.

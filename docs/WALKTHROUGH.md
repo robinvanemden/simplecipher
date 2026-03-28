@@ -36,7 +36,7 @@ Each side generates a fresh X25519 keypair from the OS random number generator. 
 ### Step 2: Commit before revealing
 
 ```
-main.c → make_commit(commit_self, self_pub)
+main.c → make_commit(commit_self, self_pub, self_nonce)
 ```
 
 Before sending our public key, we send a *[commitment](GLOSSARY.md#commitment-scheme)* — a hash of the key. This prevents a man-in-the-middle from seeing our key and adaptively choosing their own to produce a matching safety code. The commitment is binding: once sent, we can't change the key without the hash mismatching.

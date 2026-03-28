@@ -23,7 +23,7 @@
  *
  *   X25519(self_priv, peer_pub) → dh_secret
  *                                    |
- *   IKM = dh_secret || init_pub || resp_pub || init_nonce || resp_nonce   (160 bytes, canonical order)
+ *   IKM = dh_secret || init_pub || resp_pub || init_nonce || resp_nonce || version   (161 bytes, canonical order)
  *                                    |
  *   PRK = domain_hash("cipher x25519 sas root v1", IKM)
  *          |            |              |

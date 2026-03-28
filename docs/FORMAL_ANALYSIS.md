@@ -167,7 +167,7 @@ After commitment and reveal, both parties derive a Short Authentication String (
 
 ```
 dh        = X25519(self_priv, peer_pub)
-ikm       = dh || init_pub || resp_pub || init_nonce || resp_nonce   (160 bytes, canonical order)
+ikm       = dh || init_pub || resp_pub || init_nonce || resp_nonce || version   (161 bytes, canonical order)
 prk       = domain_hash("cipher x25519 sas root v1", ikm)
 sas_key   = expand(prk, "sas")                  (32 bytes)
 SAS       = sas_key[0..3]              (4 bytes, shown as XXXX-XXXX)
