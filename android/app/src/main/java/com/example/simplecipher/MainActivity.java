@@ -18,6 +18,7 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.net.Inet6Address;
@@ -115,6 +116,11 @@ public class MainActivity extends Activity {
             inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
             inAppKeyboard.setTarget(hostInput);
             inAppKeyboard.setVisibility(View.VISIBLE);
+            v.post(
+                () -> {
+                  ScrollView sv = findViewById(R.id.mainScrollView);
+                  if (sv != null) sv.smoothScrollTo(0, v.getTop());
+                });
           }
         });
 
@@ -125,6 +131,11 @@ public class MainActivity extends Activity {
             inAppKeyboard.setMode(SimpleKeyboard.MODE_NUMERIC);
             inAppKeyboard.setTarget(portInput);
             inAppKeyboard.setVisibility(View.VISIBLE);
+            v.post(
+                () -> {
+                  ScrollView sv = findViewById(R.id.mainScrollView);
+                  if (sv != null) sv.smoothScrollTo(0, v.getTop());
+                });
           }
         });
 
@@ -135,6 +146,11 @@ public class MainActivity extends Activity {
             inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
             inAppKeyboard.setTarget(socks5Input);
             inAppKeyboard.setVisibility(View.VISIBLE);
+            v.post(
+                () -> {
+                  ScrollView sv = findViewById(R.id.mainScrollView);
+                  if (sv != null) sv.smoothScrollTo(0, v.getTop());
+                });
           }
         });
 
@@ -167,6 +183,11 @@ public class MainActivity extends Activity {
             inAppKeyboard.setMode(SimpleKeyboard.MODE_HEX);
             inAppKeyboard.setTarget(fpManualInput);
             inAppKeyboard.setVisibility(View.VISIBLE);
+            v.post(
+                () -> {
+                  ScrollView sv = findViewById(R.id.mainScrollView);
+                  if (sv != null) sv.smoothScrollTo(0, v.getTop());
+                });
           }
         });
 

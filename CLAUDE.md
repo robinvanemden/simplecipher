@@ -9,7 +9,7 @@ P2P encrypted chat. Modular C protocol, cross-compiled to 5 targets.
 make
 
 # Or explicitly:
-gcc -O2 -std=c23 -DCIPHER_HARDEN -Isrc -Ilib src/*.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
+gcc -O2 -std=c23 -DCIPHER_HARDEN -Isrc -Ilib src/main.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/tui.c src/cli.c src/args.c src/verify.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
 
 # Cross-compile (Linux/Windows, 4 presets)
 cmake --preset linux-x86_64 && cmake --build --preset linux-x86_64
@@ -26,6 +26,8 @@ make test
 ```
 src/
 ├── main.c              entry point
+├── args.h/c            CLI config struct, exit codes, parse_args()
+├── verify.h/c          passphrase input, keygen, fingerprint, SAS verify
 ├── platform.h/c        OS abstraction (sockets, random, signals, time, sandboxing)
 ├── crypto.h/c          KDF, symmetric chain ratchet, commitment scheme
 ├── ratchet.h/c         DH ratchet (post-compromise security)
@@ -61,6 +63,6 @@ Consumers (main.c, test_p2p.c, jni_bridge.c) include headers and link object fil
 
 ## Tests
 
-`tests/test_p2p.c` — 668 tests (659 core + 9 identity key), `tests/test_socks5_proxy.c` — 10 SOCKS5 proxy tests, `tests/test_cli_flags.sh` — 16 CLI flag integration tests (694 total) covering crypto, DH ratchet, TCP loopback handshake, bidirectional messaging, tamper detection, replay rejection, forward secrecy, post-compromise security, KDF known-answer vectors, constant-time verification, dudect timing smoke tests (ct_compare, is_zero32), SOCKS5 request building, peer fingerprint verification, identity key save/load, --peer-fingerprint, --trust-fingerprint, --identity, and keygen CLI flags, cover traffic, transactional ratchet receive, MAC failure tolerance. Must pass before any release.
+`tests/test_p2p.c` — 683 tests (674 core + 9 identity key), `tests/test_socks5_proxy.c` — 10 SOCKS5 proxy tests, `tests/test_cli_flags.sh` — 16 CLI flag integration tests (709 total) covering crypto, DH ratchet, TCP loopback handshake, bidirectional messaging, tamper detection, replay rejection, forward secrecy, post-compromise security, KDF known-answer vectors, constant-time verification, dudect timing smoke tests (ct_compare, is_zero32), SOCKS5 request building, peer fingerprint verification, identity key save/load, --peer-fingerprint, --trust-fingerprint, --identity, and keygen CLI flags, cover traffic, transactional ratchet receive, MAC failure tolerance. Must pass before any release.
 
 Run with: `make test` (C tests) and `bash tests/test_cli_flags.sh` (CLI flag tests)

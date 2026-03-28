@@ -22,6 +22,7 @@
 #include "network.h"
 #include "tui.h"
 #include "cli.h"
+#include "verify.h"
 
 #include <pthread.h>
 #include <assert.h>
@@ -3688,8 +3689,8 @@ static void test_fingerprint_known_vector(void) {
 
 /* ---- test: fingerprint comparison edge cases ---------------------------- */
 
-/* Replicate the strip-dashes + uppercase + memcmp logic from main.c
- * (lines 398-413) to verify it handles all cases correctly. */
+/* Replicate the strip-dashes + uppercase + memcmp logic from verify.c
+ * to verify it handles all cases correctly. */
 static int fp_compare(const char *expected, const char *actual) {
     char ne[20] = {0}, np[20] = {0};
     int  ei = 0, pi = 0;
@@ -4245,9 +4246,9 @@ static void *fp_peer_thread(void *arg) {
     return nullptr;
 }
 
-/* ---- test: desktop fingerprint normalization (main.c logic) ------------- */
+/* ---- test: desktop fingerprint normalization (verify.c logic) ----------- */
 
-/* Reimplements the strip-dashes + uppercase + ct_compare logic from main.c
+/* Reimplements the strip-dashes + uppercase + ct_compare logic from verify.c
  * to test it against REAL format_fingerprint output.  This catches bugs in
  * the normalization that fp_compare (test helper) tests miss because
  * fp_compare tests the helper against itself, not against real fingerprints. */
@@ -5749,6 +5750,91 @@ static void test_peer_disconnect_detection(void) {
     session_wipe(&connector.sess);
 }
 
+/* ---- test: normalize_hex (production function from verify.c) ------------ */
+
+static void test_normalize_hex(void) {
+    printf("\n=== normalize_hex (verify.c) ===\n");
+
+    char out[32];
+
+    /* Basic: strip dashes and uppercase */
+    TEST("dashes stripped", normalize_hex("A3F2-91BC", out, sizeof out) == 8
+                           && strcmp(out, "A3F291BC") == 0);
+    TEST("lowercase uppercased", normalize_hex("a3f291bc", out, sizeof out) == 8
+                                 && strcmp(out, "A3F291BC") == 0);
+    TEST("mixed case + dashes", normalize_hex("a3F2-91bC", out, sizeof out) == 8
+                                && strcmp(out, "A3F291BC") == 0);
+    TEST("no dashes passthrough", normalize_hex("DEADBEEF", out, sizeof out) == 8
+                                  && strcmp(out, "DEADBEEF") == 0);
+    TEST("empty string", normalize_hex("", out, sizeof out) == 0
+                         && out[0] == '\0');
+    TEST("only dashes", normalize_hex("---", out, sizeof out) == 0
+                        && out[0] == '\0');
+    TEST("single char", normalize_hex("f", out, sizeof out) == 1
+                        && strcmp(out, "F") == 0);
+
+    /* Truncation: output buffer too small */
+    char tiny[4];
+    int n = normalize_hex("AABBCCDD", tiny, sizeof tiny);
+    TEST("truncated to bufsz-1", n == 3 && tiny[3] == '\0');
+
+    /* Full fingerprint format */
+    TEST("full fingerprint", normalize_hex("A3F2-91BC-D4E5-F678", out, sizeof out) == 16
+                             && strcmp(out, "A3F291BCD4E5F678") == 0);
+
+    crypto_wipe(out, sizeof out);
+    crypto_wipe(tiny, sizeof tiny);
+}
+
+/* ---- test: verify_peer_fingerprint (production function from verify.c) -- */
+
+static void test_verify_peer_fingerprint(void) {
+    printf("\n=== verify_peer_fingerprint (verify.c) ===\n");
+
+    uint8_t priv[KEY], pub[KEY];
+    gen_keypair(priv, pub);
+
+    char fp[20];
+    format_fingerprint(fp, pub);
+
+    /* Matching fingerprint should pass */
+    TEST("matching fingerprint passes", verify_peer_fingerprint(pub, fp, 0) == 0);
+
+    /* Matching with dashes removed should pass */
+    char no_dashes[20];
+    int j = 0;
+    for (int i = 0; fp[i]; i++)
+        if (fp[i] != '-') no_dashes[j++] = fp[i];
+    no_dashes[j] = '\0';
+    TEST("no-dash fingerprint passes", verify_peer_fingerprint(pub, no_dashes, 0) == 0);
+
+    /* Lowercase should match (case-insensitive) */
+    char lower[20];
+    for (int i = 0; fp[i]; i++)
+        lower[i] = (fp[i] >= 'A' && fp[i] <= 'Z') ? (char)(fp[i] + 32) : fp[i];
+    lower[strlen(fp)] = '\0';
+    TEST("lowercase fingerprint passes", verify_peer_fingerprint(pub, lower, 0) == 0);
+
+    /* Wrong fingerprint should fail */
+    TEST("wrong fingerprint fails", verify_peer_fingerprint(pub, "0000-0000-0000-0000", 0) == -1);
+
+    /* NULL expected should always pass (no verification requested) */
+    TEST("null expected passes", verify_peer_fingerprint(pub, NULL, 0) == 0);
+
+    /* Different key should fail same fingerprint */
+    uint8_t priv2[KEY], pub2[KEY];
+    gen_keypair(priv2, pub2);
+    TEST("different key fails", verify_peer_fingerprint(pub2, fp, 0) == -1);
+
+    crypto_wipe(priv, sizeof priv);
+    crypto_wipe(pub, sizeof pub);
+    crypto_wipe(priv2, sizeof priv2);
+    crypto_wipe(pub2, sizeof pub2);
+    crypto_wipe(fp, sizeof fp);
+    crypto_wipe(no_dashes, sizeof no_dashes);
+    crypto_wipe(lower, sizeof lower);
+}
+
 static void test_identity_save_load_roundtrip(void) {
     printf("\n=== Identity key save/load ===\n");
 
@@ -5915,6 +6001,8 @@ int main(void) {
     test_frame_build_wipe_on_ratchet_fail();
     test_peer_sends_during_sas();
     test_peer_disconnect_detection();
+    test_normalize_hex();
+    test_verify_peer_fingerprint();
     test_identity_save_load_roundtrip();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();

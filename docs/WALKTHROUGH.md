@@ -23,7 +23,7 @@ These 4 functions are the entire protocol. Everything else is I/O, UI, or harden
 
 ## Part 1: Key Exchange (how two strangers get a shared secret)
 
-**Files:** `main.c` (handshake), `crypto.h` (building blocks), `protocol.c` (session_init)
+**Files:** `main.c` (handshake), `verify.c` (SAS verification, fingerprint check), `crypto.h` (building blocks), `protocol.c` (session_init)
 
 ### Step 1: Generate an ephemeral keypair
 
@@ -170,5 +170,5 @@ Skip all of this on first reading — the protocol is complete without it.
 
 - **PROTOCOL.md** — formal protocol specification with glossary
 - **HARDENING.md** — platform-specific security measures
-- **tests/test_p2p.c** — 659 test assertions covering every code path
+- **tests/test_p2p.c** — 670 test assertions covering every code path
 - **[Monocypher](GLOSSARY.md#monocypher) documentation** — https://monocypher.org/ (the underlying crypto library)

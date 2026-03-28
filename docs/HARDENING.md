@@ -114,8 +114,8 @@ The runtime sandbox tightens in phases. Each phase drops privileges that are no 
 ### Unit and integration tests (CI, blocking)
 
 ```bash
-make test                      # 669 C tests (659 core + 10 SOCKS5)
-bash tests/test_cli_flags.sh   # 16 CLI flag integration tests
+make test                      # 681 C tests (670 P2P + 11 SOCKS5)
+bash tests/test_cli_flags.sh   # 18 CLI flag integration tests
 ```
 
 Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultaneous send), TCP loopback, tamper/replay/reserved-flag rejection, forward secrecy, KDF known-answer vectors, fingerprint verification, SOCKS5 request building, deterministic session vectors.
@@ -165,14 +165,14 @@ Known-accept: `frame_open` shows timing variance in dudect because Monocypher in
 gcc -std=c23 -g -O1 -Isrc -Ilib tests/test_timecop.c \
   src/platform.c src/crypto.c src/protocol.c src/ratchet.c \
   src/network.c src/tui.c src/tui_posix.c src/cli.c \
-  src/cli_posix.c lib/monocypher.c -lm -o test_timecop
+  src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm -o test_timecop
 valgrind --track-origins=yes ./test_timecop
 
 # dudect (thorough)
 gcc -std=c23 -O2 -Isrc -Ilib -Itests tests/test_constant_time.c \
   src/platform.c src/crypto.c src/protocol.c src/ratchet.c \
   src/network.c src/tui.c src/tui_posix.c src/cli.c \
-  src/cli_posix.c lib/monocypher.c -lm -o test_ct
+  src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm -o test_ct
 taskset -c 0 ./test_ct
 ```
 

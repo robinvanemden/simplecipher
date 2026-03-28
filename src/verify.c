@@ -83,6 +83,7 @@ int keygen_main(const char *path) {
     char pass1[256], pass2[256];
     int  p1 = read_passphrase("  Enter passphrase: ", pass1, sizeof pass1);
     if (p1 <= 0) {
+        crypto_wipe(pass1, sizeof pass1);
         fprintf(stderr, "  Empty passphrase not allowed.\n");
         return EXIT_USAGE;
     }
@@ -108,6 +109,7 @@ int keygen_main(const char *path) {
 
     if (rc_save != 0) {
         crypto_wipe(priv, sizeof priv);
+        crypto_wipe(pub, sizeof pub);
         fprintf(stderr, "  Failed to write %s\n", path);
         return EXIT_INTERNAL;
     }
@@ -119,6 +121,7 @@ int keygen_main(const char *path) {
     printf("  (share with your peer on paper — same every time you load this key)\n");
 
     crypto_wipe(priv, sizeof priv);
+    crypto_wipe(pub, sizeof pub);
     crypto_wipe(fp, sizeof fp);
     return EXIT_OK;
 }

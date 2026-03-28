@@ -326,7 +326,7 @@ No OpenSSL, no libsodium, no dynamic linking. The entire cryptographic stack is 
 
 Recommended reading order:
 
-1. `main.c` — session lifecycle, arg parsing
+1. `main.c` — session lifecycle; `args.h` — arg parsing; `verify.h` — verification
 2. `protocol.h` — wire format, frame layout, session key derivation
 3. `crypto.h` — cryptographic building blocks ([KDF](GLOSSARY.md#kdf-key-derivation-function), ratchet, SAS)
 4. `ratchet.h` — DH ratchet for post-compromise security

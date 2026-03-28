@@ -44,7 +44,7 @@ The following are out of scope:
 
 SimpleCipher's verification stack is documented in the README. If you're auditing:
 
-- `make test` — 659 unit/integration tests + `make test-socks5` — 10 SOCKS5 proxy tests + `bash tests/test_cli_flags.sh` — 16 CLI flag tests
+- `make test` — 670 unit/integration tests + `make test-socks5` — 11 SOCKS5 proxy tests + `bash tests/test_cli_flags.sh` — 18 CLI flag tests
 - `python3 tests/cbmc_harness.py` — CBMC formal verification (57K properties)
 - `valgrind --track-origins=yes ./test_timecop` — [constant-time](docs/GLOSSARY.md#constant-time) verification
 - [ASan + UBSan + MSan](docs/GLOSSARY.md#sanitizer) run in CI on every push
