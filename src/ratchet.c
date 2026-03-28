@@ -1,8 +1,9 @@
 /*
  * ratchet.c — DH ratchet implementation
  *
- * Implements the three ratchet operations declared in ratchet.h:
- * initialization, send-side ratchet, and receive-side ratchet.
+ * Implements the four ratchet operations declared in ratchet.h:
+ * initialization, pre-computation (prepare), send-side ratchet,
+ * and receive-side ratchet.
  *
  * All cryptographic primitives come from crypto.h (domain_hash, expand)
  * which in turn use BLAKE2b from Monocypher.  X25519 is from Monocypher
@@ -73,12 +74,98 @@ void ratchet_init(session_t *s, const uint8_t self_priv[KEY], const uint8_t self
     memcpy(s->dh_pub, self_pub, KEY);
 
     s->need_send_ratchet = 1; /* first send must ratchet */
+    s->ratchet_prepared  = 0;
+
+    /* Pre-compute the first ratchet step eagerly so that the first
+     * frame_build has no DH timing asymmetry vs subsequent sends. */
+    ratchet_prepare(s);
+}
+
+void ratchet_prepare(session_t *s) {
+    if (!s->need_send_ratchet) return;
+
+    /* Wipe any previous staged state before overwriting. */
+    crypto_wipe(s->staged_dh_priv, KEY);
+    crypto_wipe(s->staged_dh_pub, KEY);
+    crypto_wipe(s->staged_root, KEY);
+    crypto_wipe(s->staged_tx, KEY);
+
+    /* Generate a fresh X25519 keypair. */
+    uint8_t new_priv[KEY], new_pub[KEY];
+    fill_random(new_priv, KEY);
+    crypto_x25519_public_key(new_pub, new_priv);
+
+    /* Compute the full ratchet step: DH + KDF. */
+    uint8_t pre_root[KEY];
+    memcpy(pre_root, s->root, KEY);
+
+    uint8_t dh[KEY], ikm[KEY * 2];
+    crypto_x25519(dh, new_priv, s->peer_dh);
+    if (is_zero32(dh)) {
+        s->staged_ratchet_ok = -1;
+        s->ratchet_prepared  = 1;
+        crypto_wipe(dh, sizeof dh);
+        crypto_wipe(new_priv, sizeof new_priv);
+        crypto_wipe(new_pub, sizeof new_pub);
+        crypto_wipe(pre_root, sizeof pre_root);
+        return;
+    }
+
+    memcpy(ikm, pre_root, KEY);
+    memcpy(ikm + KEY, dh, KEY);
+    domain_hash(pre_root, DOMAIN_RATCHET, ikm, sizeof ikm);
+
+    uint8_t pre_tx[KEY];
+    expand(pre_tx, pre_root, "chain");
+
+    /* Store the pre-computed results in the session. */
+    memcpy(s->staged_dh_priv, new_priv, KEY);
+    memcpy(s->staged_dh_pub, new_pub, KEY);
+    memcpy(s->staged_root, pre_root, KEY);
+    memcpy(s->staged_tx, pre_tx, KEY);
+    s->staged_ratchet_ok = 0;
+    s->ratchet_prepared  = 1;
+
+    crypto_wipe(dh, sizeof dh);
+    crypto_wipe(ikm, sizeof ikm);
+    crypto_wipe(new_priv, sizeof new_priv);
+    crypto_wipe(new_pub, sizeof new_pub);
+    crypto_wipe(pre_root, sizeof pre_root);
+    crypto_wipe(pre_tx, sizeof pre_tx);
 }
 
 int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
     if (!s->need_send_ratchet) return 0;
 
-    /* Stage all mutations in temporaries — commit only on success. */
+    if (s->ratchet_prepared) {
+        /* Use the pre-computed ratchet step from ratchet_prepare(). */
+        if (s->staged_ratchet_ok != 0) {
+            /* Pre-computation detected all-zero DH -- malicious peer. */
+            s->ratchet_prepared = 0;
+            crypto_wipe(s->staged_dh_priv, KEY);
+            crypto_wipe(s->staged_dh_pub, KEY);
+            crypto_wipe(s->staged_root, KEY);
+            crypto_wipe(s->staged_tx, KEY);
+            return -1;
+        }
+
+        memcpy(s->dh_priv, s->staged_dh_priv, KEY);
+        memcpy(s->dh_pub, s->staged_dh_pub, KEY);
+        memcpy(s->root, s->staged_root, KEY);
+        memcpy(s->tx, s->staged_tx, KEY);
+        memcpy(ratchet_pub, s->staged_dh_pub, KEY);
+
+        s->need_send_ratchet = 0;
+        s->ratchet_prepared  = 0;
+        crypto_wipe(s->staged_dh_priv, KEY);
+        crypto_wipe(s->staged_dh_pub, KEY);
+        crypto_wipe(s->staged_root, KEY);
+        crypto_wipe(s->staged_tx, KEY);
+        return 1;
+    }
+
+    /* Fallback: no pre-computation available -- compute from scratch.
+     * This should not happen in normal operation, but is kept for safety. */
     uint8_t new_priv[KEY], new_pub[KEY];
     fill_random(new_priv, KEY);
     crypto_x25519_public_key(new_pub, new_priv);
@@ -101,7 +188,7 @@ int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
     domain_hash(staged_root, DOMAIN_RATCHET, ikm, sizeof ikm);
     expand(staged_tx, staged_root, "chain");
 
-    /* All validation passed — commit state atomically. */
+    /* All validation passed -- commit state atomically. */
     memcpy(s->dh_priv, new_priv, KEY);
     memcpy(s->dh_pub, new_pub, KEY);
     memcpy(s->root, staged_root, KEY);
@@ -124,7 +211,7 @@ int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
  * all validation passes.  ratchet_step writes directly to its
  * output parameters, which would corrupt the session on DH failure. */
 int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
-    /* Stage all outputs in temporaries — commit only if DH succeeds.
+    /* Stage all outputs in temporaries -- commit only if DH succeeds.
      * Prevents a malicious low-order ratchet key from poisoning
      * peer_dh/root/rx while callers tolerate the failure. */
     uint8_t staged_root[KEY], staged_rx[KEY];
@@ -143,7 +230,7 @@ int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
     domain_hash(staged_root, DOMAIN_RATCHET, ikm, sizeof ikm);
     expand(staged_rx, staged_root, "chain");
 
-    /* All validation passed — commit state atomically. */
+    /* All validation passed -- commit state atomically. */
     memcpy(s->peer_dh, peer_new_pub, KEY);
     memcpy(s->root, staged_root, KEY);
     memcpy(s->rx, staged_rx, KEY);

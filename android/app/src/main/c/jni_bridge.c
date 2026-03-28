@@ -231,6 +231,7 @@ static int pipe_read_exact(int fd, void *buf, size_t n) {
     uint8_t *p = (uint8_t *)buf;
     while (n > 0) {
         ssize_t r = read(fd, p, n);
+        if (r < 0 && errno == EINTR) continue;
         if (r <= 0) return -1; /* EOF or error */
         p += r;
         n -= (size_t)r;

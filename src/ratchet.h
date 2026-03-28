@@ -91,6 +91,19 @@ void ratchet_init(session_t *s, const uint8_t self_priv[KEY], const uint8_t self
  * frame is written to the network.  If the write fails, the session is in
  * an inconsistent state.  This is acceptable because SimpleCipher treats
  * any I/O failure as session-fatal — there is no retry or recovery. */
+
+/* Pre-compute the next DH ratchet step eagerly after receiving a frame.
+ *
+ * Called from frame_open after setting need_send_ratchet=1.  Generates a
+ * fresh X25519 keypair, performs the DH computation with peer_dh, and
+ * derives the new root key and sending chain -- all stored in staged_*
+ * fields of the session.  ratchet_send() then just copies the results.
+ *
+ * This moves the expensive X25519 work (~3ms) from the send path to the
+ * receive path, eliminating the timing asymmetry between ratcheted and
+ * non-ratcheted frame_build calls. */
+void ratchet_prepare(session_t *s);
+
 [[nodiscard]] int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]);
 
 /* Process an incoming ratchet key from a received frame.

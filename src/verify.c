@@ -63,7 +63,10 @@ int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
     (void)!_write(2, "\n", 1);
     return i;
 #else
-    (void)!write(STDERR_FILENO, prompt, strlen(prompt));
+    {
+        ssize_t wr;
+        do { wr = write(STDERR_FILENO, prompt, strlen(prompt)); } while (wr < 0 && errno == EINTR);
+    }
     struct termios old;
     int            fd       = open("/dev/tty", O_RDWR);
     int            have_tty = (fd >= 0);
@@ -82,10 +85,14 @@ int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
         /* Stash the original state so the atexit handler can restore it
          * if the process is interrupted (e.g. keygen before signal
          * handlers are installed). */
-        g_orig_termios  = old;
-        g_termios_fd    = fd;
-        g_termios_saved = 1;
-        atexit(restore_terminal_echo);
+        g_orig_termios               = old;
+        g_termios_fd                 = fd;
+        g_termios_saved              = 1;
+        static int atexit_registered = 0;
+        if (!atexit_registered) {
+            atexit(restore_terminal_echo);
+            atexit_registered = 1;
+        }
 
         struct termios raw = old;
         raw.c_lflag &= ~((tcflag_t)ECHO);
@@ -95,7 +102,8 @@ int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
     int i = 0;
     while (i < (int)bufsz - 1) {
         char    ch;
-        ssize_t r = read(fd, &ch, 1);
+        ssize_t r;
+        do { r = read(fd, &ch, 1); } while (r < 0 && errno == EINTR);
         if (r <= 0 || ch == '\n') break;
         buf[i++] = ch;
     }
@@ -107,7 +115,10 @@ int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
         if (tcsetattr(fd, TCSANOW, &old) == 0) g_termios_saved = 0;
     }
     if (fd != STDIN_FILENO) close(fd);
-    (void)!write(STDERR_FILENO, "\n", 1);
+    {
+        ssize_t wr;
+        do { wr = write(STDERR_FILENO, "\n", 1); } while (wr < 0 && errno == EINTR);
+    }
     return i;
 #endif
 }
@@ -328,7 +339,7 @@ int cli_sas_verify(const char *sas, socket_t fd) {
                     return EXIT_NET;
                 }
                 if (sas_fds[0].revents & POLLIN) {
-                    rn = read(STDIN_FILENO, typed_sas, sizeof typed_sas - 1);
+                    do { rn = read(STDIN_FILENO, typed_sas, sizeof typed_sas - 1); } while (rn < 0 && errno == EINTR);
                     break;
                 }
             }
@@ -356,7 +367,7 @@ int cli_sas_verify(const char *sas, socket_t fd) {
         do { dr = _read(0, &drain, 1); } while (dr == 1 && drain != '\n');
 #else
         ssize_t dr;
-        do { dr = read(STDIN_FILENO, &drain, 1); } while (dr == 1 && drain != '\n');
+        do { dr = read(STDIN_FILENO, &drain, 1); } while ((dr < 0 && errno == EINTR) || (dr == 1 && drain != '\n'));
 #endif
     }
     /* Strip trailing newline, normalize (strip dashes, uppercase), then

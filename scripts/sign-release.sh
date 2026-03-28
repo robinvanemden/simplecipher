@@ -45,6 +45,25 @@ if [ "$expected_assets" != "$actual_assets" ]; then
 fi
 echo "Verification passed: artifacts match tag $TAG"
 
+# Verify file integrity via checksums before signing
+if [ ! -f "$DIR/SHA256SUMS.txt" ]; then
+    echo "ERROR: SHA256SUMS.txt missing — cannot verify file integrity" >&2
+    rm -rf "$DIR"
+    exit 1
+fi
+SHA256CMD=""
+if command -v sha256sum >/dev/null 2>&1; then SHA256CMD="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then SHA256CMD="shasum -a 256"
+else echo "ERROR: no sha256sum or shasum found" >&2; rm -rf "$DIR"; exit 1
+fi
+echo "Verifying checksums with $SHA256CMD ..."
+(cd "$DIR" && $SHA256CMD -c SHA256SUMS.txt) || {
+    echo "ERROR: checksum verification failed — artifacts may be tampered" >&2
+    rm -rf "$DIR"
+    exit 1
+}
+echo "Checksum verification passed"
+
 echo "Signing artifacts in $DIR/ ..."
 for f in "$DIR"/simplecipher-linux-x86_64 \
          "$DIR"/simplecipher-linux-aarch64 \

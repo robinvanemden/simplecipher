@@ -5786,8 +5786,12 @@ static void test_frame_build_wipe_on_ratchet_fail(void) {
     (void)session_init(&sess, 1, priv_a, pub_a, pub_b, wrn1, wrn2, sas_a);
 
     /* Poison peer_dh with all zeros — ratchet_send will compute
-     * DH(our_priv, zero) = zero, which is_zero32 catches. */
+     * DH(our_priv, zero) = zero, which is_zero32 catches.
+     * Re-prepare the ratchet so the pre-computed state reflects the
+     * poisoned peer_dh (in production, peer_dh would already be zero
+     * when ratchet_prepare runs inside frame_open). */
     memset(sess.peer_dh, 0, KEY);
+    ratchet_prepare(&sess);
 
     uint8_t frame[FRAME_SZ], next_tx[KEY];
     int     rc = frame_build(&sess, (const uint8_t *)"test", 4, frame, next_tx);

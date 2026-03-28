@@ -117,6 +117,22 @@ typedef struct {
     uint8_t dh_pub[KEY];
     uint8_t peer_dh[KEY];
     int     need_send_ratchet;
+
+    /* Pre-computed ratchet state -- eliminates DH timing asymmetry.
+     *
+     * ratchet_prepare() pre-computes the full DH ratchet step eagerly in
+     * the receive path (frame_open), so ratchet_send() in the send path
+     * (frame_build) just copies pre-staged results -- no X25519 at send time.
+     *
+     * ratchet_prepared  -- 1 if staged fields below are valid.
+     * staged_ratchet_ok -- 0 on success, -1 if DH produced all-zero output. */
+    int     ratchet_prepared;
+    uint8_t staged_dh_priv[KEY];
+    uint8_t staged_dh_pub[KEY];
+    uint8_t staged_root[KEY];
+    uint8_t staged_tx[KEY];
+    int     staged_ratchet_ok;
+
     /* No ratchet-stalling guard: DH ratchets trigger on direction switches,
      * so a one-directional burst of messages legitimately has no ratchet.
      * The symmetric chain ratchet still provides per-message forward secrecy;

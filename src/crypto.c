@@ -210,13 +210,15 @@ static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_S
         munlockall();
         did_unlock = 1;
         work       = malloc(work_sz);
-        if (work) (void)mlockall(MCL_CURRENT); /* re-lock existing pages */
+        if (work && mlockall(MCL_CURRENT) != 0) /* re-lock existing pages */
+            fprintf(stderr, "warning: mlockall failed — keys may be swapped to disk\n");
     }
 #endif
     if (!work) {
         crypto_wipe(enc_key, KEY);
 #if !defined(_WIN32) && !defined(_WIN64)
-        if (did_unlock) mlockall(MCL_CURRENT | MCL_FUTURE);
+        if (did_unlock && mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+            fprintf(stderr, "warning: mlockall restore failed — keys may be swapped to disk\n");
 #endif
         return -1;
     }
@@ -227,7 +229,8 @@ static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_S
     crypto_wipe(work, work_sz);
     free(work);
 #if !defined(_WIN32) && !defined(_WIN64)
-    if (did_unlock) mlockall(MCL_CURRENT | MCL_FUTURE);
+    if (did_unlock && mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+        fprintf(stderr, "warning: mlockall restore failed — keys may be swapped to disk\n");
 #endif
     return 0;
 }
@@ -321,9 +324,25 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
         return -1;
     }
 
-    /* Re-tighten permissions in case the target file previously existed
-     * with looser permissions (rename preserves the NEW file's mode, but
-     * be explicit for defense in depth). */
+    /* fsync the parent directory to make the rename durable on ext4
+     * data=writeback and similar configurations. */
+    {
+        char        dir[PATH_MAX];
+        const char *slash = strrchr(path, '/');
+        if (slash) {
+            memcpy(dir, path, (size_t)(slash - path));
+            dir[slash - path] = '\0';
+        } else {
+            dir[0] = '.';
+            dir[1] = '\0';
+        }
+        int dfd = open(dir, O_RDONLY);
+        if (dfd >= 0) {
+            fsync(dfd);
+            close(dfd);
+        }
+    }
+
     chmod(path, 0600);
     crypto_wipe(ct, sizeof ct);
     return 0;

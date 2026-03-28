@@ -300,6 +300,11 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     }
     s->rx_seq++;
     s->need_send_ratchet = 1;
+    /* Pre-compute the next DH ratchet step eagerly so that the next
+     * frame_build has identical timing whether or not a ratchet is needed.
+     * peer_dh is already updated (if a ratchet key was in this frame),
+     * so the pre-computation uses the correct peer public key. */
+    ratchet_prepare(s);
     if (out) memcpy(out, pt + off, len);
     if (out_len) *out_len = len;
     rc = 0;

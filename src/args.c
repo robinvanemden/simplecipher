@@ -205,7 +205,8 @@ config_t parse_args(int argc, char *argv[]) {
 #if defined(_WIN32) || defined(_WIN64)
             int rn = _read(0, prompt_host, (unsigned)(sizeof prompt_host - 1));
 #else
-            ssize_t rn = read(STDIN_FILENO, prompt_host, sizeof prompt_host - 1);
+            ssize_t rn;
+            do { rn = read(STDIN_FILENO, prompt_host, sizeof prompt_host - 1); } while (rn < 0 && errno == EINTR);
 #endif
             if (rn <= 0 || prompt_host[0] == '\n') {
                 fprintf(stderr, "  No host provided.\n");
@@ -229,7 +230,9 @@ config_t parse_args(int argc, char *argv[]) {
                     do { dr = _read(0, &drain, 1); } while (dr == 1 && drain != '\n');
 #else
                     ssize_t dr;
-                    do { dr = read(STDIN_FILENO, &drain, 1); } while (dr == 1 && drain != '\n');
+                    do {
+                        dr = read(STDIN_FILENO, &drain, 1);
+                    } while ((dr < 0 && errno == EINTR) || (dr == 1 && drain != '\n'));
 #endif
                 }
             }
@@ -246,7 +249,8 @@ config_t parse_args(int argc, char *argv[]) {
 #if defined(_WIN32) || defined(_WIN64)
             int rn = _read(0, prompt_port, (unsigned)(sizeof prompt_port - 1));
 #else
-            ssize_t rn = read(STDIN_FILENO, prompt_port, sizeof prompt_port - 1);
+            ssize_t rn;
+            do { rn = read(STDIN_FILENO, prompt_port, sizeof prompt_port - 1); } while (rn < 0 && errno == EINTR);
 #endif
             if (rn > 0) {
                 prompt_port[rn] = '\0';
@@ -258,7 +262,9 @@ config_t parse_args(int argc, char *argv[]) {
                     do { dr = _read(0, &drain, 1); } while (dr == 1 && drain != '\n');
 #else
                     ssize_t dr;
-                    do { dr = read(STDIN_FILENO, &drain, 1); } while (dr == 1 && drain != '\n');
+                    do {
+                        dr = read(STDIN_FILENO, &drain, 1);
+                    } while ((dr < 0 && errno == EINTR) || (dr == 1 && drain != '\n'));
 #endif
                 }
                 if (rn > 0 && prompt_port[rn - 1] == '\n') prompt_port[rn - 1] = '\0';
