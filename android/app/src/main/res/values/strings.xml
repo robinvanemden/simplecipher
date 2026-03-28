@@ -26,4 +26,5 @@
     <string name="fp_peer_set">Peer: %s</string>
     <string name="fp_verified">Peer fingerprint verified</string>
     <string name="fp_camera_denied">Camera permission needed for QR scanning</string>
+    <string name="fp_trust_label">Skip safety code (fingerprint is enough)</string>
 </resources>

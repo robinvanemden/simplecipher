@@ -87,6 +87,7 @@ public class ChatActivity extends Activity implements NativeCallback {
    * thread via onPeerFingerprintReady, read on UI thread.
    */
   private volatile boolean fingerprintVerified = false;
+  private boolean trustFingerprint = false;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -169,6 +170,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     String host = getIntent().getStringExtra("host");
     int port = getIntent().getIntExtra("port", 7777);
     String socks5Proxy = getIntent().getStringExtra("socks5_proxy");
+    trustFingerprint = getIntent().getBooleanExtra("trust_fingerprint", false);
     sessionPort = port; /* save before wipe — getLocalIps() needs it */
 
     /* Scrub connection metadata from the Intent so it does not linger
@@ -273,6 +275,27 @@ public class ChatActivity extends Activity implements NativeCallback {
           if (paused) return;
 
           pendingSas = code;
+
+          /* --trust-fingerprint: if the peer fingerprint was verified and the
+           * user opted to trust it, skip the SAS screen entirely.  The 64-bit
+           * fingerprint is cryptographically stronger than the 32-bit SAS. */
+          if (fingerprintVerified && trustFingerprint) {
+            if (!nativePostCommand(CMD_CONFIRM_SAS, null)) {
+              Toast.makeText(ChatActivity.this, "Session ended", Toast.LENGTH_SHORT).show();
+              finish();
+              return;
+            }
+            pendingSas = null;
+            chatLayout.setVisibility(View.VISIBLE);
+            statusText.setText("\u2705 Fingerprint verified \u2014 secure session active");
+            statusText.setTextColor(0xFF4DD0B0);
+            inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
+            inAppKeyboard.setTarget(chatInput);
+            chatInput.requestFocus();
+            hideSystemKeyboard(chatInput);
+            return;
+          }
+
           if (fingerprintVerified) {
             statusText.setText("\u2705 Fingerprint verified \u2014 confirm safety code to proceed");
           } else {

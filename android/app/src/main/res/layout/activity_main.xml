@@ -273,6 +273,18 @@
                 android:textSize="12sp"
                 android:textColor="@color/text_hint"
                 android:paddingStart="4dp" />
+
+            <!-- Trust fingerprint: skip safety code if fingerprint matches -->
+            <CheckBox
+                android:id="@+id/fpTrustCheckbox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/fp_trust_label"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:paddingTop="8dp"
+                android:visibility="gone"
+                android:filterTouchesWhenObscured="true" />
         </LinearLayout>
     </LinearLayout>
 

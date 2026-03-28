@@ -13,6 +13,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -55,6 +56,7 @@ public class MainActivity extends Activity {
   private Button fpScanBtn;
   private EditText fpManualInput;
   private TextView fpPeerStatus;
+  private CheckBox fpTrustCheckbox;
   private boolean fpExpanded = false;
   private String selfFingerprint = null;
   private String peerFingerprint = null;
@@ -153,6 +155,7 @@ public class MainActivity extends Activity {
     fpScanBtn = findViewById(R.id.fpScanBtn);
     fpManualInput = findViewById(R.id.fpManualInput);
     fpPeerStatus = findViewById(R.id.fpPeerStatus);
+    fpTrustCheckbox = findViewById(R.id.fpTrustCheckbox);
 
     int noLearnFp = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
     fpManualInput.setImeOptions(fpManualInput.getImeOptions() | noLearnFp);
@@ -322,6 +325,7 @@ public class MainActivity extends Activity {
           intent.putExtra("host", host);
           intent.putExtra("port", port);
           if (!socks5.isEmpty()) intent.putExtra("socks5_proxy", socks5);
+          if (fpTrustCheckbox.isChecked()) intent.putExtra("trust_fingerprint", true);
           startActivity(intent);
         });
   }
@@ -533,6 +537,8 @@ public class MainActivity extends Activity {
     nativeClearPeerFingerprint();
     fpPeerStatus.setText(R.string.fp_peer_none);
     fpPeerStatus.setTextColor(0xFFAAAAAA);
+    fpTrustCheckbox.setChecked(false);
+    fpTrustCheckbox.setVisibility(View.GONE);
   }
 
   private void setPeerFingerprint(String fp) {
@@ -557,6 +563,7 @@ public class MainActivity extends Activity {
     fpPeerStatus.setText(getString(R.string.fp_peer_set, peerFingerprint));
     fpPeerStatus.setTextColor(0xFF4DD0B0);
     fpManualInput.setText(peerFingerprint);
+    fpTrustCheckbox.setVisibility(View.VISIBLE);
   }
 
   /** Check if a string is a numeric IP address (IPv4 or IPv6, no DNS). */
