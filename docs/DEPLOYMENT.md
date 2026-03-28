@@ -6,6 +6,41 @@
 
 Use SimpleCipher on **Tails** (USB, amnesic) or a **hardened Linux** desktop, over **[Tor](GLOSSARY.md#tor)**, with **pre-shared [fingerprint](GLOSSARY.md#fingerprint)s** on paper. Do not use Android if your threat model includes device seizure or memory forensics.
 
+## Security layers at a glance
+
+Every layer addresses a different class of threat. Skip one and you have a gap.
+
+```
++----------------------------------------------------+
+|          Operational Security (you)                 |
+|  Clean device, FDE, no logs, session discipline     |
+|  Threat: forensics, metadata leaks, human error     |
+|  High-risk: Tails USB, paper fingerprints, no tmux  |
++----------------------------------------------------+
+|          Identity Verification                      |
+|  SAS code comparison + fingerprint pre-exchange     |
+|  Threat: man-in-the-middle during handshake         |
+|  High-risk: paper fingerprints exchanged in person  |
++----------------------------------------------------+
+|          Network Layer                              |
+|  Direct / Tor (.onion) / SOCKS5 proxy              |
+|  Threat: IP exposure, traffic correlation           |
+|  High-risk: Tor onion service + cover traffic       |
++----------------------------------------------------+
+|          Operating System                           |
+|  Tails > Qubes > hardened Linux > stock Linux       |
+|  Threat: disk forensics, memory dumps, swap leaks   |
+|  High-risk: Tails (amnesic, routes all through Tor) |
++----------------------------------------------------+
+|          SimpleCipher Runtime                       |
+|  Ephemeral keys, seccomp, mlockall, crypto_wipe     |
+|  Threat: key extraction, syscall abuse, memory leak |
+|  High-risk: build with CIPHER_HARDEN (default)      |
++----------------------------------------------------+
+```
+
+Each layer maps to a section below: OS ([section 1](#1-operating-system)), network ([section 2](#2-network-use-tor)), identity ([section 3](#3-identity-verification-pre-shared-fingerprints)), operational security ([section 4](#4-operational-security-checklist)), and runtime limits ([section 5](#5-what-simplecipher-cannot-protect-against)).
+
 ## Recommended setup
 
 ### 1. Operating system

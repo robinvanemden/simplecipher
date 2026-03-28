@@ -217,6 +217,18 @@ Type the full code to confirm:
 
 **Why this matters:** The safety code is how you know you're actually talking to your friend and not to someone pretending to be them. Without this check, an attacker sitting between you could read everything. This is the single most important step — don't skip it.
 
+```
+  You verify the code:             You skip verification:
+
+  Alice ------- Bob                Alice --- Eve --- Bob
+  Code: 9052-EF29                  Alice sees: 9052-EF29
+  Both see the same code           Bob sees:   7A31-B4C0
+  +-> Codes match = safe           Nobody compares the codes
+                                   +-> Eve reads everything
+```
+
+Always compare the code. If it matches, you are safe. If you skip it, someone could be listening.
+
 ## Choosing your platform
 
 SimpleCipher runs on Linux, Windows, and Android. The encryption is identical everywhere — the same C code, the same protocol. What differs is how well the operating system protects your keys while they're in memory.

@@ -61,6 +61,53 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Sigstore build provenance attestation | yes | yes | yes |
 | Vendored Monocypher integrity (SHA256 in CI) | yes | yes | yes |
 
+### Sandbox lifecycle
+
+The runtime sandbox tightens in phases. Each phase drops privileges that are no longer needed, so a vulnerability exploited later in the session has fewer syscalls available.
+
+```
++-------------------------------------------------------+
+|  Phase 0: Program start                               |
+|  mlockall (RAM locked, no swap)                       |
+|  RLIMIT_CORE=0 (no core dumps)                       |
+|  PR_SET_DUMPABLE=0 (no ptrace attach)                 |
+|  Windows: ProhibitDynamicCode, StrictHandleCheck       |
++---------------------------+---------------------------+
+                            |
+                            v
++-------------------------------------------------------+
+|  Phase 1: After TCP connect                           |
+|  Linux seccomp-BPF:                                   |
+|    Blocked: socket, connect, bind, listen, accept,    |
+|             open, execve, fork, ptrace                 |
+|    Allowed: read, write, poll, nanosleep, mlock, ...  |
+|  FreeBSD: cap_enter() + per-fd capability rights      |
+|  OpenBSD: unveil(NULL,NULL) + pledge("stdio")         |
++---------------------------+---------------------------+
+                            |
+                            v
++-------------------------------------------------------+
+|  Phase 2: After handshake (SAS verified)              |
+|  Linux seccomp-BPF (tightest):                        |
+|    Additionally drops: select, nanosleep,             |
+|      gettimeofday, mlock, rt_sigprocmask, prctl      |
+|    Only allowed: read, write, poll, clock_gettime,    |
+|      close, exit_group, mmap/munmap/madvise           |
+|  FreeBSD: Capsicum narrows fd rights (drops           |
+|      setsockopt/getsockopt)                           |
+|  OpenBSD: pledge("stdio") (unchanged)                 |
++---------------------------+---------------------------+
+                            |
+                            v
++-------------------------------------------------------+
+|  Session end                                          |
+|  crypto_wipe() all keys, chains, and ratchet state    |
+|  Process exits cleanly                                |
++-------------------------------------------------------+
+```
+
+**Why phases matter:** A bug exploited during the chat phase (Phase 2) cannot open files, make new connections, or execute other programs — the kernel blocks the syscalls before they reach userspace. An attacker who compromises the process during chat can only read/write on the existing socket and exit.
+
 ## Verification stack
 
 ### Unit and integration tests (CI, blocking)

@@ -170,7 +170,7 @@ dh        = X25519(self_priv, peer_pub)
 ikm       = dh || init_pub || resp_pub          (96 bytes, canonical order)
 prk       = domain_hash("cipher x25519 sas root v1", ikm)
 sas_key   = expand(prk, "sas")                  (32 bytes)
-SAS       = sas_key[0..3]                        (first 4 bytes, displayed as XXXX-XXXX hex)
+SAS       = sas_key[0..3]              (4 bytes, shown as XXXX-XXXX)
 ```
 
 The SAS output space is 2<sup>32</sup> values. A man-in-the-middle Mallory who intercepts the exchange must choose her fake keys (and commitments) *before* seeing Alice's and Bob's real keys. She cannot adaptively search for a collision after the fact.
@@ -180,6 +180,35 @@ The SAS output space is 2<sup>32</sup> values. A man-in-the-middle Mallory who i
 Pr[MITM success] &le; 2<sup>-32</sup> per session
 
 This assumes Mallory cannot predict the honest parties' ephemeral keys (which are generated from the OS CSPRNG) and that the commitment scheme is binding (so Mallory cannot change her keys after committing).
+
+**Temporal ordering.** The diagram below shows why adaptive search is impossible — Mallory must commit before seeing the honest keys:
+
+```
+Time   Alice                 Mallory (MITM)              Bob
+ |
+ |     gen (sk_A, pk_A)      intercepts both sides
+ |     commit_A = H(pk_A)
+ |        ----- commit_A -------->
+ |                            must commit NOW
+ |                            (hasn't seen pk_A yet!)
+ |                               ---- commit_M1 ----------->
+ |                               <--- commit_B ------------ gen (sk_B, pk_B)
+ |        <--- commit_M2 --------                           commit_B = H(pk_B)
+ |                            (hasn't seen pk_B yet!)
+ |
+ |     reveal pk_A ---------->
+ |                            sees pk_A -- TOO LATE
+ |                            to change commit_M1!
+ |                               ---- reveal pk_M1 -------->
+ |                               <--- reveal pk_B ---------
+ |        <--- reveal pk_M2 --
+ |
+ |     SAS_A = f(sk_A, pk_M2)                    SAS_B = f(sk_B, pk_M1)
+ |
+ |     SAS_A = SAS_B only if Mallory guessed right (Pr <= 2^-32)
+```
+
+Once `commit_M1 = H(pk_M1)` is sent, Mallory cannot find an alternative `pk_M1'` that produces the same commitment without breaking BLAKE2b collision resistance (Section 4.2). Her only strategy is guessing, over the 32-bit SAS output space.
 
 **Why 32 bits is acceptable for interactive verification.** The SAS is verified by a human in real-time over an out-of-band channel (voice/video call). A 2<sup>-32</sup> &asymp; 2.3 &times; 10<sup>-10</sup> probability of success per session is negligible in the interactive setting. The adversary gets exactly one attempt per session (the commitment prevents retry after failure). Even at one session per second sustained for a year, the cumulative probability remains below 10<sup>-2</sup>. For automated/unattended verification where an adversary can attempt many sessions without human oversight, 32 bits is insufficient.
 

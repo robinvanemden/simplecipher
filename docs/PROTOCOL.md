@@ -152,6 +152,57 @@ Alice sends  ──►  DH ratchet  ──►  new tx chain  ──►  symmetri
 
 Together, this is the same "Double Ratchet" architecture that Signal uses: [forward secrecy](#forward-secrecy) (past messages stay safe) plus [post-compromise security](#post-compromise-security) (future messages recover after key theft).
 
+#### How the two ratchets work together
+
+A 6-message exchange showing both ratchets in action:
+
+```
+Alice                                                    Bob
+-----                                                    ---
+
+[DH ratchet] gen ek_A1, derive new root + tx chain
+  |
+  |  msg 1: chain_step(ck_A[0]) -> mk_1 + ck_A[1]
+  |          encrypt with mk_1, wipe mk_1
+  |          frame includes ek_A1              -------->  decrypt with mk_1
+  |                                                       wipe mk_1
+  |  msg 2: chain_step(ck_A[1]) -> mk_2 + ck_A[2]
+  |          encrypt with mk_2, wipe mk_2
+  |          (no DH ratchet -- same direction) -------->  decrypt with mk_2
+  |                                                       wipe mk_2
+  |
+  |                                          [DH ratchet] gen ek_B1,
+  |                                            derive new root + tx chain
+  |                                                       |
+  |          decrypt with mk_3               <--------  msg 3: chain_step(ck_B[0])
+  |          wipe mk_3                                    -> mk_3 + ck_B[1]
+  |                                                       encrypt, wipe mk_3
+  |          decrypt with mk_4               <--------  msg 4: chain_step(ck_B[1])
+  |          wipe mk_4                                    -> mk_4 + ck_B[2]
+  |                                                       encrypt, wipe mk_4
+  |
+[DH ratchet] gen ek_A2, derive new root + tx chain
+  |
+  |  msg 5: chain_step(ck_A2[0]) -> mk_5 + ck_A2[1]
+  |          encrypt with mk_5, wipe mk_5     -------->  decrypt with mk_5
+  |                                                       wipe mk_5
+  |  msg 6: chain_step(ck_A2[1]) -> mk_6 + ck_A2[2]
+  |          encrypt with mk_6, wipe mk_6     -------->  decrypt with mk_6
+  |                                                       wipe mk_6
+```
+
+**Legend:**
+
+| Symbol | Meaning |
+|--------|---------|
+| `[DH ratchet]` | Direction switch: generate fresh X25519 keypair, derive new root and chain |
+| `ck_X[n]` | Chain key after n steps (X = sender) |
+| `mk_N` | One-time message key for message N |
+| `ek_A1` | Alice's first ephemeral ratchet public key |
+| `wipe` | `crypto_wipe()` — key erased from memory |
+
+**Why both ratchets are needed:** The chain ratchet (vertical steps) gives [forward secrecy](GLOSSARY.md#forward-secrecy) — each message key is unique and wiped immediately, so stealing one reveals no others. The DH ratchet (direction switches) gives [post-compromise security](GLOSSARY.md#post-compromise-security-pcs) — fresh random keys mean that even a full key compromise is healed after one round-trip.
+
 ### 5. Fixed-size framing
 
 Every frame is exactly 512 bytes regardless of message length:
