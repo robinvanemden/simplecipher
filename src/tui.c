@@ -501,7 +501,7 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
             return 0; /* timeout — treated as abort */
         }
 #ifndef _WIN32
-        struct pollfd pfd[2] = {{STDIN_FILENO, POLLIN, 0}, {(int)sas_fd, 0, 0}};
+        struct pollfd pfd[2] = {{STDIN_FILENO, POLLIN, 0}, {(int)sas_fd, POLLIN, 0}};
         int           pr     = poll(pfd, 2, POLL_INTERVAL_MS);
         if (pr <= 0) continue;
         if (pfd[1].revents & (POLLHUP | POLLERR)) {

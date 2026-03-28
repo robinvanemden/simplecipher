@@ -234,7 +234,9 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 }
             }
             crypto_wipe(recs, sizeof recs); /* wipe raw keystrokes */
-            continue;
+            /* Fall through to cover traffic check below — do NOT continue
+             * back to WaitForMultipleObjects, or cover ticks get starved
+             * while the user is actively typing. */
         }
 
         /* ----- Socket activity ----- */

@@ -1934,14 +1934,18 @@ static void test_socket_timeout(void) {
     pthread_t lt;
     pthread_create(&lt, nullptr, stalling_listener, &listener);
 
-    /* Small delay to let listener accept */
-    struct timespec ts_delay = {0, 100000000};
-    nanosleep(&ts_delay, nullptr);
-
-    socket_t client_fd = connect_socket("127.0.0.1", port);
+    /* Retry connect — on busy CI the listener thread may be slow to accept */
+    socket_t client_fd = INVALID_SOCK;
+    for (int _ca = 0; _ca < 20; _ca++) {
+        struct timespec ts_delay = {0, 100000000};
+        nanosleep(&ts_delay, nullptr);
+        client_fd = connect_socket("127.0.0.1", port);
+        if (client_fd != INVALID_SOCK) break;
+    }
     TEST("client connected for timeout test", client_fd != INVALID_SOCK);
     if (client_fd == INVALID_SOCK) {
         pthread_join(lt, nullptr);
+        if (listener.fd != INVALID_SOCK) close_sock(listener.fd);
         return;
     }
 
@@ -2155,10 +2159,14 @@ static void test_handshake_failure_paths(void) {
         pthread_t lt;
         pthread_create(&lt, nullptr, honest_listener, &listener);
 
-        /* Connect, complete round 1, then close without round 2 */
-        struct timespec ts_delay = {0, 100000000}; /* 100ms */
-        nanosleep(&ts_delay, nullptr);
-        socket_t fd = connect_socket("127.0.0.1", p3);
+        /* Retry connect — on busy CI the listener may be slow to accept */
+        socket_t fd = INVALID_SOCK;
+        for (int _ca = 0; _ca < 20; _ca++) {
+            struct timespec ts_delay = {0, 100000000};
+            nanosleep(&ts_delay, nullptr);
+            fd = connect_socket("127.0.0.1", p3);
+            if (fd != INVALID_SOCK) break;
+        }
         if (fd != INVALID_SOCK) {
             set_sock_timeout(fd, 5);
             uint8_t out1[1 + KEY], in1[1 + KEY];

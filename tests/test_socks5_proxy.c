@@ -221,12 +221,14 @@ int main(void) {
     pthread_t  srv_tid;
     pthread_create(&srv_tid, NULL, server_thread, &srv);
 
-    /* Small delay for threads to enter accept() */
-    struct timespec ts = {0, 100000000};
-    nanosleep(&ts, NULL);
-
-    /* Connect through SOCKS5 proxy to target */
-    socket_t client = connect_socket_socks5("127.0.0.1", proxy_port, "127.0.0.1", target_port);
+    /* Retry connect — on busy CI the proxy thread may be slow to accept */
+    socket_t client = INVALID_SOCK;
+    for (int _ca = 0; _ca < 20; _ca++) {
+        struct timespec ts = {0, 100000000};
+        nanosleep(&ts, NULL);
+        client = connect_socket_socks5("127.0.0.1", proxy_port, "127.0.0.1", target_port);
+        if (client != INVALID_SOCK) break;
+    }
     TEST("SOCKS5 connect succeeded", client != INVALID_SOCK);
 
     if (client == INVALID_SOCK) {

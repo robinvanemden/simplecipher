@@ -152,6 +152,12 @@ static _Atomic int g_session_gen = 0;
  * during blocking I/O (accept, read, write, poll). */
 static pthread_mutex_t g_session_mtx = PTHREAD_MUTEX_INITIALIZER;
 
+/* Mutex protecting g_pipe_wr load+write in nativePostCommand against
+ * the atomic_exchange+close in nativeStop.  Without this, nativeStop
+ * can close the fd between nativePostCommand's load and write, causing
+ * a write to a reused fd number.  Held only for one write() call. */
+static pthread_mutex_t g_pipe_mtx = PTHREAD_MUTEX_INITIALIZER;
+
 /* ---- Pre-generated key (set by MainActivity before nativeStart) --------- */
 
 static uint8_t     g_prekey_priv[KEY];
@@ -1484,13 +1490,7 @@ JNIEXPORT jint JNICALL Java_com_example_simplecipher_ChatActivity_nativeStart(JN
 JNIEXPORT jboolean JNICALL Java_com_example_simplecipher_ChatActivity_nativePostCommand(JNIEnv *env, jobject thiz,
                                                                                         jint cmd, jbyteArray payload) {
 
-    int wr = g_pipe_wr;
-    if (wr < 0) {
-        /* No active session. */
-        return JNI_FALSE;
-    }
-
-    /* Determine payload length */
+    /* Determine payload length (before taking the pipe mutex) */
     uint16_t plen = 0;
     jbyte   *pbuf = NULL;
     if (payload) {
@@ -1517,16 +1517,25 @@ JNIEXPORT jboolean JNICALL Java_com_example_simplecipher_ChatActivity_nativePost
     buf[2] = (uint8_t)((plen >> 8) & 0xFF);
     if (plen > 0) { memcpy(buf + 3, pbuf, plen); }
 
-    jboolean ok      = JNI_TRUE;
-    ssize_t  written = write(wr, buf, 3 + plen);
-    if (written < 0) {
+    /* Hold the pipe mutex for the load+write to prevent nativeStop from
+     * closing the fd between our load and write (use-after-close race). */
+    jboolean ok = JNI_TRUE;
+    pthread_mutex_lock(&g_pipe_mtx);
+    int wr = atomic_load_explicit(&g_pipe_wr, memory_order_acquire);
+    if (wr < 0) {
         ok = JNI_FALSE;
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            LOGE("pipe full — command dropped (session thread may be blocked)");
-        } else {
-            LOGE("pipe write failed: %s", strerror(errno));
+    } else {
+        ssize_t written = write(wr, buf, 3 + plen);
+        if (written < 0) {
+            ok = JNI_FALSE;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                LOGE("pipe full — command dropped (session thread may be blocked)");
+            } else {
+                LOGE("pipe write failed: %s", strerror(errno));
+            }
         }
     }
+    pthread_mutex_unlock(&g_pipe_mtx);
 
     crypto_wipe(buf, sizeof buf); /* wipe plaintext message from stack */
     if (payload) (*env)->ReleaseByteArrayElements(env, payload, pbuf, JNI_ABORT);
@@ -1558,11 +1567,14 @@ JNIEXPORT void JNICALL Java_com_example_simplecipher_ChatActivity_nativeStop(JNI
     (void)thiz;
 
     /* 1. Close pipe write end → POLLHUP on read end (connect/chat poll)
-     *    or EOF from pipe_read_exact (SAS wait, event loop reads) */
+     *    or EOF from pipe_read_exact (SAS wait, event loop reads).
+     *    Mutex prevents nativePostCommand from writing to a closed fd. */
+    pthread_mutex_lock(&g_pipe_mtx);
     {
         int wr = atomic_exchange(&g_pipe_wr, -1);
         if (wr >= 0) close(wr);
     }
+    pthread_mutex_unlock(&g_pipe_mtx);
 
     /* 2. Shutdown session socket → unblock read_exact/write_exact
      * 3. Close listen socket → unblock select/accept

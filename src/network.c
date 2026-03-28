@@ -127,7 +127,12 @@ void set_sock_opts(socket_t fd) {
         size_t chunk = n - done;
         if (chunk > INT_MAX) chunk = INT_MAX;
         int r = recv(fd, (char *)buf + done, (int)chunk, 0);
-        if (r <= 0) return -1;
+        if (r < 0) {
+            int err = WSAGetLastError();
+            if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK) continue; /* SO_RCVTIMEO — recheck deadline */
+            return -1;
+        }
+        if (r == 0) return -1;
 #else
         ssize_t r = recv(fd, (char *)buf + done, n - done, 0);
         if (r < 0) {
@@ -154,7 +159,12 @@ void set_sock_opts(socket_t fd) {
         size_t chunk = n - done;
         if (chunk > INT_MAX) chunk = INT_MAX;
         int r = send(fd, (const char *)buf + done, (int)chunk, 0);
-        if (r <= 0) return -1;
+        if (r < 0) {
+            int err = WSAGetLastError();
+            if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK) continue; /* SO_SNDTIMEO — recheck deadline */
+            return -1;
+        }
+        if (r == 0) return -1;
 #else
         ssize_t r = send(fd, (const char *)buf + done, n - done, MSG_NOSIGNAL);
         if (r < 0) {
@@ -732,7 +742,8 @@ static socket_t connect_socket_flags(const char *host, const char *port, int ai_
 #if defined(_WIN32) || defined(_WIN64)
     g_interrupt_sock = srv;
 #endif
-    do { fd = accept(srv, nullptr, nullptr); } while (fd == INVALID_SOCK && errno == EINTR && g_running);
+    do { fd = accept(srv, nullptr, nullptr); } while (fd == INVALID_SOCK && g_running &&
+                                                     (errno == EINTR || errno == ECONNABORTED));
 #if defined(_WIN32) || defined(_WIN64)
     g_interrupt_sock = INVALID_SOCKET;
 #endif

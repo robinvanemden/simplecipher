@@ -63,9 +63,17 @@ void plat_quit(void) {}
  * the pool is seeded on some minimal environments. */
 void fill_random(uint8_t *b, size_t n) {
 #    if defined(__linux__)
-    if (getrandom(b, n, 0) != (ssize_t)n) {
-        perror("getrandom");
-        _exit(1);
+    /* getrandom(2) can return short reads (interrupted by signal or
+     * partial fill).  Loop until all bytes are delivered. */
+    while (n > 0) {
+        ssize_t got = getrandom(b, n, 0);
+        if (got < 0) {
+            if (errno == EINTR) continue;
+            perror("getrandom");
+            _exit(1);
+        }
+        b += got;
+        n -= (size_t)got;
     }
 #    else
     /* getentropy(3) is limited to 256 bytes per call on all BSDs.
