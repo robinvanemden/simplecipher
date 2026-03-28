@@ -214,10 +214,14 @@ static void *peer_thread(void *arg) {
 
     /* Connect or listen */
     if (ctx->is_initiator) {
-        /* Small delay to let listener bind */
-        struct timespec ts_delay = {0, 50000000}; /* 50ms */
-        nanosleep(&ts_delay, nullptr);
-        ctx->fd = connect_socket("127.0.0.1", ctx->port);
+        /* Retry connect for up to 2s — on busy CI the listener thread
+         * may not reach accept() within a single short delay. */
+        for (int attempt = 0; attempt < 20; attempt++) {
+            struct timespec ts_delay = {0, 100000000}; /* 100ms */
+            nanosleep(&ts_delay, nullptr);
+            ctx->fd = connect_socket("127.0.0.1", ctx->port);
+            if (ctx->fd != INVALID_SOCK) break;
+        }
     } else {
         ctx->fd = listen_socket(ctx->port);
     }
@@ -1961,9 +1965,12 @@ static void *bad_version_peer(void *arg) {
     peer_ctx *ctx = (peer_ctx *)arg;
     ctx->ok       = 0;
 
-    struct timespec ts_delay = {0, 50000000};
-    nanosleep(&ts_delay, nullptr);
-    ctx->fd = connect_socket("127.0.0.1", ctx->port);
+    for (int _ca = 0; _ca < 20; _ca++) {
+        struct timespec ts_delay = {0, 100000000};
+        nanosleep(&ts_delay, nullptr);
+        ctx->fd = connect_socket("127.0.0.1", ctx->port);
+        if (ctx->fd != INVALID_SOCK) break;
+    }
     if (ctx->fd == INVALID_SOCK) return nullptr;
 
     set_sock_timeout(ctx->fd, 5);
@@ -1990,9 +1997,12 @@ static void *bad_commit_peer(void *arg) {
     peer_ctx *ctx = (peer_ctx *)arg;
     ctx->ok       = 0;
 
-    struct timespec ts_delay = {0, 50000000};
-    nanosleep(&ts_delay, nullptr);
-    ctx->fd = connect_socket("127.0.0.1", ctx->port);
+    for (int _ca = 0; _ca < 20; _ca++) {
+        struct timespec ts_delay = {0, 100000000};
+        nanosleep(&ts_delay, nullptr);
+        ctx->fd = connect_socket("127.0.0.1", ctx->port);
+        if (ctx->fd != INVALID_SOCK) break;
+    }
     if (ctx->fd == INVALID_SOCK) return nullptr;
 
     set_sock_timeout(ctx->fd, 5);
@@ -2214,9 +2224,14 @@ static void *partial_frame_sender(void *arg) {
     peer_ctx *ctx = (peer_ctx *)arg;
     ctx->ok       = 0;
 
-    struct timespec ts_delay = {0, 50000000};
-    nanosleep(&ts_delay, nullptr);
-    ctx->fd = connect_socket("127.0.0.1", ctx->port);
+    /* Retry connect for up to 2 seconds — on busy CI runners the listener
+     * thread may not reach accept() within the initial 50ms delay. */
+    for (int attempt = 0; attempt < 20; attempt++) {
+        struct timespec ts_delay = {0, 100000000}; /* 100ms */
+        nanosleep(&ts_delay, nullptr);
+        ctx->fd = connect_socket("127.0.0.1", ctx->port);
+        if (ctx->fd != INVALID_SOCK) break;
+    }
     if (ctx->fd == INVALID_SOCK) return nullptr;
 
     /* Send only half a frame, then close */
@@ -4273,9 +4288,12 @@ static void *fp_peer_thread(void *arg) {
     ctx->fp_mismatch = 0;
 
     if (ctx->is_initiator) {
-        struct timespec ts_delay = {0, 50000000};
-        nanosleep(&ts_delay, nullptr);
-        ctx->fd = connect_socket("127.0.0.1", ctx->port);
+        for (int _ca = 0; _ca < 20; _ca++) {
+            struct timespec ts_delay = {0, 100000000};
+            nanosleep(&ts_delay, nullptr);
+            ctx->fd = connect_socket("127.0.0.1", ctx->port);
+            if (ctx->fd != INVALID_SOCK) break;
+        }
     } else {
         ctx->fd = listen_socket(ctx->port);
     }
@@ -5814,9 +5832,12 @@ static void *fast_peer_thread(void *arg) {
     uint8_t   commit_self[KEY], commit_peer[KEY];
     ctx->ok = 0;
 
-    struct timespec ts_delay = {0, 50000000};
-    nanosleep(&ts_delay, nullptr);
-    ctx->fd = connect_socket("127.0.0.1", ctx->port);
+    for (int _ca = 0; _ca < 20; _ca++) {
+        struct timespec ts_delay = {0, 100000000};
+        nanosleep(&ts_delay, nullptr);
+        ctx->fd = connect_socket("127.0.0.1", ctx->port);
+        if (ctx->fd != INVALID_SOCK) break;
+    }
     if (ctx->fd == INVALID_SOCK) return nullptr;
     set_sock_timeout(ctx->fd, 10);
 
