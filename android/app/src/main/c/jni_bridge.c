@@ -1093,6 +1093,7 @@ static void *session_thread(void *arg) {
         }
     }
 
+    crypto_wipe(pending_msg, sizeof pending_msg);
     goto cleanup_session;
 
     /* ================================================================
@@ -1147,9 +1148,8 @@ cleanup:
     }
 
     /* Close our read end of the pipe.  The write end (g_pipe_wr) is
-     * owned exclusively by the Java-side globals — the thread never
-     * touches it.  This single-owner design prevents stale-fd and
-     * double-close bugs: only nativeStart() opens and closes g_pipe_wr. */
+     * managed by nativeStart (open) and nativeStop (close), protected
+     * by g_pipe_mtx.  The session thread never touches g_pipe_wr. */
     close(pipe_rd);
 
     /* Delete the JNI global ref to the callback */

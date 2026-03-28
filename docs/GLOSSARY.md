@@ -208,7 +208,7 @@ Data Execution Prevention. An OS/hardware feature that marks memory pages as eit
 
 ### DPI (Deep Packet Inspection)
 
-Deep Packet Inspection. A technique where network middleboxes examine packet contents to identify or block specific protocols. SimpleCipher's wire format uses random-length padding and a [CSPRNG](#csprng-cryptographically-secure-pseudo-random-number-generator)-generated pad length byte, making the entire stream indistinguishable from random data to DPI systems. *See [PROTOCOL.md](PROTOCOL.md#6-wire-padding-dpi-resistance)*
+Deep Packet Inspection. A technique where network middleboxes examine packet contents to identify or block specific protocols. SimpleCipher's wire format uses random-length padding to vary message sizes (513-768 bytes), raising the cost of naive fixed-size pattern matching. The fixed 512-byte inner frame and cleartext 8-byte sequence number are distinguishing features for sophisticated observers — see [THREAT_MODEL.md](THREAT_MODEL.md) for limitations. *See [PROTOCOL.md](PROTOCOL.md#6-wire-padding-dpi-resistance)*
 
 ### IME (Input Method Editor)
 

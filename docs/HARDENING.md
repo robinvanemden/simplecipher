@@ -20,9 +20,9 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | [Stack canaries](GLOSSARY.md#stack-canary) (`-fstack-protector-strong`) | yes | yes | yes |
 | Stack clash protection | yes | — | — |
 | Zero-init all locals (`-ftrivial-auto-var-init=zero`) | yes | yes | yes |
-| Buffer overflow detection (`_FORTIFY_SOURCE`) | 3 | — | 2 |
+| Buffer overflow detection (`_FORTIFY_SOURCE`) | 3 | — | 3 |
 | Control-flow integrity | [CET](GLOSSARY.md#cet-control-flow-enforcement-technology) (x86), [BTI](GLOSSARY.md#bti-branch-target-identification) (arm64) | CET via mingw (`-fcf-protection=full`); no MSVC CFG PE flag | BTI (arm64) |
-| Strict flex array bounds (`-fstrict-flex-arrays=3`) | yes | yes | — |
+| Strict flex array bounds (`-fstrict-flex-arrays=3`) | yes | yes | yes |
 | Hidden symbol visibility | yes | yes | yes + JNI export whitelist |
 | [LTO](GLOSSARY.md#lto-link-time-optimization) (whole-program optimization) | yes | yes | yes |
 | **Linker** | | | |
