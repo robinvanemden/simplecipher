@@ -200,6 +200,62 @@ else
 fi
 
 # ------------------------------------------------------------------
+# 8. keygen subcommand
+# ------------------------------------------------------------------
+echo ""
+echo "--- keygen subcommand ---"
+
+# keygen without output file -> exit 1
+if "$BIN" keygen 2>/dev/null </dev/null; then
+    fail "keygen without output file should fail"
+else
+    rc=$?
+    if [ "$rc" -eq 1 ]; then
+        pass "keygen without output file exits 1"
+    else
+        fail "keygen without output file exits $rc, expected 1"
+    fi
+fi
+
+# keygen shows usage hint
+msg=$("$BIN" keygen 2>&1 </dev/null || true)
+if echo "$msg" | grep -qi "keygen\|output\|file"; then
+    pass "keygen shows usage hint when no file given"
+else
+    fail "keygen usage hint missing: $msg"
+fi
+
+# --help shows keygen
+help_out=$("$BIN" --help 2>&1 || true)
+if echo "$help_out" | grep -q "keygen"; then
+    pass "--help mentions keygen"
+else
+    fail "--help missing keygen"
+fi
+
+# ------------------------------------------------------------------
+# 9. --identity flag
+# ------------------------------------------------------------------
+echo ""
+echo "--- --identity flag ---"
+
+# --help shows --identity
+if echo "$help_out" | grep -q -- "--identity"; then
+    pass "--help mentions --identity"
+else
+    fail "--help missing --identity"
+fi
+
+# --identity with nonexistent file — should fail but NOT with exit 1 (usage error)
+timeout 3 "$BIN" --identity /tmp/nonexistent_identity.key listen 2>/dev/null </dev/null || true
+rc=$?
+if [ "$rc" -ne 1 ]; then
+    pass "--identity with missing file not a usage error (exit $rc)"
+else
+    fail "--identity with missing file treated as usage error"
+fi
+
+# ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 echo ""
