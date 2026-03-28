@@ -562,7 +562,11 @@ public class MainActivity extends Activity {
     nativeSetPeerFingerprint(peerFingerprint);
     fpPeerStatus.setText(getString(R.string.fp_peer_set, peerFingerprint));
     fpPeerStatus.setTextColor(0xFF4DD0B0);
-    fpManualInput.setText(peerFingerprint);
+    /* Only update if text differs — avoids infinite TextWatcher loop
+     * (setText → afterTextChanged → setPeerFingerprint → setText …) */
+    if (!peerFingerprint.equals(fpManualInput.getText().toString())) {
+      fpManualInput.setText(peerFingerprint);
+    }
     fpTrustCheckbox.setVisibility(View.VISIBLE);
   }
 
