@@ -392,17 +392,17 @@ static void *session_thread(void *arg) {
     session_t sess;
     int       we_init = 0;
     uint8_t   self_priv[KEY], self_pub[KEY], peer_pub[KEY];
-    uint8_t   hs_hs_self_nonce[KEY], hs_hs_peer_nonce[KEY];
-    uint8_t   hs_hs_commit_self[KEY], hs_hs_commit_peer[KEY];
-    uint8_t   hs_hs_sas_key[KEY];
+    uint8_t   hs_self_nonce[KEY], hs_peer_nonce[KEY];
+    uint8_t   hs_commit_self[KEY], hs_commit_peer[KEY];
+    uint8_t   hs_sas_key[KEY];
     char      hs_sas[20];
 
     memset(&sess, 0, sizeof sess);
-    memset(hs_hs_self_nonce, 0, sizeof hs_hs_self_nonce);
-    memset(hs_hs_peer_nonce, 0, sizeof hs_hs_peer_nonce);
-    memset(hs_hs_commit_self, 0, sizeof hs_hs_commit_self);
-    memset(hs_hs_commit_peer, 0, sizeof hs_hs_commit_peer);
-    memset(hs_hs_sas_key, 0, sizeof hs_hs_sas_key);
+    memset(hs_self_nonce, 0, sizeof hs_self_nonce);
+    memset(hs_peer_nonce, 0, sizeof hs_peer_nonce);
+    memset(hs_commit_self, 0, sizeof hs_commit_self);
+    memset(hs_commit_peer, 0, sizeof hs_commit_peer);
+    memset(hs_sas_key, 0, sizeof hs_sas_key);
     memset(hs_sas, 0, sizeof hs_sas);
 
     /* ================================================================
@@ -625,8 +625,8 @@ static void *session_thread(void *arg) {
         } else {
             gen_keypair(self_priv, self_pub);
         }
-        fill_random(hs_hs_self_nonce, KEY);
-        make_commit(hs_hs_commit_self, self_pub, hs_hs_self_nonce);
+        fill_random(hs_self_nonce, KEY);
+        make_commit(hs_commit_self, self_pub, hs_self_nonce);
 
         set_sock_timeout(fd, HANDSHAKE_TIMEOUT_S);
 
