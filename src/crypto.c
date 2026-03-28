@@ -202,10 +202,15 @@ static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_S
      * itself is not security-sensitive — it holds intermediate Argon2 state
      * that is useless without the passphrase. */
     if (!work) {
+        /* Lift MCL_FUTURE so the large allocation can succeed.
+         * Re-lock existing pages immediately to keep secrets in RAM.
+         * On systems with very low RLIMIT_MEMLOCK (OpenBSD), MCL_CURRENT
+         * may fail — secrets are briefly pageable but we re-lock after
+         * the work buffer is freed. */
         munlockall();
-        mlockall(MCL_CURRENT);
         did_unlock = 1;
         work       = malloc(work_sz);
+        if (work) (void)mlockall(MCL_CURRENT); /* re-lock existing pages */
     }
 #endif
     if (!work) {
