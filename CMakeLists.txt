@@ -120,21 +120,22 @@ endif()
 add_executable(simplecipher src/main.c ${CORE_SRC} ${PLATFORM_SRC})
 target_include_directories(simplecipher PRIVATE src lib)
 
-# Windows requires Winsock2 and BCrypt for networking and CSPRNG
 if(WIN32)
     target_link_libraries(simplecipher ws2_32 bcrypt iphlpapi)
+else()
+    target_link_libraries(simplecipher m)
 endif()
 
 # P2P integration test (native builds only, needs pthreads)
 if(NOT CMAKE_CROSSCOMPILING)
     add_executable(test_p2p tests/test_p2p.c ${CORE_SRC} ${PLATFORM_SRC})
     target_include_directories(test_p2p PRIVATE src lib)
-    target_link_libraries(test_p2p pthread)
+    target_link_libraries(test_p2p pthread m)
     add_test(NAME p2p COMMAND test_p2p)
 
     add_executable(test_socks5_proxy tests/test_socks5_proxy.c ${CORE_SRC} ${PLATFORM_SRC})
     target_include_directories(test_socks5_proxy PRIVATE src lib)
-    target_link_libraries(test_socks5_proxy pthread)
+    target_link_libraries(test_socks5_proxy pthread m)
     add_test(NAME socks5_proxy COMMAND test_socks5_proxy)
 
     enable_testing()
