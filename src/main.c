@@ -132,34 +132,14 @@ int main(int argc, char *argv[]) {
         return EXIT_INTERNAL;
     }
 
-    /* keygen subcommand — generate a persistent identity key file.
-     * Runs before signal handlers because it exits immediately. */
-    if (cfg.is_keygen) return keygen_main(cfg.keygen_path);
-
-    /* Install signal handlers.
-     *
-     * We use sigaction() instead of signal() on POSIX because signal() has
-     * implementation-defined reset behaviour: some systems restore SIG_DFL
-     * after the first delivery, so a second Ctrl+C would kill the process
-     * without cleanup.  sigaction() with SA_RESTART gives persistent,
-     * well-defined behaviour on all POSIX platforms.
+    /* Install signal handlers BEFORE keygen — Ctrl+C during keygen's Argon2
+     * KDF would otherwise invoke SIG_DFL, killing the process without wiping
+     * the passphrase and private key from the stack.  harden() already set
+     * RLIMIT_CORE=0 and PR_SET_DUMPABLE=0, but catching the signal lets
+     * keygen_main's cleanup paths wipe secrets before exit.
      *
      * SA_RESTART is intentionally NOT set: we want EINTR to interrupt
-     * blocking syscalls (poll, accept) so the loop can recheck g_running.
-     *
-     * SIGHUP fires when the terminal window is closed (e.g. user closes
-     * the terminal emulator, SSH connection drops).  Without this handler,
-     * SIGHUP's default action is immediate process termination -- no cleanup,
-     * no crypto_wipe, key material and chat plaintext linger in RAM until
-     * the OS reclaims the pages.  Catching it lets us exit the event loop
-     * cleanly and wipe all secrets.
-     *
-     * SIGQUIT (Ctrl+\) defaults to terminate + core dump.  A core dump is
-     * a snapshot of the entire process address space written to disk --
-     * including chain keys, message keys, and decrypted plaintext.  By
-     * catching SIGQUIT the same way as SIGINT, we suppress the core dump
-     * and run the cleanup path instead.  (CIPHER_HARDEN sets RLIMIT_CORE=0
-     * as a belt-and-suspenders defence, but catching the signal is free.) */
+     * blocking syscalls (poll, accept) so loops can recheck g_running.  */
 #ifndef _WIN32
     {
         struct sigaction sa = {0};
@@ -178,6 +158,9 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, on_sig);
     SetConsoleCtrlHandler(on_console_ctrl, TRUE); /* window close / logoff / shutdown */
 #endif
+
+    /* keygen subcommand — generate a persistent identity key file. */
+    if (cfg.is_keygen) return keygen_main(cfg.keygen_path);
 
     /* ------------------------------------------------------------------
      * STEP 0: Generate ephemeral keypair and compute fingerprint

@@ -392,8 +392,18 @@ static void *session_thread(void *arg) {
     session_t sess;
     int       we_init = 0;
     uint8_t   self_priv[KEY], self_pub[KEY], peer_pub[KEY];
+    uint8_t   hs_hs_self_nonce[KEY], hs_hs_peer_nonce[KEY];
+    uint8_t   hs_hs_commit_self[KEY], hs_hs_commit_peer[KEY];
+    uint8_t   hs_hs_sas_key[KEY];
+    char      hs_sas[20];
 
     memset(&sess, 0, sizeof sess);
+    memset(hs_hs_self_nonce, 0, sizeof hs_hs_self_nonce);
+    memset(hs_hs_peer_nonce, 0, sizeof hs_hs_peer_nonce);
+    memset(hs_hs_commit_self, 0, sizeof hs_hs_commit_self);
+    memset(hs_hs_commit_peer, 0, sizeof hs_hs_commit_peer);
+    memset(hs_hs_sas_key, 0, sizeof hs_hs_sas_key);
+    memset(hs_sas, 0, sizeof hs_sas);
 
     /* ================================================================
      * Phase 1: TCP connection
@@ -606,10 +616,6 @@ static void *session_thread(void *arg) {
      * ================================================================ */
 
     {
-        uint8_t commit_self[KEY], commit_peer[KEY];
-        uint8_t sas_key[KEY];
-        char    sas[20];
-
         if (has_prekey) {
             memcpy(self_priv, prekey_priv, KEY);
             memcpy(self_pub, prekey_pub, KEY);
@@ -619,9 +625,8 @@ static void *session_thread(void *arg) {
         } else {
             gen_keypair(self_priv, self_pub);
         }
-        uint8_t self_nonce[KEY], peer_nonce[KEY];
-        fill_random(self_nonce, KEY);
-        make_commit(commit_self, self_pub, self_nonce);
+        fill_random(hs_hs_self_nonce, KEY);
+        make_commit(hs_hs_commit_self, self_pub, hs_hs_self_nonce);
 
         set_sock_timeout(fd, HANDSHAKE_TIMEOUT_S);
 
@@ -632,28 +637,28 @@ static void *session_thread(void *arg) {
         {
             uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
             out1[0] = (uint8_t)PROTOCOL_VERSION;
-            memcpy(out1 + 1, commit_self, KEY);
-            memcpy(out1 + 1 + KEY, self_nonce, KEY);
+            memcpy(out1 + 1, hs_commit_self, KEY);
+            memcpy(out1 + 1 + KEY, hs_self_nonce, KEY);
             if (exchange(fd, we_init, out1, sizeof out1, in1, sizeof in1) != 0) {
                 LOGE("handshake error (round 1)");
                 crypto_wipe(out1, sizeof out1);
                 crypto_wipe(in1, sizeof in1);
-                crypto_wipe(commit_self, sizeof commit_self);
-                crypto_wipe(self_nonce, sizeof self_nonce);
+                crypto_wipe(hs_commit_self, sizeof hs_commit_self);
+                crypto_wipe(hs_self_nonce, sizeof hs_self_nonce);
                 jni_call_str(env, cb, mid_onHandshakeFailed, "Handshake failed", "hs_r1");
                 goto cleanup_keys;
             }
             peer_ver = in1[0];
-            memcpy(commit_peer, in1 + 1, KEY);
-            memcpy(peer_nonce, in1 + 1 + KEY, KEY);
+            memcpy(hs_commit_peer, in1 + 1, KEY);
+            memcpy(hs_peer_nonce, in1 + 1 + KEY, KEY);
             crypto_wipe(out1, sizeof out1);
             crypto_wipe(in1, sizeof in1);
         }
 
         if (exchange(fd, we_init, self_pub, KEY, peer_pub, KEY) != 0) {
             LOGE("handshake error (round 2)");
-            crypto_wipe(commit_self, sizeof commit_self);
-            crypto_wipe(commit_peer, sizeof commit_peer);
+            crypto_wipe(hs_commit_self, sizeof hs_commit_self);
+            crypto_wipe(hs_commit_peer, sizeof hs_commit_peer);
             jni_call_str(env, cb, mid_onHandshakeFailed, "Handshake failed", "hs_r2");
             goto cleanup_keys;
         }
@@ -662,23 +667,23 @@ static void *session_thread(void *arg) {
 
         if (peer_ver != PROTOCOL_VERSION) {
             LOGE("version mismatch: we=%d peer=%d", PROTOCOL_VERSION, (int)peer_ver);
-            crypto_wipe(commit_self, sizeof commit_self);
-            crypto_wipe(commit_peer, sizeof commit_peer);
+            crypto_wipe(hs_commit_self, sizeof hs_commit_self);
+            crypto_wipe(hs_commit_peer, sizeof hs_commit_peer);
             jni_call_str(env, cb, mid_onHandshakeFailed, "Protocol version mismatch", "ver_mismatch");
             goto cleanup_keys;
         }
 
         /* Verify commitment */
-        if (!verify_commit(commit_peer, peer_pub, peer_nonce)) {
+        if (!verify_commit(hs_commit_peer, peer_pub, hs_peer_nonce)) {
             LOGE("commitment mismatch -- possible MITM");
-            crypto_wipe(commit_self, sizeof commit_self);
-            crypto_wipe(commit_peer, sizeof commit_peer);
+            crypto_wipe(hs_commit_self, sizeof hs_commit_self);
+            crypto_wipe(hs_commit_peer, sizeof hs_commit_peer);
             jni_call_str(env, cb, mid_onHandshakeFailed, "Commitment mismatch (possible MITM)", "commit_verify");
             goto cleanup_keys;
         }
 
-        crypto_wipe(commit_self, sizeof commit_self);
-        crypto_wipe(commit_peer, sizeof commit_peer);
+        crypto_wipe(hs_commit_self, sizeof hs_commit_self);
+        crypto_wipe(hs_commit_peer, sizeof hs_commit_peer);
 
         /* Compute and verify peer fingerprint */
         {
@@ -722,28 +727,28 @@ static void *session_thread(void *arg) {
         }
 
         /* Derive session keys */
-        if (session_init(&sess, we_init, self_priv, self_pub, peer_pub, self_nonce, peer_nonce, sas_key) != 0) {
+        if (session_init(&sess, we_init, self_priv, self_pub, peer_pub, hs_self_nonce, hs_peer_nonce, hs_sas_key) != 0) {
             LOGE("key agreement failed (bad peer key)");
-            crypto_wipe(sas_key, sizeof sas_key);
-            crypto_wipe(self_nonce, sizeof self_nonce);
-            crypto_wipe(peer_nonce, sizeof peer_nonce);
+            crypto_wipe(hs_sas_key, sizeof hs_sas_key);
+            crypto_wipe(hs_self_nonce, sizeof hs_self_nonce);
+            crypto_wipe(hs_peer_nonce, sizeof hs_peer_nonce);
             jni_call_str(env, cb, mid_onHandshakeFailed, "Key agreement failed", "key_agree");
             goto cleanup_keys;
         }
-        crypto_wipe(self_nonce, sizeof self_nonce);
-        crypto_wipe(peer_nonce, sizeof peer_nonce);
+        crypto_wipe(hs_self_nonce, sizeof hs_self_nonce);
+        crypto_wipe(hs_peer_nonce, sizeof hs_peer_nonce);
 
         /* Wipe the private key immediately — no longer needed. */
         crypto_wipe(self_priv, sizeof self_priv);
 
-        format_sas(sas, sas_key);
-        crypto_wipe(sas_key, sizeof sas_key);
+        format_sas(hs_sas, hs_sas_key);
+        crypto_wipe(hs_sas_key, sizeof hs_sas_key);
 
         LOGI("handshake complete, SAS ready");
 
         /* Callback: SAS ready for user verification */
-        jstring sas_jstr = (*env)->NewStringUTF(env, sas);
-        crypto_wipe(sas, sizeof sas);
+        jstring sas_jstr = (*env)->NewStringUTF(env, hs_sas);
+        crypto_wipe(hs_sas, sizeof hs_sas);
         if (!sas_jstr) {
             LOGE("NewStringUTF(sas) failed");
             if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
@@ -1101,11 +1106,17 @@ static void *session_thread(void *arg) {
      * ================================================================ */
 
 cleanup_keys:
-    /* Handshake failed — wipe key material */
+    /* Handshake failed — wipe all key and handshake material */
     crypto_wipe(self_priv, sizeof self_priv);
     crypto_wipe(self_pub, sizeof self_pub);
     crypto_wipe(peer_pub, sizeof peer_pub);
     crypto_wipe(expected_peer_fp, sizeof expected_peer_fp);
+    crypto_wipe(hs_self_nonce, sizeof hs_self_nonce);
+    crypto_wipe(hs_peer_nonce, sizeof hs_peer_nonce);
+    crypto_wipe(hs_commit_self, sizeof hs_commit_self);
+    crypto_wipe(hs_commit_peer, sizeof hs_commit_peer);
+    crypto_wipe(hs_sas_key, sizeof hs_sas_key);
+    crypto_wipe(hs_sas, sizeof hs_sas);
     goto cleanup;
 
 cleanup_session:
@@ -1642,6 +1653,7 @@ JNIEXPORT void JNICALL Java_com_example_simplecipher_MainActivity_nativeSetPeerF
         atomic_store_explicit(&g_peer_fp_valid, 1, memory_order_release);
     } else {
         LOGE("nativeSetPeerFingerprint: malformed fingerprint string");
+        crypto_wipe(g_peer_fp, sizeof g_peer_fp);
         atomic_store_explicit(&g_peer_fp_valid, 0, memory_order_release);
     }
     (*env)->ReleaseStringUTFChars(env, fingerprint, fp_str);
