@@ -26,7 +26,7 @@ target_include_directories(simplecipher PRIVATE
 )
 
 # Suppress -Wconversion for vendored Monocypher (upstream code, do not modify)
-set_source_files_properties("${PROJECT_ROOT}/lib/monocypher.c" PROPERTIES COMPILE_FLAGS -Wno-conversion)
+set_source_files_properties("${PROJECT_ROOT}/lib/monocypher.c" PROPERTIES COMPILE_FLAGS "-Wno-conversion -fno-lto")
 
 # Security-hardened compile options for Android NDK (Clang)
 target_compile_options(simplecipher PRIVATE
@@ -50,6 +50,7 @@ target_compile_options(simplecipher PRIVATE
     # The remaining hardening (RELRO, stack canary, BTI, hidden visibility,
     # version script) still provides strong protection.
     -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough
+    -Wbidi-chars=any -fstrict-flex-arrays=3
     -Werror=implicit -Werror=return-type -Werror=unused-result
     -Werror=format-security -Werror=incompatible-pointer-types -Werror=int-conversion
 )
@@ -63,7 +64,7 @@ endif()
 
 # Linker hardening: full RELRO, no lazy binding, strip symbols and unused sections
 target_link_options(simplecipher PRIVATE
-    -Wl,-z,relro,-z,now
+    -Wl,-z,relro,-z,now,-z,noexecstack
     -Wl,--as-needed
     -Wl,-s
     # Only export JNI entry points — everything else is hidden.

@@ -63,6 +63,6 @@ Consumers (main.c, test_p2p.c, jni_bridge.c) include headers and link object fil
 
 ## Tests
 
-`tests/test_p2p.c` — 703 tests, `tests/test_socks5_proxy.c` — 11 SOCKS5 proxy tests, `tests/test_cli_flags.sh` — 18 CLI flag integration tests (732 total) covering crypto, DH ratchet, TCP loopback handshake, bidirectional messaging, tamper detection, replay rejection, forward secrecy, post-compromise security, KDF known-answer vectors, constant-time verification, dudect timing smoke tests (ct_compare, is_zero32), SOCKS5 request building, peer fingerprint verification, identity key save/load, --peer-fingerprint, --trust-fingerprint, --identity, and keygen CLI flags, cover traffic, transactional ratchet receive, MAC failure tolerance. Must pass before any release.
+`tests/test_p2p.c` — 770 tests, `tests/test_socks5_proxy.c` — 10 SOCKS5 proxy tests, `tests/test_cli_flags.sh` — 16 CLI flag integration tests (796 total) covering crypto, DH ratchet, TCP loopback handshake, bidirectional messaging, tamper detection, replay rejection, forward secrecy, post-compromise security, KDF known-answer vectors, constant-time verification, dudect timing smoke tests (ct_compare, is_zero32), SOCKS5 request building, peer fingerprint verification, identity key save/load, --peer-fingerprint, --trust-fingerprint, --identity, and keygen CLI flags, cover traffic, transactional ratchet receive, MAC failure tolerance. Must pass before any release.
 
 Run with: `make test` (P2P tests only) and `make test-all` (all tests: P2P + SOCKS5 + CLI flags)

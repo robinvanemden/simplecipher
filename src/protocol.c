@@ -177,6 +177,7 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
      * never sent to the peer). */
     uint16_t max = s->need_send_ratchet ? MAX_MSG_RATCHET : MAX_MSG;
     if (len > max) return -1;
+    if (s->tx_seq == UINT64_MAX) return -1;
 
     /* Now safe to ratchet — we know the payload fits.
      *
@@ -207,7 +208,6 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     } else {
         chain_step(encrypt_chain, mk, next_chain);
     }
-    if (s->tx_seq == UINT64_MAX) return -1;
     le64_store(ad, s->tx_seq);
     make_nonce(nonce, s->tx_seq);
 

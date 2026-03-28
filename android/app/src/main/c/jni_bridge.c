@@ -1388,23 +1388,26 @@ JNIEXPORT jint JNICALL Java_com_example_simplecipher_ChatActivity_nativeStart(JN
         (*env)->ReleaseStringUTFChars(env, socks5_proxy, p);
     }
 
-    /* Copy pre-generated key into thread arg, then wipe globals */
-    if (g_prekey_valid) {
+    /* Copy pre-generated key into thread arg, then wipe globals.
+     * Use acquire loads to synchronize with the release stores in
+     * nativeGenerateKey / nativeSetPeerFingerprint — ensures the
+     * buffer contents are visible to this thread. */
+    if (atomic_load_explicit(&g_prekey_valid, memory_order_acquire)) {
         memcpy(ta->prekey_priv, g_prekey_priv, KEY);
         memcpy(ta->prekey_pub, g_prekey_pub, KEY);
         ta->has_prekey = 1;
         crypto_wipe(g_prekey_priv, KEY);
         crypto_wipe(g_prekey_pub, KEY);
-        g_prekey_valid = 0;
+        atomic_store_explicit(&g_prekey_valid, 0, memory_order_release);
     } else {
         ta->has_prekey = 0;
     }
 
-    if (g_peer_fp_valid) {
+    if (atomic_load_explicit(&g_peer_fp_valid, memory_order_acquire)) {
         memcpy(ta->peer_fp, g_peer_fp, 8);
         ta->has_peer_fp = 1;
         crypto_wipe(g_peer_fp, 8);
-        g_peer_fp_valid = 0;
+        atomic_store_explicit(&g_peer_fp_valid, 0, memory_order_release);
     } else {
         ta->has_peer_fp = 0;
     }
@@ -1581,13 +1584,13 @@ JNIEXPORT void JNICALL Java_com_example_simplecipher_ChatActivity_nativeStop(JNI
 
 JNIEXPORT jstring JNICALL Java_com_example_simplecipher_MainActivity_nativeGenerateKey(JNIEnv *env, jobject thiz) {
     (void)thiz;
-    if (g_prekey_valid) {
+    if (atomic_load_explicit(&g_prekey_valid, memory_order_acquire)) {
         crypto_wipe(g_prekey_priv, KEY);
         crypto_wipe(g_prekey_pub, KEY);
-        g_prekey_valid = 0;
+        atomic_store_explicit(&g_prekey_valid, 0, memory_order_release);
     }
     gen_keypair(g_prekey_priv, g_prekey_pub);
-    g_prekey_valid = 1;
+    atomic_store_explicit(&g_prekey_valid, 1, memory_order_release);
     char fp[20];
     format_fingerprint(fp, g_prekey_pub);
     jstring result = (*env)->NewStringUTF(env, fp);
@@ -1602,14 +1605,14 @@ JNIEXPORT jstring JNICALL Java_com_example_simplecipher_MainActivity_nativeGener
 JNIEXPORT void JNICALL Java_com_example_simplecipher_MainActivity_nativeWipePreKey(JNIEnv *env, jobject thiz) {
     (void)env;
     (void)thiz;
-    if (g_prekey_valid) {
+    if (atomic_load_explicit(&g_prekey_valid, memory_order_acquire)) {
         crypto_wipe(g_prekey_priv, KEY);
         crypto_wipe(g_prekey_pub, KEY);
-        g_prekey_valid = 0;
+        atomic_store_explicit(&g_prekey_valid, 0, memory_order_release);
     }
-    if (g_peer_fp_valid) {
+    if (atomic_load_explicit(&g_peer_fp_valid, memory_order_acquire)) {
         crypto_wipe(g_peer_fp, 8);
-        g_peer_fp_valid = 0;
+        atomic_store_explicit(&g_peer_fp_valid, 0, memory_order_release);
     }
 }
 
@@ -1620,14 +1623,14 @@ JNIEXPORT void JNICALL Java_com_example_simplecipher_MainActivity_nativeSetPeerF
     if (!fp_str) {
         /* OOM — clear any stale fingerprint rather than leaving it armed */
         crypto_wipe(g_peer_fp, sizeof g_peer_fp);
-        g_peer_fp_valid = 0;
+        atomic_store_explicit(&g_peer_fp_valid, 0, memory_order_release);
         return;
     }
     if (parse_fingerprint(g_peer_fp, fp_str) == 0) {
-        g_peer_fp_valid = 1;
+        atomic_store_explicit(&g_peer_fp_valid, 1, memory_order_release);
     } else {
         LOGE("nativeSetPeerFingerprint: malformed fingerprint string");
-        g_peer_fp_valid = 0;
+        atomic_store_explicit(&g_peer_fp_valid, 0, memory_order_release);
     }
     (*env)->ReleaseStringUTFChars(env, fingerprint, fp_str);
 }
@@ -1637,5 +1640,5 @@ JNIEXPORT void JNICALL Java_com_example_simplecipher_MainActivity_nativeClearPee
     (void)env;
     (void)thiz;
     crypto_wipe(g_peer_fp, sizeof g_peer_fp);
-    g_peer_fp_valid = 0;
+    atomic_store_explicit(&g_peer_fp_valid, 0, memory_order_release);
 }

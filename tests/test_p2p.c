@@ -6402,6 +6402,203 @@ static void test_identity_save_atomic(void) {
     crypto_wipe(loaded_priv, sizeof loaded_priv);
 }
 
+/* ---- test: frame_build rejects oversized with need_send_ratchet=1 ------- */
+
+static void test_frame_build_ratchet_boundary(void) {
+    printf("\n=== frame_build ratchet message size boundary ===\n");
+
+    session_t alice, bob;
+    uint8_t   alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Bob sends to Alice so Alice's need_send_ratchet becomes 1 */
+    char     out[MAX_MSG + 1];
+    uint16_t out_len = 0;
+    TEST("bob->alice triggers ratchet", send_msg(&bob, &alice, "trigger", out, &out_len) == 0);
+    TEST("alice.need_send_ratchet is 1", alice.need_send_ratchet == 1);
+
+    /* MAX_MSG_RATCHET exactly should succeed */
+    uint8_t msg_exact[MAX_MSG_RATCHET];
+    memset(msg_exact, 'A', sizeof msg_exact);
+    uint8_t frame[FRAME_SZ], next[KEY];
+    int     rc = frame_build(&alice, msg_exact, MAX_MSG_RATCHET, frame, next);
+    TEST("frame_build with MAX_MSG_RATCHET succeeds", rc == 0);
+
+    /* Don't commit — test rejection with a fresh pair */
+    session_t alice2, bob2;
+    uint8_t   a2_priv[KEY], b2_priv[KEY];
+    make_session_pair(&alice2, &bob2, a2_priv, b2_priv);
+    TEST("bob2->alice2 triggers ratchet", send_msg(&bob2, &alice2, "trigger", out, &out_len) == 0);
+
+    /* MAX_MSG_RATCHET + 1 should fail */
+    uint8_t msg_over[MAX_MSG_RATCHET + 1];
+    memset(msg_over, 'B', sizeof msg_over);
+    session_t saved;
+    memcpy(&saved, &alice2, sizeof saved);
+    rc = frame_build(&alice2, msg_over, MAX_MSG_RATCHET + 1, frame, next);
+    TEST("frame_build with MAX_MSG_RATCHET+1 rejects", rc == -1);
+    TEST("session unchanged on ratchet size rejection",
+         memcmp(alice2.tx, saved.tx, KEY) == 0 && alice2.tx_seq == saved.tx_seq);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    session_wipe(&alice2);
+    session_wipe(&bob2);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+    crypto_wipe(a2_priv, KEY);
+    crypto_wipe(b2_priv, KEY);
+}
+
+/* ---- test: ratchet staged fields wiped after DH failure ----------------- */
+
+static void test_ratchet_staged_wipe_on_failure(void) {
+    printf("\n=== ratchet staged fields wiped after DH failure ===\n");
+
+    uint8_t   priv_a[KEY], pub_a[KEY], priv_b[KEY], pub_b[KEY];
+    uint8_t   sas[KEY];
+    session_t sess;
+
+    gen_keypair(priv_a, pub_a);
+    gen_keypair(priv_b, pub_b);
+    uint8_t n1[KEY], n2[KEY];
+    fill_random(n1, KEY);
+    fill_random(n2, KEY);
+    (void)session_init(&sess, 1, priv_a, pub_a, pub_b, n1, n2, sas);
+
+    /* Poison peer_dh and prepare ratchet — triggers all-zero DH */
+    memset(sess.peer_dh, 0, KEY);
+    sess.need_send_ratchet = 1;
+    ratchet_prepare(&sess);
+
+    /* Inject non-zero sentinels into staged fields AFTER ratchet_prepare.
+     * ratchet_prepare leaves them zeroed on the failure path, so without
+     * this injection the wipe assertions would be tautological (comparing
+     * zero to zero).  By poisoning with 0xCC we prove that ratchet_send's
+     * failure path (ratchet.c:145-148) actually wipes them. */
+    memset(sess.staged_dh_priv, 0xCC, KEY);
+    memset(sess.staged_dh_pub, 0xCC, KEY);
+    memset(sess.staged_root, 0xCC, KEY);
+    memset(sess.staged_tx, 0xCC, KEY);
+
+    /* Force the failure through ratchet_send via frame_build */
+    uint8_t frame[FRAME_SZ], next_tx[KEY];
+    int     rc = frame_build(&sess, (const uint8_t *)"test", 4, frame, next_tx);
+    TEST("frame_build returns -1 on zero peer_dh", rc == -1);
+
+    /* Verify staged fields are wiped (were 0xCC, now must be 0x00) */
+    uint8_t zero[KEY];
+    memset(zero, 0, KEY);
+    TEST("staged_dh_priv wiped", memcmp(sess.staged_dh_priv, zero, KEY) == 0);
+    TEST("staged_dh_pub wiped", memcmp(sess.staged_dh_pub, zero, KEY) == 0);
+    TEST("staged_root wiped", memcmp(sess.staged_root, zero, KEY) == 0);
+    TEST("staged_tx wiped", memcmp(sess.staged_tx, zero, KEY) == 0);
+    TEST("ratchet_prepared cleared", sess.ratchet_prepared == 0);
+
+    session_wipe(&sess);
+    crypto_wipe(priv_a, sizeof priv_a);
+    crypto_wipe(priv_b, sizeof priv_b);
+    crypto_wipe(sas, sizeof sas);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next_tx, sizeof next_tx);
+}
+
+/* ---- test: normalize_hex truncation at dash boundary -------------------- */
+
+static void test_normalize_hex_dash_truncation(void) {
+    printf("\n=== normalize_hex truncation at dash boundary ===\n");
+
+    /* Buffer of size 2: "A-B" → "A\0" (dash skipped, B doesn't fit) */
+    char tiny2[2];
+    int  n = normalize_hex("A-B", tiny2, sizeof tiny2);
+    TEST("A-B in buf[2] → 'A'", n == 1 && tiny2[0] == 'A' && tiny2[1] == '\0');
+
+    /* Buffer of size 3: "A-B" → "AB\0" */
+    char tiny3[3];
+    n = normalize_hex("A-B", tiny3, sizeof tiny3);
+    TEST("A-B in buf[3] → 'AB'", n == 2 && strcmp(tiny3, "AB") == 0);
+
+    /* Buffer of size 1: only NUL fits */
+    char tiny1[1];
+    n = normalize_hex("AB", tiny1, sizeof tiny1);
+    TEST("AB in buf[1] → empty", n == 0 && tiny1[0] == '\0');
+
+    /* Consecutive dashes before truncation */
+    char tiny4[3];
+    n = normalize_hex("A--B-C", tiny4, sizeof tiny4);
+    TEST("A--B-C in buf[3] → 'AB'", n == 2 && strcmp(tiny4, "AB") == 0);
+}
+
+/* ---- test: cover_delay_ms exponential distribution shape ---------------- */
+
+static void test_cover_delay_distribution_shape(void) {
+    printf("\n=== cover_delay_ms exponential distribution shape ===\n");
+
+    /* For a true exponential distribution, ~63.2% of samples fall below
+     * the mean (1 - 1/e).  Clamping shifts this somewhat, but the
+     * proportion below the mean should still be >55% (vs ~50% for uniform).
+     * This validates we're actually using exponential, not uniform. */
+    enum { N = 20000 };
+    int below_mean = 0;
+
+    for (int i = 0; i < N; i++) {
+        unsigned d = cover_delay_ms();
+        if (d < COVER_DELAY_MEAN_MS) below_mean++;
+    }
+    double ratio = (double)below_mean / N;
+    TEST("cover_delay_ms >55% below mean (exponential shape)", ratio > 0.55);
+    TEST("cover_delay_ms <75% below mean (not degenerate)", ratio < 0.75);
+}
+
+/* ---- test: tx_seq overflow checked before ratchet mutation -------------- */
+
+static void test_tx_seq_overflow_pre_ratchet(void) {
+    printf("\n=== tx_seq overflow checked before ratchet mutation ===\n");
+
+    uint8_t   priv_a[KEY], pub_a[KEY], priv_b[KEY], pub_b[KEY];
+    uint8_t   sas[KEY];
+    session_t sess;
+
+    gen_keypair(priv_a, pub_a);
+    gen_keypair(priv_b, pub_b);
+    uint8_t n1[KEY], n2[KEY];
+    fill_random(n1, KEY);
+    fill_random(n2, KEY);
+    (void)session_init(&sess, 1, priv_a, pub_a, pub_b, n1, n2, sas);
+
+    /* Set tx_seq to UINT64_MAX — the overflow guard should reject
+     * BEFORE mutating ratchet state */
+    sess.tx_seq = UINT64_MAX;
+
+    /* Save ratchet state before the call */
+    uint8_t root_before[KEY], dh_priv_before[KEY], dh_pub_before[KEY], tx_before[KEY];
+    memcpy(root_before, sess.root, KEY);
+    memcpy(dh_priv_before, sess.dh_priv, KEY);
+    memcpy(dh_pub_before, sess.dh_pub, KEY);
+    memcpy(tx_before, sess.tx, KEY);
+
+    uint8_t frame[FRAME_SZ], next[KEY];
+    int     rc = frame_build(&sess, (const uint8_t *)"x", 1, frame, next);
+    TEST("frame_build rejects at UINT64_MAX", rc == -1);
+
+    /* Verify ratchet state was NOT mutated */
+    TEST("root unchanged after seq overflow", memcmp(sess.root, root_before, KEY) == 0);
+    TEST("dh_priv unchanged after seq overflow", memcmp(sess.dh_priv, dh_priv_before, KEY) == 0);
+    TEST("dh_pub unchanged after seq overflow", memcmp(sess.dh_pub, dh_pub_before, KEY) == 0);
+    TEST("tx unchanged after seq overflow", memcmp(sess.tx, tx_before, KEY) == 0);
+
+    session_wipe(&sess);
+    crypto_wipe(priv_a, sizeof priv_a);
+    crypto_wipe(priv_b, sizeof priv_b);
+    crypto_wipe(sas, sizeof sas);
+    crypto_wipe(root_before, sizeof root_before);
+    crypto_wipe(dh_priv_before, sizeof dh_priv_before);
+    crypto_wipe(dh_pub_before, sizeof dh_pub_before);
+    crypto_wipe(tx_before, sizeof tx_before);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next, sizeof next);
+}
+
 /* ---- test: rate limit constants sanity ---------------------------------- */
 
 static void test_rate_limit_constants(void) {
@@ -6537,6 +6734,11 @@ int main(void) {
     test_exchange_buffer_size();
     test_commitment_nonce_binding();
     test_identity_save_atomic();
+    test_frame_build_ratchet_boundary();
+    test_ratchet_staged_wipe_on_failure();
+    test_normalize_hex_dash_truncation();
+    test_cover_delay_distribution_shape();
+    test_tx_seq_overflow_pre_ratchet();
     test_rate_limit_constants();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();

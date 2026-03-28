@@ -157,7 +157,7 @@ int keygen_main(const char *path) {
         return EXIT_USAGE;
     }
     int    p2       = read_passphrase("  Confirm passphrase: ", pass2, sizeof pass2);
-    size_t cmp_len  = (size_t)(p1 > p2 ? p1 : p2);
+    size_t cmp_len  = (size_t)(p1 < p2 ? p1 : p2);
     int    mismatch = (p1 != p2) | (ct_compare((const uint8_t *)pass1, (const uint8_t *)pass2, cmp_len) != 0);
     crypto_wipe(pass2, sizeof pass2);
     if (mismatch) {
