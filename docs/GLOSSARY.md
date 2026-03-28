@@ -104,7 +104,7 @@ A method that lets two parties compute a shared secret over a public channel wit
 
 ### Domain separation
 
-A technique that ensures hashing the same data for different purposes produces unrelated outputs. SimpleCipher prefixes each [BLAKE2b](#blake2b) hash with a unique label (e.g., `"cipher commit v1"`, `"cipher x25519 sas root v1"`), so values derived for one purpose cannot be confused with or substituted for another. *See [PROTOCOL.md](PROTOCOL.md)*
+A technique that ensures hashing the same data for different purposes produces unrelated outputs. SimpleCipher prefixes each [BLAKE2b](#blake2b) hash with a unique label (e.g., `"cipher commit v3"`, `"cipher x25519 sas root v1"`), so values derived for one purpose cannot be confused with or substituted for another. *See [PROTOCOL.md](PROTOCOL.md)*
 
 ### Double ratchet
 

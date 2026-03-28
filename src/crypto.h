@@ -141,7 +141,7 @@ typedef struct {
  *
  * Domain separation ensures that hashing the same data for different
  * protocol purposes produces unrelated outputs.  Each label ("cipher
- * commit v1", "cipher x25519 sas root v1", etc.) gives a distinct
+ * commit v3", "cipher x25519 sas root v1", etc.) gives a distinct
  * output space so values cannot be confused or substituted across uses. */
 void domain_hash(uint8_t out[32], const char *label, const uint8_t *msg, size_t msg_sz);
 

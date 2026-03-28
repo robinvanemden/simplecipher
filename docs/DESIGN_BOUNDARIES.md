@@ -16,7 +16,7 @@ SimpleCipher is not Signal, WhatsApp, or any persistent messaging system. The di
 | Server | Central server routes messages | None — direct peer-to-peer | A server knows who talks to whom and when |
 | Contacts | Stored on device | None | A contact list is a social graph on disk |
 | Message history | Stored (encrypted) on device | None — gone when session ends | Stored messages can be compelled or seized |
-| Identity keys | Long-term, pinned | [Ephemeral](GLOSSARY.md#ephemeral), per-session | A stored key is a target for impersonation if seized |
+| Identity keys | Long-term, pinned | [Ephemeral](GLOSSARY.md#ephemeral) by default; optional persistent keys via [keygen](GLOSSARY.md#identity-key) | A stored key is a target for impersonation if seized |
 | Group chat | Yes | No — two people only | Groups add complexity and weaken the trust model |
 | File transfer | Yes | No — text only | File handling is a large attack surface |
 | Offline messages | Yes | No — both must be online | Offline delivery requires a server |
@@ -29,7 +29,7 @@ SimpleCipher is not Signal, WhatsApp, or any persistent messaging system. The di
 
 **Serverless.** Both peers connect directly over TCP. No relay, no push notification service, no coordination server. This means both people must be online at the same time and one must have a reachable IP — but it also means no third party handles the message content. Note: IP addresses are visible to the network and to each peer unless Tor is used (desktop via `--socks5`, Android via Orbot — see [ANDROID.md](ANDROID.md) "SOCKS5 / Tor support"). Network metadata (who connected to whom, when, for how long) is observable by anyone on the network path.
 
-**Auditable.** The entire protocol is implemented in a handful of focused C modules, totaling ~2,000 lines of code. The single cryptographic dependency (Monocypher) is vendored and has been professionally audited. The codebase is designed to be read and understood in an afternoon.
+**Auditable.** The entire protocol is implemented in a handful of focused C modules, totaling ~7,000 lines of code. The single cryptographic dependency (Monocypher) is vendored and has been professionally audited. The codebase is designed to be read and understood in an afternoon.
 
 **Minimal.** No TLS library, no HTTP stack, no JSON parser, no package manager dependencies. The desktop binary is ~80 KB with zero runtime dependencies. Every line of code that doesn't exist is a line that can't have bugs.
 
@@ -37,7 +37,7 @@ SimpleCipher is not Signal, WhatsApp, or any persistent messaging system. The di
 
 Common feature requests and why they conflict with the design:
 
-**"Add persistent identity keys"** — A stored key proves you use the tool. It's a forensic artifact and an impersonation target if seized. The [SAS](GLOSSARY.md#sas-short-authentication-string)/fingerprint verification on every session *is* the identity model: human-verified, not key-pinned.
+**"Add persistent identity keys"** — This is now available as an opt-in feature via `simplecipher keygen` and `--identity`. A passphrase-protected key file provides a stable [fingerprint](GLOSSARY.md#fingerprint) across sessions, enabling pre-shared paper verification with `--peer-fingerprint` and fully non-interactive sessions with `--trust-fingerprint`. The tradeoff: a stored key file is a forensic artifact (proof you use the tool) and an impersonation target if seized. Without `--identity`, keys remain fully [ephemeral](GLOSSARY.md#ephemeral) — generated fresh each session, never written to disk.
 
 **"Add a server for offline messages"** — A server is a single point of surveillance, compromise, and subpoena. SimpleCipher's value is that no third party is involved.
 

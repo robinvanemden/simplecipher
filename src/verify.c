@@ -67,6 +67,10 @@ int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
  * Returns the number of characters written to out (excluding NUL).
  * The caller must wipe out after use. */
 int normalize_hex(const char *in, char *out, size_t out_sz) {
+    if (!in) {
+        out[0] = '\0';
+        return 0;
+    }
     int j = 0;
     for (int i = 0; in[i] && j < (int)out_sz - 1; i++) {
         char c = in[i];
@@ -255,7 +259,7 @@ int cli_sas_verify(const char *sas, socket_t fd) {
 #else
         ssize_t rn = -1;
         {
-            struct pollfd sas_fds[2]   = {{STDIN_FILENO, POLLIN, 0}, {fd, 0, 0}};
+            struct pollfd sas_fds[2]   = {{STDIN_FILENO, POLLIN, 0}, {fd, POLLIN, 0}};
             uint64_t      sas_deadline = monotonic_ms() + 300000; /* 5-minute timeout */
             while (g_running) {
                 int64_t remain = (int64_t)(sas_deadline - monotonic_ms());

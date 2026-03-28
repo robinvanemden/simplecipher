@@ -172,7 +172,7 @@ static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_S
     }
 #endif
     if (!work) {
-        memset(enc_key, 0, KEY);
+        crypto_wipe(enc_key, KEY);
         return -1;
     }
 
@@ -221,8 +221,8 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
 
     int ok = (fwrite(salt, 1, sizeof salt, f) == sizeof salt && fwrite(nonce, 1, sizeof nonce, f) == sizeof nonce &&
               fwrite(ct, 1, sizeof ct, f) == sizeof ct && fwrite(mac, 1, sizeof mac, f) == sizeof mac);
-    fclose(f);
-    if (!ok) { unlink(path); }
+    int close_ok = (fclose(f) == 0);
+    if (!ok || !close_ok) { unlink(path); }
     crypto_wipe(ct, sizeof ct);
     return ok ? 0 : -1;
 }

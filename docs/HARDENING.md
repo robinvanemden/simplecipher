@@ -114,8 +114,8 @@ The runtime sandbox tightens in phases. Each phase drops privileges that are no 
 ### Unit and integration tests (CI, blocking)
 
 ```bash
-make test                      # 681 C tests (670 P2P + 11 SOCKS5)
-bash tests/test_cli_flags.sh   # 18 CLI flag integration tests
+make test                      # 696 C tests (685 P2P + 11 SOCKS5)
+bash tests/test_cli_flags.sh   # 16 CLI flag integration tests
 ```
 
 Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultaneous send), TCP loopback, tamper/replay/reserved-flag rejection, forward secrecy, KDF known-answer vectors, fingerprint verification, SOCKS5 request building, deterministic session vectors.
@@ -132,7 +132,7 @@ Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultane
 ### Fuzzing (CI smoke + weekly long runs)
 
 - libFuzzer + ASan + UBSan on: frame parsing, input sanitization, port validation, SOCKS5 request building
-- 4 fuzz targets in `tests/fuzz_*.c`
+- 5 fuzz targets in `tests/fuzz_*.c`
 
 ### Formal verification (manual)
 

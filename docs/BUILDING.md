@@ -46,10 +46,10 @@ See [HARDENING.md](HARDENING.md) for the complete list of security compiler and 
 ## Tests
 
 ```bash
-# Run the full test suite (681 C tests: 670 P2P + 11 SOCKS5)
+# Run the full test suite (696 C tests: 685 P2P + 11 SOCKS5)
 make test
 
-# Run CLI flag integration tests (18 tests)
+# Run CLI flag integration tests (16 tests)
 bash tests/test_cli_flags.sh
 
 # Run the full local test suite (P2P + build + binary analysis)
@@ -115,12 +115,12 @@ Configuration files: `.clang-format` (C style rules), `.clang-tidy` (static anal
 ├── cmake/toolchains/             # musl + llvm-mingw toolchain files
 ├── android/                      # Android app (JNI bridge + Java UI)
 ├── tests/
-│   ├── test_p2p.c                # 670-test P2P integration suite
+│   ├── test_p2p.c                # 685-test P2P integration suite
 │   ├── test_socks5_proxy.c       # 11-test SOCKS5 proxy suite
 │   ├── test_constant_time.c      # dudect timing side-channel verification
 │   ├── test_timecop.c            # Valgrind-based constant-time verification
 │   ├── cbmc_harness.py           # CBMC formal verification (57K properties)
-│   ├── fuzz_*.c                  # libFuzzer harnesses (4 targets)
+│   ├── fuzz_*.c                  # libFuzzer harnesses (5 targets)
 │   ├── gen_fuzz_corpus.c         # seed corpus generator
 │   └── test_*.sh / test_*.ps1   # platform binary analysis scripts
 ├── .clang-tidy                   # clang-tidy check configuration
