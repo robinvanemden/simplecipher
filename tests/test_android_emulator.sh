@@ -29,19 +29,56 @@ check_no_crash() {
     fi
 }
 
-# Tap a UI element by its resource ID using uiautomator
+# Tap a UI element by its resource ID using uiautomator.
+# Retries up to $2 times (default 1) with a 1-second pause between attempts,
+# which handles slow emulators where elements aren't rendered yet.
 tap_by_id() {
     local rid="$1"
-    adb shell uiautomator dump /sdcard/ui.xml 2>/dev/null
-    local bounds
-    bounds=$(adb shell cat /sdcard/ui.xml \
-        | grep -oP "resource-id=\"${rid}\"[^>]*bounds=\"\K[^\"]+") || return 1
-    local x1 y1 x2 y2
-    x1=$(echo "$bounds" | grep -oP '\d+' | sed -n 1p)
-    y1=$(echo "$bounds" | grep -oP '\d+' | sed -n 2p)
-    x2=$(echo "$bounds" | grep -oP '\d+' | sed -n 3p)
-    y2=$(echo "$bounds" | grep -oP '\d+' | sed -n 4p)
-    adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
+    local retries="${2:-1}"
+    local i
+    for ((i = 0; i < retries; i++)); do
+        adb shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        local bounds
+        bounds=$(adb shell cat /sdcard/ui.xml \
+            | grep -oP "resource-id=\"${rid}\"[^>]*bounds=\"\K[^\"]+") || { sleep 1; continue; }
+        local x1 y1 x2 y2
+        x1=$(echo "$bounds" | grep -oP '\d+' | sed -n 1p)
+        y1=$(echo "$bounds" | grep -oP '\d+' | sed -n 2p)
+        x2=$(echo "$bounds" | grep -oP '\d+' | sed -n 3p)
+        y2=$(echo "$bounds" | grep -oP '\d+' | sed -n 4p)
+        adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
+        return 0
+    done
+    return 1
+}
+
+# Wait for an activity to reach the foreground (up to $1 seconds, default 10).
+wait_for_activity() {
+    local timeout="${1:-10}"
+    local i
+    for ((i = 0; i < timeout; i++)); do
+        if adb shell dumpsys activity activities | grep -q "mResumedActivity.*$PKG"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+# Scroll down and tap an element that may be off-screen.
+# Performs up to $2 scroll+tap attempts (default 3).
+scroll_and_tap() {
+    local rid="$1"
+    local retries="${2:-3}"
+    local i
+    for ((i = 0; i < retries; i++)); do
+        adb shell input swipe 160 500 160 200 300
+        sleep 1
+        if tap_by_id "$rid" 2; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # ------------------------------------------------------------------
@@ -58,9 +95,7 @@ echo ""
 echo "=== Launching MainActivity ==="
 adb logcat -c
 adb shell am start -n "$PKG/$MAIN" -W
-sleep 3
-
-if adb shell dumpsys activity activities | grep -q "mResumedActivity.*$PKG"; then
+if wait_for_activity 10; then
     pass "MainActivity is in foreground"
 else
     fail "MainActivity did not reach foreground"
@@ -77,8 +112,8 @@ echo "=== Navigating to ChatActivity (listen mode) ==="
 adb logcat -c
 
 # Default mode is "Listen", so just tap Go
-if tap_by_id "${PKG}:id/goButton"; then
-    sleep 5
+if tap_by_id "${PKG}:id/goButton" 5; then
+    sleep 3
     check_no_crash "ChatActivity (listen via UI): no crash"
 
     # ------------------------------------------------------------------
@@ -103,10 +138,10 @@ adb shell am force-stop "$PKG"
 sleep 1
 adb logcat -c
 adb shell am start -n "$PKG/$MAIN" -W
-sleep 3
+wait_for_activity 10
 
 # Tap the fingerprint toggle to expand the panel
-if tap_by_id "${PKG}:id/fpToggle"; then
+if tap_by_id "${PKG}:id/fpToggle" 5; then
     sleep 2
     check_no_crash "Fingerprint panel expand: no crash"
 
@@ -119,8 +154,8 @@ if tap_by_id "${PKG}:id/fpToggle"; then
         pass "Fingerprint panel expanded (text check skipped)"
     fi
 
-    # Type a dummy peer fingerprint in manual input
-    if tap_by_id "${PKG}:id/fpManualInput"; then
+    # Type a dummy peer fingerprint in manual input (may need scroll)
+    if scroll_and_tap "${PKG}:id/fpManualInput"; then
         sleep 1
         adb shell input text "A3F2-91BC-D4E5-F678"
         sleep 2
@@ -143,10 +178,10 @@ adb shell am force-stop "$PKG"
 sleep 1
 adb logcat -c
 adb shell am start -n "$PKG/$MAIN" -W
-sleep 3
+wait_for_activity 10
 
 # Expand fingerprint panel
-if tap_by_id "${PKG}:id/fpToggle"; then
+if tap_by_id "${PKG}:id/fpToggle" 5; then
     sleep 2
 
     # 3.6.1 - Checkbox hidden by default (no peer FP entered yet)
@@ -160,20 +195,7 @@ if tap_by_id "${PKG}:id/fpToggle"; then
     fi
 
     # 3.6.2 - Enter peer fingerprint → checkbox should appear
-    # Scroll down so fpManualInput is visible (small emulator screens).
-    # Retry up to 3 times — the element may need multiple scrolls or
-    # more time to settle on slow emulators.
-    FP_INPUT_FOUND=false
-    for _attempt in 1 2 3; do
-        adb shell input swipe 160 500 160 200 300
-        sleep 1
-        if tap_by_id "${PKG}:id/fpManualInput"; then
-            FP_INPUT_FOUND=true
-            break
-        fi
-        sleep 1
-    done
-    if $FP_INPUT_FOUND; then
+    if scroll_and_tap "${PKG}:id/fpManualInput"; then
         sleep 1
         adb shell input text "A3F291BCD4E5F678"
         sleep 2
@@ -187,7 +209,7 @@ if tap_by_id "${PKG}:id/fpToggle"; then
         check_no_crash "Trust checkbox after FP entry: no crash"
 
         # 3.6.3 - Tap the checkbox → no crash
-        if tap_by_id "${PKG}:id/fpTrustCheckbox"; then
+        if tap_by_id "${PKG}:id/fpTrustCheckbox" 3; then
             sleep 1
             check_no_crash "Trust checkbox tap: no crash"
         else
@@ -228,17 +250,17 @@ adb shell am force-stop "$PKG"
 sleep 1
 adb logcat -c
 adb shell am start -n "$PKG/$MAIN" -W
-sleep 3
+wait_for_activity 10
 
 # Switch to Connect mode
-if tap_by_id "${PKG}:id/radioConnect"; then
+if tap_by_id "${PKG}:id/radioConnect" 5; then
     sleep 1
     # Enter a dummy host (will fail to connect, but should not crash)
     adb shell input text "127.0.0.1"
     sleep 1
     # Tap Go
-    if tap_by_id "${PKG}:id/goButton"; then
-        sleep 5
+    if tap_by_id "${PKG}:id/goButton" 3; then
+        sleep 3
         check_no_crash "ChatActivity (connect via UI): no crash"
         # Go back
         adb logcat -c
@@ -267,14 +289,14 @@ adb shell am force-stop "$PKG"
 sleep 1
 adb logcat -c
 adb shell am start -n "$PKG/$MAIN" -W
-sleep 3
+wait_for_activity 10
 
-if tap_by_id "${PKG}:id/radioConnect"; then
+if tap_by_id "${PKG}:id/radioConnect" 5; then
     sleep 1
     # 10.255.255.1 is non-routable — connect() will hang in SYN_SENT
     adb shell input text "10.255.255.1"
     sleep 1
-    if tap_by_id "${PKG}:id/goButton"; then
+    if tap_by_id "${PKG}:id/goButton" 3; then
         # Wait 2s for the connect poll() to be blocking
         sleep 2
         # Press Back — triggers onStop → nativeStop() → POLLHUP on pipe
@@ -287,7 +309,7 @@ if tap_by_id "${PKG}:id/radioConnect"; then
         # Verify we can re-launch cleanly (proves thread exited)
         adb logcat -c
         adb shell am start -n "$PKG/$MAIN" -W
-        sleep 2
+        wait_for_activity 10
         check_no_crash "Re-launch after pending-connect teardown: no crash"
         BACK_END=$(date +%s)
         ELAPSED=$((BACK_END - BACK_START))
@@ -312,7 +334,7 @@ adb shell am force-stop "$PKG"
 sleep 1
 adb logcat -c
 adb shell am start -n "$PKG/$MAIN" -W
-sleep 3
+wait_for_activity 10
 
 check_no_crash "Cold start: no crash"
 
@@ -384,14 +406,14 @@ if [ -f "$PROXY_BIN" ] && [ -f "$PEER_BIN" ]; then
     sleep 1
     adb logcat -c
     adb shell am start -n "$PKG/$MAIN" -W
-    sleep 3
+    wait_for_activity 10
 
-    if tap_by_id "${PKG}:id/radioConnect"; then
+    if tap_by_id "${PKG}:id/radioConnect" 5; then
         sleep 1
 
         # Focus host input before typing — the custom keyboard suppresses
         # system IME, but adb input text still works on focused EditText.
-        tap_by_id "${PKG}:id/hostInput"
+        tap_by_id "${PKG}:id/hostInput" 3
         sleep 1
 
         # Use "localhost" (domain, ATYP 0x03) instead of numeric IP to test
@@ -400,18 +422,18 @@ if [ -f "$PROXY_BIN" ] && [ -f "$PEER_BIN" ]; then
         sleep 1
 
         # Expand "Advanced" section to reveal SOCKS5 input
-        tap_by_id "${PKG}:id/advancedToggle"
+        tap_by_id "${PKG}:id/advancedToggle" 3
         sleep 1
 
-        # Enter SOCKS5 proxy
-        if tap_by_id "${PKG}:id/socks5Input"; then
+        # Enter SOCKS5 proxy (may need scroll on small screens)
+        if scroll_and_tap "${PKG}:id/socks5Input"; then
             sleep 1
             adb shell input text "127.0.0.1:9050"
             sleep 1
         fi
 
         # Tap Go — real SOCKS5 connect: app → proxy → DNS resolve → peer → handshake
-        if tap_by_id "${PKG}:id/goButton"; then
+        if tap_by_id "${PKG}:id/goButton" 3; then
             sleep 10  # Give time for SOCKS5 → proxy → DNS → peer → handshake
 
             check_no_crash "App SOCKS5 connect through proxy: no crash"
