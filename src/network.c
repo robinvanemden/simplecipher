@@ -9,6 +9,8 @@
 #include "network.h"
 #include "protocol.h"
 
+#include <limits.h>
+
 #if !defined(_WIN32) && !defined(_WIN64)
 #    include <fcntl.h> /* fcntl, O_NONBLOCK — used for non-blocking connect */
 #endif
@@ -62,7 +64,9 @@ void set_sock_opts(socket_t fd) {
     size_t done = 0;
     while (done < n) {
 #ifdef _WIN32
-        int r = recv(fd, (char *)buf + done, (int)(n - done), 0);
+        size_t chunk = n - done;
+        if (chunk > INT_MAX) chunk = INT_MAX;
+        int r = recv(fd, (char *)buf + done, (int)chunk, 0);
         if (r <= 0) return -1;
 #else
         ssize_t r = recv(fd, (char *)buf + done, n - done, 0);
@@ -87,7 +91,9 @@ void set_sock_opts(socket_t fd) {
     size_t done = 0;
     while (done < n) {
 #ifdef _WIN32
-        int r = send(fd, (const char *)buf + done, (int)(n - done), 0);
+        size_t chunk = n - done;
+        if (chunk > INT_MAX) chunk = INT_MAX;
+        int r = send(fd, (const char *)buf + done, (int)chunk, 0);
         if (r <= 0) return -1;
 #else
         ssize_t r = send(fd, (const char *)buf + done, n - done, MSG_NOSIGNAL);
@@ -118,7 +124,9 @@ void set_sock_opts(socket_t fd) {
     while (done < n) {
         if (deadline_ms && monotonic_ms() >= deadline_ms) return -1;
 #ifdef _WIN32
-        int r = recv(fd, (char *)buf + done, (int)(n - done), 0);
+        size_t chunk = n - done;
+        if (chunk > INT_MAX) chunk = INT_MAX;
+        int r = recv(fd, (char *)buf + done, (int)chunk, 0);
         if (r <= 0) return -1;
 #else
         ssize_t r = recv(fd, (char *)buf + done, n - done, 0);
@@ -143,7 +151,9 @@ void set_sock_opts(socket_t fd) {
     while (done < n) {
         if (deadline_ms && monotonic_ms() >= deadline_ms) return -1;
 #ifdef _WIN32
-        int r = send(fd, (const char *)buf + done, (int)(n - done), 0);
+        size_t chunk = n - done;
+        if (chunk > INT_MAX) chunk = INT_MAX;
+        int r = send(fd, (const char *)buf + done, (int)chunk, 0);
         if (r <= 0) return -1;
 #else
         ssize_t r = send(fd, (const char *)buf + done, n - done, MSG_NOSIGNAL);
@@ -169,7 +179,8 @@ void set_sock_opts(socket_t fd) {
  * Wire format: [pad_len(1)][payload][random_padding].
  * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
 static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t deadline) {
-    uint8_t buf[1 + 2 * KEY + WIRE_PAD_MAX]; /* max: hdr(1) + commitment(KEY) + nonce(KEY) + pad */
+    uint8_t buf[1 + 2 * KEY + WIRE_PAD_MAX];
+    if (payload_n > 2 * KEY) return -1; /* defensive: payload must fit */
     uint8_t r;
     fill_random(&r, 1);
     if (1 + payload_n + r > sizeof buf) r = (uint8_t)(sizeof buf - 1 - payload_n);

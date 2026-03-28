@@ -118,6 +118,7 @@ static int start_chat_phase(socket_t fd, session_t *sess, int cover, int tui) {
 int main(int argc, char *argv[]) {
     uint8_t self_priv[KEY], self_pub[KEY], peer_pub[KEY];
     uint8_t commit_self[KEY], commit_peer[KEY];
+    uint8_t self_nonce[KEY], peer_nonce[KEY];
     uint8_t sas_key[KEY];    /* SAS = Short Authentication String */
     char    sas[SAS_STR_SZ]; /* formatted as "XXXX-XXXX" (32 bits, human-verifiable) */
     int     rc = EXIT_INTERNAL;
@@ -193,7 +194,8 @@ int main(int argc, char *argv[]) {
      * ------------------------------------------------------------------ */
 
     gen_keypair(self_priv, self_pub);
-    make_commit(commit_self, self_pub);
+    fill_random(self_nonce, KEY);
+    make_commit(commit_self, self_pub, self_nonce);
 
     char self_fp[FINGERPRINT_STR_SZ];
     format_fingerprint(self_fp, self_pub);
@@ -224,7 +226,7 @@ int main(int argc, char *argv[]) {
         }
         crypto_wipe(pass, sizeof pass);
         /* Recompute commitment and fingerprint with the persistent key */
-        make_commit(commit_self, self_pub);
+        make_commit(commit_self, self_pub, self_nonce);
         format_fingerprint(self_fp, self_pub);
     }
 
@@ -365,9 +367,6 @@ int main(int argc, char *argv[]) {
      * before either reveals (round 2). */
     /* Generate a session nonce — mixed into IKM to ensure each session
      * produces unique keys even with the same identity keypair. */
-    uint8_t self_nonce[KEY], peer_nonce[KEY];
-    fill_random(self_nonce, KEY);
-
     {
         uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
         out1[0] = (uint8_t)PROTOCOL_VERSION;
@@ -405,7 +404,7 @@ int main(int argc, char *argv[]) {
      * I/O, and the chat phase reuses the same socket timeout as a backstop.
      * Cannot call setsockopt here: blocked by pledge/Capsicum/seccomp. */
 
-    if (!verify_commit(commit_peer, peer_pub)) {
+    if (!verify_commit(commit_peer, peer_pub, peer_nonce)) {
         fprintf(stderr, "[!] commitment mismatch -- possible MITM attack\n");
         rc = EXIT_MITM;
         goto out;

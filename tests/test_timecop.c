@@ -102,15 +102,18 @@ int main(void) {
      * Uses crypto_verify32 internally (constant-time comparison). */
     printf("Testing verify_commit...\n");
     {
-        uint8_t pub[32], commit[32];
+        uint8_t pub[32], commit[32], nonce[32];
         fill_random(pub, 32);
-        make_commit(commit, pub);
+        fill_random(nonce, 32);
+        make_commit(commit, pub, nonce);
         poison(commit, 32);        /* mark commitment as secret */
         poison(pub, 32);           /* mark public key as secret */
-        volatile int r = verify_commit(commit, pub);
+        poison(nonce, 32);         /* mark nonce as secret */
+        volatile int r = verify_commit(commit, pub, nonce);
         (void)r;
         unpoison(commit, 32);
         unpoison(pub, 32);
+        unpoison(nonce, 32);
     }
 
     /* --- 3. domain_hash ---

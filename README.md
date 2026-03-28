@@ -268,7 +268,7 @@ HiddenServicePort 7777 127.0.0.1:7777
 simplecipher listen --cover-traffic
 ```
 
-**What is [cover traffic](docs/GLOSSARY.md#cover-traffic)?** `--socks5` automatically sends encrypted empty messages at random intervals, even when you are not typing. Without this, someone watching the network can match *when* you type to *when* encrypted data flows through Tor -- and figure out who is talking to whom. With cover traffic, data flows constantly, so your typing pattern disappears into the noise. Listeners behind onion services should add `--cover-traffic` explicitly (since they don't use `--socks5`).
+**What is [cover traffic](docs/GLOSSARY.md#cover-traffic)?** `--socks5` enables the queue-on-tick system: your messages are not sent when you hit Enter — instead, they are queued and transmitted on the next cover tick (every 50-100 ms). Between ticks, encrypted empty frames are sent. Every outgoing frame follows the exact same random timing, so someone watching the network cannot tell when you are actually typing. Without this, typing creates immediate bursts that correlate with Tor traffic. Listeners behind onion services should add `--cover-traffic` explicitly (since they don't use `--socks5`).
 
 See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for more details on onion service setup.
 
@@ -352,14 +352,18 @@ TUI mode works on Linux, macOS, and Windows 10+. No dependencies — pure ANSI e
 
 **Peer [fingerprint](docs/GLOSSARY.md#fingerprint)** (`--peer-fingerprint`): the listener's fingerprint is shown on the listen screen *before* any connection is made, so it can be shared while waiting for a peer. The connector passes it as a flag. After the handshake, the peer's public key is hashed and compared — mismatch aborts the connection. Works for both listen and connect modes. This is optional additional verification on top of the SAS code, useful when you can pre-share a fingerprint but can't make a phone call.
 
-**Trust fingerprint** (`--trust-fingerprint`): when combined with `--peer-fingerprint`, skips the interactive SAS verification entirely if the fingerprint matches. The 64-bit fingerprint is cryptographically stronger than the 32-bit SAS code, so this is safe when the fingerprint was exchanged through a trusted channel (e.g., paper, in person). Both sides can use it for fully non-interactive mutual verification:
+**Trust fingerprint** (`--trust-fingerprint`): when combined with `--peer-fingerprint`, skips the interactive SAS verification entirely if the fingerprint matches. The 64-bit fingerprint is cryptographically stronger than the 32-bit SAS code, so this is safe when the fingerprint was exchanged through a trusted channel (e.g., paper, in person). Both sides can use it for fully non-interactive mutual verification. Note: `--trust-fingerprint` requires `--identity` so that fingerprints are stable across sessions — without a persistent identity key, ephemeral keys are generated each run and fingerprints change every time.
 
 ```bash
+# First, both sides generate persistent identity keys:
+simplecipher keygen alice.key
+simplecipher keygen bob.key
+
 # Alice (listener) has Bob's fingerprint on paper:
-simplecipher listen --peer-fingerprint B7E2-04AC-F931-8D56 --trust-fingerprint
+simplecipher listen --identity alice.key --peer-fingerprint B7E2-04AC-F931-8D56 --trust-fingerprint
 
 # Bob (connector) has Alice's fingerprint on paper:
-simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678 --trust-fingerprint 192.168.1.208
+simplecipher connect --identity bob.key --peer-fingerprint A3F2-91BC-D4E5-F678 --trust-fingerprint 192.168.1.208
 ```
 
 On Android, the same flow happens through the app UI: choose Listen or Connect, enter the host/port, verify the safety code, and chat.

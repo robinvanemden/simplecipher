@@ -33,7 +33,7 @@ target_compile_options(simplecipher PRIVATE
     -std=c23
     -Os -ffunction-sections -fdata-sections -fmerge-all-constants -DNDEBUG
     -DCIPHER_HARDEN
-    -D_FORTIFY_SOURCE=2
+    -D_FORTIFY_SOURCE=3
     -fstack-protector-strong
     -ftrivial-auto-var-init=zero
     -fno-delete-null-pointer-checks

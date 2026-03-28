@@ -21,11 +21,29 @@ set -eu
 TAG="${1:?Usage: $0 <tag>}"
 DIR="release"
 
-if [ ! -d "$DIR" ]; then
-    echo "Downloading release artifacts for $TAG ..."
-    mkdir -p "$DIR"
-    gh release download "$TAG" --dir "$DIR"
+# Always start fresh to prevent signing stale or planted artifacts
+if [ -d "$DIR" ]; then
+    echo "Removing existing $DIR/ to ensure fresh download ..."
+    rm -rf "$DIR"
 fi
+
+echo "Downloading release artifacts for $TAG ..."
+mkdir -p "$DIR"
+gh release download "$TAG" --dir "$DIR"
+
+# Verify the download actually came from the expected tag by checking
+# that the GitHub release API agrees on the asset list
+echo "Verifying downloaded artifacts match tag $TAG ..."
+expected_assets="$(gh release view "$TAG" --json assets --jq '.assets[].name' | sort)"
+actual_assets="$(ls -1 "$DIR" | sort)"
+if [ "$expected_assets" != "$actual_assets" ]; then
+    echo "ERROR: downloaded artifacts do not match the GitHub release for $TAG" >&2
+    echo "  Expected: $expected_assets" >&2
+    echo "  Got:      $actual_assets" >&2
+    rm -rf "$DIR"
+    exit 1
+fi
+echo "Verification passed: artifacts match tag $TAG"
 
 echo "Signing artifacts in $DIR/ ..."
 for f in "$DIR"/simplecipher-linux-x86_64 \
@@ -50,4 +68,4 @@ done
 
 echo ""
 echo "Upload signatures to the release:"
-echo "  gh release upload $TAG $DIR/*.minisig  (or *.asc)"
+echo "  gh release upload $TAG \"$DIR\"/*.minisig  (or *.asc)"

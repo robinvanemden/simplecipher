@@ -78,17 +78,44 @@ void ratchet_init(session_t *s, const uint8_t self_priv[KEY], const uint8_t self
 int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
     if (!s->need_send_ratchet) return 0;
 
-    /* Generate a fresh X25519 keypair for this ratchet step. */
-    fill_random(s->dh_priv, KEY);
-    crypto_x25519_public_key(s->dh_pub, s->dh_priv);
+    /* Stage all mutations in temporaries — commit only on success. */
+    uint8_t new_priv[KEY], new_pub[KEY];
+    fill_random(new_priv, KEY);
+    crypto_x25519_public_key(new_pub, new_priv);
 
-    /* Mix the new DH secret into the root key and derive a fresh tx chain. */
-    if (ratchet_step(s->root, s->tx, s->dh_priv, s->peer_dh) != 0) return -1;
+    uint8_t staged_root[KEY], staged_tx[KEY];
+    memcpy(staged_root, s->root, KEY);
 
-    /* Tell the caller to include our new public key in the frame. */
-    memcpy(ratchet_pub, s->dh_pub, KEY);
+    uint8_t dh[KEY], ikm[KEY * 2];
+    crypto_x25519(dh, new_priv, s->peer_dh);
+    if (is_zero32(dh)) {
+        crypto_wipe(dh, sizeof dh);
+        crypto_wipe(new_priv, sizeof new_priv);
+        crypto_wipe(new_pub, sizeof new_pub);
+        crypto_wipe(staged_root, sizeof staged_root);
+        return -1;
+    }
+
+    memcpy(ikm, staged_root, KEY);
+    memcpy(ikm + KEY, dh, KEY);
+    domain_hash(staged_root, DOMAIN_RATCHET, ikm, sizeof ikm);
+    expand(staged_tx, staged_root, "chain");
+
+    /* All validation passed — commit state atomically. */
+    memcpy(s->dh_priv, new_priv, KEY);
+    memcpy(s->dh_pub, new_pub, KEY);
+    memcpy(s->root, staged_root, KEY);
+    memcpy(s->tx, staged_tx, KEY);
+    memcpy(ratchet_pub, new_pub, KEY);
 
     s->need_send_ratchet = 0;
+
+    crypto_wipe(dh, sizeof dh);
+    crypto_wipe(ikm, sizeof ikm);
+    crypto_wipe(new_priv, sizeof new_priv);
+    crypto_wipe(new_pub, sizeof new_pub);
+    crypto_wipe(staged_root, sizeof staged_root);
+    crypto_wipe(staged_tx, sizeof staged_tx);
     return 1;
 }
 

@@ -172,6 +172,7 @@ void tui_draw_title(void) {
 /* Draw the status bar (row 2): connection state and instructions. */
 void tui_draw_status(const char *status) {
     int max_len = tui_w - STATUS_PADDING;
+    if (max_len < 1) max_len = 1;
     TUI_GOTO(2, 1);
     TUI_CLEAR_LINE();
     printf("%s\xe2\x94\x82%s %s%-*.*s%s %s\xe2\x94\x82%s", TUI_COLOR_DIM, TUI_COLOR_RESET, TUI_COLOR_GREEN, max_len,
@@ -285,6 +286,7 @@ void tui_draw_messages(void) {
  * can see where they are typing. */
 void tui_draw_input(const char *line, size_t len) {
     int max_input   = tui_w - INPUT_OVERHEAD;
+    if (max_input < 1) max_input = 1;
     int show_start  = (int)len > max_input ? (int)len - max_input : 0;
     int visible_len = (int)len - show_start;
     int pad         = max_input - visible_len;
@@ -581,7 +583,8 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
         char norm_typed[SAS_STR_SZ] = {0}, norm_sas[SAS_STR_SZ] = {0};
         int  ti = normalize_hex(typed, norm_typed, sizeof norm_typed);
         int  si = normalize_hex(sas, norm_sas, sizeof norm_sas);
-        int  ok = (ti == si && ct_compare((const uint8_t *)norm_typed, (const uint8_t *)norm_sas, (size_t)ti) == 0);
+        size_t cmp_len = (size_t)(ti > si ? ti : si);
+        int    ok = (ti == si) & (ct_compare((const uint8_t *)norm_typed, (const uint8_t *)norm_sas, cmp_len) == 0);
         crypto_wipe(norm_typed, sizeof norm_typed);
         crypto_wipe(norm_sas, sizeof norm_sas);
         if (!ok) {

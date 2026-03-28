@@ -28,9 +28,14 @@
 /* ---- cover traffic ------------------------------------------------------ */
 
 unsigned cover_delay_ms(void) {
-    uint8_t r[2];
-    fill_random(r, 2);
-    unsigned d = COVER_DELAY_MIN_MS + ((unsigned)(r[0] | (r[1] << 8)) % (COVER_DELAY_MAX_MS - COVER_DELAY_MIN_MS + 1));
+    uint8_t  r[2];
+    unsigned range = COVER_DELAY_MAX_MS - COVER_DELAY_MIN_MS + 1;
+    unsigned val;
+    do {
+        fill_random(r, 2);
+        val = (unsigned)(r[0] | (r[1] << 8));
+    } while (val >= (65536 / range) * range);
+    unsigned d = COVER_DELAY_MIN_MS + (val % range);
     crypto_wipe(r, sizeof r);
     return d;
 }
@@ -189,6 +194,7 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     } else {
         chain_step(encrypt_chain, mk, next_chain);
     }
+    if (s->tx_seq == UINT64_MAX) return -1;
     le64_store(ad, s->tx_seq);
     make_nonce(nonce, s->tx_seq);
 
@@ -212,6 +218,7 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     crypto_wipe(mk, sizeof mk);
     crypto_wipe(pt, sizeof pt);
     crypto_wipe(nonce, sizeof nonce);
+    crypto_wipe(ad, sizeof ad);
     crypto_wipe(ratchet_pub, sizeof ratchet_pub);
     crypto_wipe(encrypt_chain, sizeof encrypt_chain);
     return 0;
@@ -274,6 +281,7 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     } else {
         memcpy(s->rx, next_rx, KEY);
     }
+    if (s->rx_seq == UINT64_MAX) { rc = -1; goto cleanup; }
     s->rx_seq++;
     s->need_send_ratchet = 1;
     if (out) memcpy(out, pt + off, len);

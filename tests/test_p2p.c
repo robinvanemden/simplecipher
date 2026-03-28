@@ -93,10 +93,11 @@ static void test_crypto_basics(void) {
     TEST("two keypairs are different", crypto_verify32(pub, pub2) != 0);
 
     /* Commitment scheme */
-    uint8_t commit[KEY];
-    make_commit(commit, pub);
-    TEST("commitment verifies correct key", verify_commit(commit, pub));
-    TEST("commitment rejects wrong key", !verify_commit(commit, pub2));
+    uint8_t commit[KEY], cnonce[KEY];
+    fill_random(cnonce, KEY);
+    make_commit(commit, pub, cnonce);
+    TEST("commitment verifies correct key", verify_commit(commit, pub, cnonce));
+    TEST("commitment rejects wrong key", !verify_commit(commit, pub2, cnonce));
 
     /* X25519 shared secret agreement */
     uint8_t dh1[KEY], dh2[KEY];
@@ -223,12 +224,11 @@ static void *peer_thread(void *arg) {
 
     /* Keypair + commitment */
     gen_keypair(priv, pub);
-    make_commit(commit_self, pub);
-
-    /* Two-round handshake: version+commitment+nonce, then keys */
     uint8_t self_nonce[KEY], peer_nonce[KEY];
     fill_random(self_nonce, KEY);
+    make_commit(commit_self, pub, self_nonce);
 
+    /* Two-round handshake: version+commitment+nonce, then keys */
     uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
@@ -241,7 +241,7 @@ static void *peer_thread(void *arg) {
     if (exchange(ctx->fd, ctx->is_initiator, pub, KEY, peer_pub, KEY) != 0) return nullptr;
 
     if (peer_ver != PROTOCOL_VERSION) return nullptr;
-    if (!verify_commit(commit_peer, peer_pub)) return nullptr;
+    if (!verify_commit(commit_peer, peer_pub, peer_nonce)) return nullptr;
 
     /* Derive session */
     if (session_init(&ctx->sess, ctx->is_initiator, priv, pub, peer_pub, self_nonce, peer_nonce, ctx->sas_key) != 0)
@@ -878,22 +878,25 @@ static void test_commitment_specificity(void) {
     gen_keypair(priv2, pub2);
     gen_keypair(priv3, pub3);
 
-    uint8_t commit1[KEY], commit2[KEY];
-    make_commit(commit1, pub1);
-    make_commit(commit2, pub2);
+    uint8_t commit1[KEY], commit2[KEY], nonce1[KEY], nonce2[KEY], nonce3[KEY];
+    fill_random(nonce1, KEY);
+    fill_random(nonce2, KEY);
+    fill_random(nonce3, KEY);
+    make_commit(commit1, pub1, nonce1);
+    make_commit(commit2, pub2, nonce2);
 
     /* Each commitment is unique to its key */
     TEST("different keys produce different commitments", crypto_verify32(commit1, commit2) != 0);
 
     /* Commitment for key1 must not verify against key2 or key3 */
-    TEST("commit1 rejects pub2", !verify_commit(commit1, pub2));
-    TEST("commit1 rejects pub3", !verify_commit(commit1, pub3));
-    TEST("commit2 rejects pub1", !verify_commit(commit2, pub1));
-    TEST("commit2 rejects pub3", !verify_commit(commit2, pub3));
+    TEST("commit1 rejects pub2", !verify_commit(commit1, pub2, nonce1));
+    TEST("commit1 rejects pub3", !verify_commit(commit1, pub3, nonce1));
+    TEST("commit2 rejects pub1", !verify_commit(commit2, pub1, nonce2));
+    TEST("commit2 rejects pub3", !verify_commit(commit2, pub3, nonce2));
 
     /* But each commitment verifies its own key */
-    TEST("commit1 accepts pub1", verify_commit(commit1, pub1));
-    TEST("commit2 accepts pub2", verify_commit(commit2, pub2));
+    TEST("commit1 accepts pub1", verify_commit(commit1, pub1, nonce1));
+    TEST("commit2 accepts pub2", verify_commit(commit2, pub2, nonce2));
 
     crypto_wipe(priv1, sizeof priv1);
     crypto_wipe(priv2, sizeof priv2);
@@ -1730,27 +1733,28 @@ static void test_session_init_zero_dh_no_state_write(void) {
 static void test_verify_commit_consistent(void) {
     printf("\n=== verify_commit consistency and wipe safety ===\n");
 
-    uint8_t pub1[KEY], pub2[KEY], commit1[KEY];
+    uint8_t pub1[KEY], pub2[KEY], commit1[KEY], cnonce[KEY];
     gen_keypair(pub1, pub1); /* just need random bytes, reuse pub slot */
     gen_keypair(pub2, pub2);
+    fill_random(cnonce, KEY);
 
-    make_commit(commit1, pub1);
+    make_commit(commit1, pub1, cnonce);
 
     /* Mismatch: commit1 was made from pub1, checking against pub2 */
-    TEST("verify_commit rejects mismatch", verify_commit(commit1, pub2) == 0);
+    TEST("verify_commit rejects mismatch", verify_commit(commit1, pub2, cnonce) == 0);
     /* Match */
-    TEST("verify_commit accepts match", verify_commit(commit1, pub1) == 1);
+    TEST("verify_commit accepts match", verify_commit(commit1, pub1, cnonce) == 1);
 
     /* Call mismatched verify_commit many times — must always return the
      * same result (proving no hidden state or unwiped intermediates
      * affect subsequent calls). */
     int consistent = 1;
     for (int i = 0; i < 20; i++) {
-        if (verify_commit(commit1, pub2) != 0) {
+        if (verify_commit(commit1, pub2, cnonce) != 0) {
             consistent = 0;
             break;
         }
-        if (verify_commit(commit1, pub1) != 1) {
+        if (verify_commit(commit1, pub1, cnonce) != 1) {
             consistent = 0;
             break;
         }
@@ -2026,12 +2030,11 @@ static void *honest_listener(void *arg) {
     set_sock_timeout(ctx->fd, 5);
 
     gen_keypair(priv, pub);
-    make_commit(commit_self, pub);
-
-    /* Two-round handshake */
     uint8_t self_nonce[KEY], peer_nonce[KEY];
     fill_random(self_nonce, KEY);
+    make_commit(commit_self, pub, self_nonce);
 
+    /* Two-round handshake */
     uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
@@ -2056,7 +2059,7 @@ static void *honest_listener(void *arg) {
         return nullptr;
     }
 
-    if (!verify_commit(commit_peer, peer_pub)) {
+    if (!verify_commit(commit_peer, peer_pub, peer_nonce)) {
         /* Commitment mismatch — expected failure for bad_commit test */
         ctx->ok = -2;
         crypto_wipe(priv, sizeof priv);
@@ -4284,12 +4287,11 @@ static void *fp_peer_thread(void *arg) {
         gen_keypair(priv, pub);
     }
     memcpy(ctx->self_pub, pub, KEY);
-    make_commit(commit_self, pub);
-
-    /* Two-round handshake */
     uint8_t self_nonce[KEY], peer_nonce[KEY];
     fill_random(self_nonce, KEY);
+    make_commit(commit_self, pub, self_nonce);
 
+    /* Two-round handshake */
     uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
@@ -4301,7 +4303,7 @@ static void *fp_peer_thread(void *arg) {
 
     if (exchange(ctx->fd, ctx->is_initiator, pub, KEY, peer_pub, KEY) != 0) return nullptr;
     if (peer_ver != PROTOCOL_VERSION) return nullptr;
-    if (!verify_commit(commit_peer, peer_pub)) return nullptr;
+    if (!verify_commit(commit_peer, peer_pub, peer_nonce)) return nullptr;
 
     /* Fingerprint verification (same logic as jni_bridge.c) */
     if (ctx->expected_peer_fp) {
@@ -4984,10 +4986,9 @@ static void *socks5_server_thread(void *arg) {
     uint8_t priv[KEY], pub[KEY], peer_pub[KEY];
     uint8_t commit_self[KEY], commit_peer[KEY];
     gen_keypair(priv, pub);
-    make_commit(commit_self, pub);
-
     uint8_t self_nonce[KEY], peer_nonce[KEY];
     fill_random(self_nonce, KEY);
+    make_commit(commit_self, pub, self_nonce);
 
     uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
@@ -4999,7 +5000,7 @@ static void *socks5_server_thread(void *arg) {
 
     if (exchange(ctx->fd, 0, pub, KEY, peer_pub, KEY) != 0) goto done;
     if (in1[0] != PROTOCOL_VERSION) goto done;
-    if (!verify_commit(commit_peer, peer_pub)) goto done;
+    if (!verify_commit(commit_peer, peer_pub, peer_nonce)) goto done;
     if (session_init(&ctx->sess, 0, priv, pub, peer_pub, self_nonce, peer_nonce, ctx->sas_key) != 0) goto done;
     ctx->ok = 1;
 done:
@@ -5071,10 +5072,9 @@ static void test_socks5_loopback(void) {
     uint8_t priv[KEY], pub[KEY], peer_pub[KEY];
     uint8_t commit_self[KEY], commit_peer[KEY];
     gen_keypair(priv, pub);
-    make_commit(commit_self, pub);
-
     uint8_t s5_self_nonce[KEY], s5_peer_nonce[KEY];
     fill_random(s5_self_nonce, KEY);
+    make_commit(commit_self, pub, s5_self_nonce);
 
     uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
@@ -5087,7 +5087,7 @@ static void test_socks5_loopback(void) {
     memcpy(s5_peer_nonce, in1 + 1 + KEY, KEY);
     hs_ok = hs_ok && (exchange(client, 1, pub, KEY, peer_pub, KEY) == 0);
     hs_ok = hs_ok && (peer_ver == PROTOCOL_VERSION);
-    hs_ok = hs_ok && verify_commit(commit_peer, peer_pub);
+    hs_ok = hs_ok && verify_commit(commit_peer, peer_pub, s5_peer_nonce);
     TEST("SOCKS5 client handshake", hs_ok);
 
     /* Wait for server thread */
@@ -5134,19 +5134,19 @@ static void test_socks5_loopback(void) {
 static void test_cover_traffic(void) {
     printf("\n=== Cover traffic (dummy frames) ===\n");
 
-    /* cover_delay_ms returns values in [500, 2500] */
+    /* cover_delay_ms returns values in [COVER_DELAY_MIN_MS, COVER_DELAY_MAX_MS] */
     int all_in_range  = 1;
     int saw_different = 0;
     unsigned first    = cover_delay_ms();
     for (int i = 0; i < 200; i++) {
         unsigned d = cover_delay_ms();
-        if (d < 500 || d > 2500) {
+        if (d < COVER_DELAY_MIN_MS || d > COVER_DELAY_MAX_MS) {
             all_in_range = 0;
             break;
         }
         if (d != first) saw_different = 1;
     }
-    TEST("cover_delay_ms in [500, 2500] over 200 calls", all_in_range);
+    TEST("cover_delay_ms in [50, 100] over 200 calls", all_in_range);
     TEST("cover_delay_ms produces varying values", saw_different);
 
     /* Build and open a cover frame (len=0) */
@@ -5804,10 +5804,9 @@ static void *fast_peer_thread(void *arg) {
     set_sock_timeout(ctx->fd, 10);
 
     gen_keypair(priv, pub);
-    make_commit(commit_self, pub);
-
     uint8_t fp_self_nonce[KEY], fp_peer_nonce[KEY];
     fill_random(fp_self_nonce, KEY);
+    make_commit(commit_self, pub, fp_self_nonce);
 
     uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
@@ -5817,7 +5816,7 @@ static void *fast_peer_thread(void *arg) {
     memcpy(commit_peer, in1 + 1, KEY);
     memcpy(fp_peer_nonce, in1 + 1 + KEY, KEY);
     if (exchange(ctx->fd, 1, pub, KEY, peer_pub, KEY) != 0) return nullptr;
-    if (!verify_commit(commit_peer, peer_pub)) return nullptr;
+    if (!verify_commit(commit_peer, peer_pub, fp_peer_nonce)) return nullptr;
     if (session_init(&ctx->sess, 1, priv, pub, peer_pub, fp_self_nonce, fp_peer_nonce, ctx->sas_key) != 0)
         return nullptr;
 

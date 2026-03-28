@@ -184,10 +184,12 @@ void make_nonce(uint8_t nonce[NONCE_SZ], uint64_t seq);
  * for any other message, so compromising one key reveals nothing else. */
 void chain_step(const uint8_t chain[32], uint8_t mk[32], uint8_t next[32]);
 
-/* Hash our public key to produce a 32-byte commitment.
+/* Hash pub||nonce to produce a 32-byte commitment.
  *
  * We send this commitment BEFORE revealing the actual key.  Once sent,
  * we cannot change our key without the peer noticing a mismatch.
+ * Binding the session nonce prevents replay of a commitment from a
+ * prior session.
  *
  * WHY THIS IS NECESSARY:
  * Without commitment, a man-in-the-middle (Mallory) could:
@@ -199,12 +201,12 @@ void chain_step(const uint8_t chain[32], uint8_t mk[32], uint8_t next[32]);
  *
  * With commitment, Mallory must commit to her fake keys before she sees
  * A or B.  She cannot adapt after the fact, so the search attack fails. */
-void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]);
+void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY], const uint8_t nonce[KEY]);
 
-/* Verify a revealed public key against a previously received commitment.
- * Returns 1 if the key matches the commitment, 0 otherwise.
+/* Verify a revealed public key and nonce against a previously received
+ * commitment.  Returns 1 if pub||nonce matches the commitment, 0 otherwise.
  * Uses constant-time comparison (consistent policy; costs nothing). */
-[[nodiscard]] int verify_commit(const uint8_t commit[KEY], const uint8_t pub[KEY]);
+[[nodiscard]] int verify_commit(const uint8_t commit[KEY], const uint8_t pub[KEY], const uint8_t nonce[KEY]);
 
 /* Format 4 bytes of the SAS key as "AAAA-BBBB" for out-of-band comparison.
  *

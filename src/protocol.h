@@ -75,8 +75,8 @@ enum {
     POLL_INTERVAL_MS     = 250,    /* event loop poll/wait granularity        */
     SAS_TIMEOUT_MS       = 300000, /* 5-minute SAS verification deadline     */
     EXCHANGE_DEADLINE_MS = 15000,  /* per-round handshake deadline            */
-    COVER_DELAY_MIN_MS   = 500,
-    COVER_DELAY_MAX_MS   = 2500
+    COVER_DELAY_MIN_MS   = 50,
+    COVER_DELAY_MAX_MS   = 100
 };
 static const uint8_t FLAG_RATCHET = 0x01; /* bit 0: ratchet key follows */
 
@@ -148,11 +148,13 @@ void session_wipe(session_t *s);
  * All other bytes -- including ESC (0x1B) and tab (0x09) -- become '.'. */
 void sanitize_peer_text(uint8_t *buf, uint16_t len);
 
-/* Random delay in [500, 2500] ms for cover traffic scheduling.
+/* Random delay in [50, 100] ms for cover traffic scheduling.
  * Uses the OS CSPRNG to prevent the interval itself from becoming a
- * fingerprint.  The range provides ~0.4-2 frames/sec average throughput
- * — enough to mask real message timing over Tor without excessive
- * bandwidth (~170-500 bytes/sec overhead). */
+ * fingerprint.  The tight interval serves the queue-on-tick design:
+ * real messages are queued and sent on the next tick (replacing cover),
+ * so all frames follow the same timing distribution — defeating
+ * statistical timing analysis.  ~10-20 frames/sec = ~6-13 KB/s
+ * overhead, acceptable for Tor sessions where cover traffic is used. */
 unsigned cover_delay_ms(void);
 
 #endif /* SIMPLECIPHER_PROTOCOL_H */

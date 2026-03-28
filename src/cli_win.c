@@ -179,6 +179,8 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
         int      loop_error = 0;
         int      auth_fails = 0;
         uint64_t next_cover = cover ? GetTickCount64() + (uint64_t)cover_delay_ms() : 0;
+        uint8_t  pending_msg[MAX_MSG + 1];
+        uint16_t pending_len = 0;
 
         memset(in_wire, 0, sizeof in_wire);
         memset(out_frame, 0, sizeof out_frame);
@@ -186,6 +188,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
         memset(out_next_tx, 0, sizeof out_next_tx);
         memset(out_text, 0, sizeof out_text);
         memset(line, 0, sizeof line);
+        memset(pending_msg, 0, sizeof pending_msg);
 
         win_redraw_input(line, line_len);
 
@@ -232,20 +235,28 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                 break;
             }
 
-            /* Cover traffic: check on EVERY iteration, not just WAIT_TIMEOUT.
-             * Otherwise sustained keyboard/socket events suppress cover frames. */
+            /* Cover traffic: single send point for all outgoing frames.
+             * Queued real messages replace the cover payload so every frame
+             * follows the same timing distribution — defeating analysis.
+             * Check on EVERY iteration to avoid starvation. */
             if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
-                if (frame_build(sess, NULL, 0, out_frame, out_next_tx) != 0) {
+                const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+                uint16_t       tx_len  = pending_len;
+                if (frame_build(sess, payload, tx_len, out_frame, out_next_tx) != 0) {
                     win_print_status("[cover traffic error -- session ended]", line, line_len);
                     loop_error = 1;
                     break;
                 }
                 out_wire_len = frame_wire_build(out_wire, out_frame);
                 crypto_wipe(out_frame, sizeof out_frame);
+                if (pending_len > 0) {
+                    crypto_wipe(pending_msg, sizeof pending_msg);
+                    pending_len = 0;
+                }
                 out_off            = 0;
                 out_active         = 1;
                 out_frame_start_ms = GetTickCount64();
-                out_text[0]        = '\0'; /* mark as cover frame */
+                out_text[0]        = '\0'; /* cover frame indicator */
                 {
                     int send_rc = win_try_send(fd, out_wire, out_wire_len, &out_off);
                     if (send_rc < 0) {
@@ -307,6 +318,23 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                             win_redraw_input(line, line_len);
                             continue;
                         }
+
+                        if (cover) {
+                            /* Queue for next cover tick — all outgoing frames
+                             * follow the same timing distribution. */
+                            if (pending_len > 0) {
+                                win_redraw_input(line, line_len);
+                                continue;
+                            }
+                            memcpy(pending_msg, line, line_len);
+                            pending_len = (uint16_t)line_len;
+                            win_print_chat(" me", line, line, line_len);
+                            crypto_wipe(line, sizeof line);
+                            line_len = 0;
+                            win_redraw_input(line, line_len);
+                            continue;
+                        }
+
                         if (out_active) {
                             win_print_status("[send still in progress -- press Enter again shortly]", line, line_len);
                             continue;
@@ -335,8 +363,6 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                         if (send_rc == 0) {
                             memcpy(sess->tx, out_next_tx, KEY);
                             sess->tx_seq++;
-                            /* Cover timer NOT reset on real sends — schedule runs independently
-                             * so real messages blend into the cover traffic pattern. */
                             out_active = 0;
                             win_print_chat(" me", out_text, line, line_len);
                             crypto_wipe(out_wire, sizeof out_wire);
@@ -444,7 +470,6 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                 }
 
                 if (out_active && (ne.lNetworkEvents & FD_WRITE)) {
-                    /* Deadline: abort if partial send pending too long. */
                     if ((GetTickCount64() - out_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
                         win_print_status("[send timeout]", line, line_len);
                         loop_error = 1;
@@ -459,13 +484,10 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                     if (send_rc == 0) {
                         memcpy(sess->tx, out_next_tx, KEY);
                         sess->tx_seq++;
-                        /* Reset cover timer only for cover frames (out_text[0]==0).
-                         * Real message sends must NOT reset the timer — otherwise an
-                         * attacker forcing backpressure can correlate cover timing with
-                         * real user traffic. */
-                        if (cover && !out_text[0]) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
+                        /* All frames (real and cover) originate from cover ticks,
+                         * so always schedule the next tick after completion. */
+                        if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                         out_active = 0;
-                        /* out_text[0]==0 means this was a cover frame — no UI update */
                         if (out_text[0]) win_print_chat(" me", out_text, line, line_len);
                         crypto_wipe(out_wire, sizeof out_wire);
                         crypto_wipe(out_next_tx, sizeof out_next_tx);
@@ -491,6 +513,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
         crypto_wipe(out_text, sizeof out_text);
         crypto_wipe(line, sizeof line);
         crypto_wipe(plain, sizeof plain);
+        crypto_wipe(pending_msg, sizeof pending_msg);
     }
 
     if (fd != INVALID_SOCK) WSAEventSelect(fd, nullptr, 0);

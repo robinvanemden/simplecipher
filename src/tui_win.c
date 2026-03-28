@@ -92,6 +92,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     const char *status     = "Secure session active  |  Ctrl+C to quit";
     int         auth_fails = 0;
     uint64_t    next_cover = cover ? GetTickCount64() + (uint64_t)cover_delay_ms() : 0;
+    uint8_t     pending_msg[MAX_MSG + 1];
+    uint16_t    pending_len = 0;
 
     if (!win_console_open(&h_in, &h_in_mode)) return;
     win_console_prepare(h_in, h_in_mode);
@@ -102,6 +104,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     memset(out_wire, 0, sizeof out_wire);
     memset(out_next_tx, 0, sizeof out_next_tx);
     memset(out_text, 0, sizeof out_text);
+    memset(pending_msg, 0, sizeof pending_msg);
 
     /* Re-enable WINDOW_INPUT for resize events */
     {
@@ -175,6 +178,21 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 }
                 if (k->wVirtualKeyCode == VK_RETURN || ch == '\r') {
                     if (line_len == 0) continue;
+
+                    if (cover) {
+                        /* Queue for next cover tick — all outgoing frames
+                         * follow the same timing distribution. */
+                        if (pending_len > 0) continue;
+                        memcpy(pending_msg, line, line_len);
+                        pending_len = (uint16_t)line_len;
+                        tui_msg_add(TUI_ME, line);
+                        crypto_wipe(line, sizeof line);
+                        line_len = 0;
+                        tui_draw_messages();
+                        tui_draw_input(line, line_len);
+                        continue;
+                    }
+
                     if (out_active) continue;
 
                     if (frame_build(sess, (const uint8_t *)line, (uint16_t)line_len, out_frame, out_next_tx) != 0) {
@@ -198,8 +216,6 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                         if (send_rc == 0) {
                             memcpy(sess->tx, out_next_tx, KEY);
                             sess->tx_seq++;
-                            /* Cover timer NOT reset on real sends — schedule runs independently
-                             * so real messages blend into the cover traffic pattern. */
                             out_active = 0;
                             tui_msg_add(TUI_ME, out_text);
                             crypto_wipe(out_wire, sizeof out_wire);
@@ -287,20 +303,16 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             }
 
             if (out_active && (ne.lNetworkEvents & FD_WRITE)) {
-                /* Deadline: abort if a partial send has been pending too long. */
                 if ((GetTickCount64() - out_frame_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) break;
                 int send_rc = win_try_send(fd, out_wire, out_wire_len, &out_off);
                 if (send_rc < 0) break;
                 if (send_rc == 0) {
                     memcpy(sess->tx, out_next_tx, KEY);
                     sess->tx_seq++;
-                    /* Reset cover timer only for cover frames (out_text[0]==0).
-                     * Real message sends must NOT reset the timer — otherwise an
-                     * attacker forcing backpressure can correlate cover timing with
-                     * real user traffic. */
-                    if (cover && !out_text[0]) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
+                    /* All frames (real and cover) originate from cover ticks,
+                     * so always schedule the next tick after completion. */
+                    if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                     out_active = 0;
-                    /* out_text[0]==0 means this was a cover frame — no UI update */
                     if (out_text[0]) {
                         tui_msg_add(TUI_ME, out_text);
                         tui_draw_messages();
@@ -319,19 +331,27 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             }
         }
 
-        /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+        /* ---- Cover traffic: single send point for all outgoing frames.
+         * Queued real messages replace the cover payload so every frame
+         * follows the same timing distribution — defeating analysis. */
         if (cover && g_running && !out_active && GetTickCount64() >= next_cover) {
-            if (frame_build(sess, NULL, 0, out_frame, out_next_tx) != 0) {
+            const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+            uint16_t       tx_len  = pending_len;
+            if (frame_build(sess, payload, tx_len, out_frame, out_next_tx) != 0) {
                 tui_msg_add(TUI_SYSTEM, "cover traffic error -- session ended");
                 tui_draw_screen(status, line, line_len);
                 break;
             }
             out_wire_len = frame_wire_build(out_wire, out_frame);
             crypto_wipe(out_frame, sizeof out_frame);
+            if (pending_len > 0) {
+                crypto_wipe(pending_msg, sizeof pending_msg);
+                pending_len = 0;
+            }
             out_off            = 0;
             out_active         = 1;
             out_frame_start_ms = GetTickCount64();
-            out_text[0]        = '\0'; /* mark as cover frame */
+            out_text[0]        = '\0'; /* cover frame unless overwritten above */
             {
                 int send_rc = win_try_send(fd, out_wire, out_wire_len, &out_off);
                 if (send_rc < 0) {
@@ -347,7 +367,6 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                     crypto_wipe(out_next_tx, sizeof out_next_tx);
                     next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                 }
-                /* send_rc == 1: partial send; FD_WRITE will complete it */
             }
         }
     }
@@ -362,6 +381,7 @@ win_tui_done:
     crypto_wipe(out_text, sizeof out_text);
     crypto_wipe(line, sizeof line);
     crypto_wipe(plain, sizeof plain);
+    crypto_wipe(pending_msg, sizeof pending_msg);
     win_console_restore(h_in, h_in_mode); /* restore console input mode */
     tui_msg_wipe();
 }

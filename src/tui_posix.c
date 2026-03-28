@@ -109,8 +109,11 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     const char *status     = "Secure session active  |  Ctrl+C to quit";
     int         auth_fails = 0;
     uint64_t    next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
+    uint8_t     pending_msg[MAX_MSG + 1]; /* queued real message for cover tick */
+    uint16_t    pending_len = 0;
 
     memset(line, 0, sizeof line);
+    memset(pending_msg, 0, sizeof pending_msg);
     tui_draw_screen(status, line, line_len);
 
     while (g_running) {
@@ -196,10 +199,21 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 }
                 if (ch == '\r' || ch == '\n') {
                     if (line_len == 0) continue;
-                    /* Cap at MAX_MSG_RATCHET (not MAX_MSG) because the next send may
-                     * trigger a DH ratchet, which consumes 32 bytes of payload space. */
                     if (line_len > (size_t)MAX_MSG_RATCHET) {
                         tui_msg_add(TUI_SYSTEM, "[message too long]");
+                        tui_draw_messages();
+                        continue;
+                    }
+
+                    if (cover) {
+                        /* Queue for next cover tick — all outgoing frames
+                         * follow the same timing distribution. */
+                        if (pending_len > 0) continue;
+                        memcpy(pending_msg, line, line_len);
+                        pending_len = (uint16_t)line_len;
+                        tui_msg_add(TUI_ME, line);
+                        crypto_wipe(line, sizeof line);
+                        line_len = 0;
                         tui_draw_messages();
                         continue;
                     }
@@ -221,8 +235,6 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
 
                     memcpy(sess->tx, next_tx, KEY);
                     sess->tx_seq++;
-                    /* Cover timer NOT reset on real sends — schedule runs independently
-                     * so real messages blend into the cover traffic pattern. */
 
                     tui_msg_add(TUI_ME, line);
                     crypto_wipe(line, sizeof line);
@@ -243,9 +255,13 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             tui_draw_input(line, line_len);
         }
 
-        /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+        /* ---- Cover traffic: single send point for all outgoing frames.
+         * Queued real messages replace the cover payload so every frame
+         * follows the same timing distribution — defeating analysis. */
         if (cover && g_running && monotonic_ms() >= next_cover) {
-            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) {
+            const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+            uint16_t       tx_len  = pending_len;
+            if (frame_build(sess, payload, tx_len, frame, next_tx) != 0) {
                 tui_msg_add(TUI_SYSTEM, "cover traffic error -- session ended");
                 tui_draw_screen(status, line, line_len);
                 break;
@@ -257,6 +273,10 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             }
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
+            if (pending_len > 0) {
+                crypto_wipe(pending_msg, sizeof pending_msg);
+                pending_len = 0;
+            }
             crypto_wipe(frame, sizeof frame);
             crypto_wipe(next_tx, sizeof next_tx);
             next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
@@ -267,5 +287,6 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     crypto_wipe(frame, sizeof frame);
     crypto_wipe(next_tx, sizeof next_tx);
     crypto_wipe(plain, sizeof plain);
+    crypto_wipe(pending_msg, sizeof pending_msg);
     tui_msg_wipe();
 }

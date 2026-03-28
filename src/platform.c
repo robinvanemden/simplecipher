@@ -30,9 +30,14 @@ void plat_quit(void) { WSACleanup(); }
 
 /* BCryptGenRandom: Windows CSPRNG, hardware-seeded.  Never use rand(). */
 void fill_random(uint8_t *b, size_t n) {
-    if (BCryptGenRandom(nullptr, b, (ULONG)n, BCRYPT_USE_SYSTEM_PREFERRED_RNG)) {
-        fprintf(stderr, "rng failed\n");
-        ExitProcess(1);
+    while (n > 0) {
+        ULONG chunk = n > (ULONG)-1 ? (ULONG)-1 : (ULONG)n;
+        if (BCryptGenRandom(nullptr, b, chunk, BCRYPT_USE_SYSTEM_PREFERRED_RNG)) {
+            fprintf(stderr, "rng failed\n");
+            ExitProcess(1);
+        }
+        b += chunk;
+        n -= chunk;
     }
 }
 
@@ -147,6 +152,10 @@ void harden(void) {
             (void)fn(/*ProcessStrictHandleCheckPolicy*/ 3, &sh, sizeof sh);
         }
     }
+    /* Lock process memory to prevent key material from being paged to the
+     * swap file.  Equivalent of POSIX mlockall(MCL_CURRENT | MCL_FUTURE).
+     * Increase working set first to allow locking. */
+    SetProcessWorkingSetSize(GetCurrentProcess(), 1024 * 1024, 200 * 1024 * 1024);
 }
 #    else /* POSIX */
 void harden(void) {

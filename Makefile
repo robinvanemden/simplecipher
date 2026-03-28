@@ -33,6 +33,9 @@ UNAME := $(shell uname -s)
 ifeq ($(UNAME),Linux)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
   CFLAGS  += -fstack-clash-protection -D_FORTIFY_SOURCE=3
+  # CET-based control-flow integrity (Intel IBT + shadow stack) on x86_64.
+  # Silently ignored by GCC/Clang on non-x86 architectures.
+  CFLAGS  += -fcf-protection=full
   LDFLAGS += -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,nodlopen
 else ifeq ($(UNAME),Darwin)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c

@@ -15,7 +15,14 @@ static const char *const DOMAIN_COMMIT = "cipher commit v3";
 
 #if !defined(_WIN32) && !defined(_WIN64)
 #    include <fcntl.h>    /* open() with O_CREAT for 0600 key file permissions */
+#    include <limits.h>   /* PATH_MAX */
 #    include <sys/mman.h> /* mlockall/munlockall for Argon2 work buffer */
+#    include <sys/stat.h> /* fstat(), chmod() for file permission check */
+#    include <unistd.h>   /* fsync, unlink, close */
+#endif
+
+#ifndef PATH_MAX
+#    define PATH_MAX 4096
 #endif
 
 /* Constant-time all-zero check for 32 bytes.
@@ -106,17 +113,26 @@ void chain_step(const uint8_t chain[32], uint8_t mk[32], uint8_t next[32]) {
  *
  * With commitment, Mallory must commit to her fake keys before she sees
  * A or B.  She cannot adapt after the fact, so the search attack fails. */
-void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]) { domain_hash(commit, DOMAIN_COMMIT, pub, KEY); }
+void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY], const uint8_t nonce[KEY]) {
+    uint8_t buf[KEY * 2];
+    memcpy(buf, pub, KEY);
+    memcpy(buf + KEY, nonce, KEY);
+    domain_hash(commit, DOMAIN_COMMIT, buf, sizeof buf);
+    crypto_wipe(buf, sizeof buf);
+}
 
 /* Verify a revealed public key against a previously received commitment.
  * Returns 1 if the key matches the commitment, 0 otherwise.
  * Uses constant-time comparison (consistent policy; costs nothing). */
-[[nodiscard]] int verify_commit(const uint8_t commit[KEY], const uint8_t pub[KEY]) {
+[[nodiscard]] int verify_commit(const uint8_t commit[KEY], const uint8_t pub[KEY], const uint8_t nonce[KEY]) {
     uint8_t expected[KEY];
-    int     ok;
-    domain_hash(expected, DOMAIN_COMMIT, pub, KEY);
-    ok = (crypto_verify32(expected, commit) == 0);
+    uint8_t buf[KEY * 2];
+    memcpy(buf, pub, KEY);
+    memcpy(buf + KEY, nonce, KEY);
+    domain_hash(expected, DOMAIN_COMMIT, buf, sizeof buf);
+    int ok = (crypto_verify32(expected, commit) == 0);
     crypto_wipe(expected, sizeof expected);
+    crypto_wipe(buf, sizeof buf);
     return ok;
 }
 
@@ -160,22 +176,37 @@ static const crypto_argon2_config identity_kdf_config = {.algorithm = CRYPTO_ARG
 /* Derive an encryption key from a passphrase and salt.
  * Returns 0 on success, -1 on allocation failure. */
 static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_SZ], const char *pass, size_t pass_len) {
+    if (pass_len > UINT32_MAX) return -1;
     size_t work_sz    = (size_t)identity_kdf_config.nb_blocks * 1024;
     int    did_unlock = 0;
     void  *work       = malloc(work_sz);
 #if !defined(_WIN32) && !defined(_WIN64)
     /* mlockall(MCL_FUTURE) (set by harden()) forces every allocation to be
-     * locked into RAM.  On systems with a low mlock limit (OpenBSD default)
-     * the ~100 MB Argon2 work buffer allocation fails.  Temporarily lift the
-     * lock, allocate, and re-lock after the buffer is freed. */
+     * locked into RAM.  On systems with a low RLIMIT_MEMLOCK the ~100 MB
+     * Argon2 work buffer allocation fails because malloc triggers mmap which
+     * cannot lock the new pages.
+     *
+     * Old approach: munlockall() dropped ALL locks, making passphrases and
+     * identity keys in memory pageable to disk during KDF computation.
+     *
+     * New approach: munlockall() + mlockall(MCL_CURRENT) keeps every existing
+     * page locked (secrets stay in RAM) but removes MCL_FUTURE so the next
+     * malloc can allocate unlocked pages.  After Argon2 finishes and the work
+     * buffer is freed, we restore MCL_CURRENT | MCL_FUTURE.  The work buffer
+     * itself is not security-sensitive — it holds intermediate Argon2 state
+     * that is useless without the passphrase. */
     if (!work) {
         munlockall();
+        mlockall(MCL_CURRENT);
         did_unlock = 1;
         work       = malloc(work_sz);
     }
 #endif
     if (!work) {
         crypto_wipe(enc_key, KEY);
+#if !defined(_WIN32) && !defined(_WIN64)
+        if (did_unlock) mlockall(MCL_CURRENT | MCL_FUTURE);
+#endif
         return -1;
     }
 
@@ -190,6 +221,17 @@ static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_S
     return 0;
 }
 
+/* Save an encrypted identity key to a file.
+ *
+ * Atomic write guarantee (POSIX): writes to a temp file (path + ".tmp"),
+ * fsyncs, then rename()s over the target.  If any step fails, only the
+ * temp file is removed — the original file is never modified.  This
+ * prevents data loss if the process is killed or the disk fills up
+ * mid-write.  After rename, chmod ensures 0600 even if the directory
+ * has a permissive umask or the file previously had looser permissions.
+ *
+ * On Windows: uses a simple fopen("wb") since rename-over-existing is
+ * not atomic; _chmod tightens permissions after close. */
 int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, size_t pass_len) {
     uint8_t salt[IDENTITY_SALT_SZ], nonce[NONCE_SZ];
     fill_random(salt, sizeof salt);
@@ -204,19 +246,6 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
 
 #if defined(_WIN32) || defined(_WIN64)
     FILE *f = fopen(path, "wb");
-#else
-    int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0600);
-    if (fd < 0) {
-        crypto_wipe(ct, sizeof ct);
-        return -1;
-    }
-    FILE *f = fdopen(fd, "wb");
-    if (!f) {
-        close(fd);
-        crypto_wipe(ct, sizeof ct);
-        return -1;
-    }
-#endif
     if (!f) {
         crypto_wipe(ct, sizeof ct);
         return -1;
@@ -225,14 +254,72 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
     int ok = (fwrite(salt, 1, sizeof salt, f) == sizeof salt && fwrite(nonce, 1, sizeof nonce, f) == sizeof nonce &&
               fwrite(ct, 1, sizeof ct, f) == sizeof ct && fwrite(mac, 1, sizeof mac, f) == sizeof mac);
     int close_ok = (fclose(f) == 0);
-    if (!ok || !close_ok) { unlink(path); }
     crypto_wipe(ct, sizeof ct);
-    return (ok && close_ok) ? 0 : -1;
+    if (!ok || !close_ok) return -1;
+    _chmod(path, 0600);
+    return 0;
+#else
+    /* Build temp path in the same directory for atomic rename. */
+    char tmp_path[PATH_MAX];
+    int  n = snprintf(tmp_path, sizeof tmp_path, "%s.tmp", path);
+    if (n < 0 || (size_t)n >= sizeof tmp_path) {
+        crypto_wipe(ct, sizeof ct);
+        return -1;
+    }
+
+    /* O_EXCL prevents following a symlink-planted .tmp file. */
+    int fd = open(tmp_path, O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW | O_EXCL, 0600);
+    if (fd < 0) {
+        crypto_wipe(ct, sizeof ct);
+        return -1;
+    }
+    FILE *f = fdopen(fd, "wb");
+    if (!f) {
+        close(fd);
+        unlink(tmp_path);
+        crypto_wipe(ct, sizeof ct);
+        return -1;
+    }
+
+    int ok = (fwrite(salt, 1, sizeof salt, f) == sizeof salt && fwrite(nonce, 1, sizeof nonce, f) == sizeof nonce &&
+              fwrite(ct, 1, sizeof ct, f) == sizeof ct && fwrite(mac, 1, sizeof mac, f) == sizeof mac);
+
+    /* fsync before rename to ensure data is on disk. */
+    int sync_ok  = (fsync(fileno(f)) == 0);
+    int close_ok = (fclose(f) == 0);
+
+    if (!ok || !sync_ok || !close_ok) {
+        unlink(tmp_path);
+        crypto_wipe(ct, sizeof ct);
+        return -1;
+    }
+
+    /* Atomic replace: the original file is untouched until this succeeds. */
+    if (rename(tmp_path, path) != 0) {
+        unlink(tmp_path);
+        crypto_wipe(ct, sizeof ct);
+        return -1;
+    }
+
+    /* Re-tighten permissions in case the target file previously existed
+     * with looser permissions (rename preserves the NEW file's mode, but
+     * be explicit for defense in depth). */
+    chmod(path, 0600);
+    crypto_wipe(ct, sizeof ct);
+    return 0;
+#endif
 }
 
 int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY], const char *pass, size_t pass_len) {
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
+#if !defined(_WIN32) && !defined(_WIN64)
+    {
+        struct stat st;
+        if (fstat(fileno(f), &st) == 0 && (st.st_mode & 0077) != 0)
+            fprintf(stderr, "warning: %s has permissive permissions — consider chmod 600\n", path);
+    }
+#endif
 
     uint8_t buf[IDENTITY_FILE_SZ];
     size_t  n = fread(buf, 1, sizeof buf, f);

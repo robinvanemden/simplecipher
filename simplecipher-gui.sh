@@ -134,6 +134,10 @@ chmod 700 "$LAUNCH_SCRIPT"
 # Wrapper that runs the launcher then prompts before closing
 WRAPPER_SCRIPT=$(mktemp /tmp/simplecipher-wrapper.XXXXXX.sh)
 chmod 700 "$WRAPPER_SCRIPT"
+
+# Ensure temp files are cleaned up even if the terminal launch fails or this script is killed
+trap 'rm -f "$LAUNCH_SCRIPT" "$WRAPPER_SCRIPT"' EXIT INT TERM
+
 cat > "$WRAPPER_SCRIPT" <<WRAPPER
 #!/bin/bash
 bash "$LAUNCH_SCRIPT"

@@ -114,8 +114,8 @@ The runtime sandbox tightens in phases. Each phase drops privileges that are no 
 ### Unit and integration tests (CI, blocking)
 
 ```bash
-make test                      # 696 C tests (685 P2P + 11 SOCKS5)
-bash tests/test_cli_flags.sh   # 16 CLI flag integration tests
+make test                      # 700 P2P tests (test_p2p only)
+make test-all                  # 727 total: 700 P2P + 11 SOCKS5 + 16 CLI flag tests
 ```
 
 Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultaneous send), TCP loopback, tamper/replay/reserved-flag rejection, forward secrecy, KDF known-answer vectors, fingerprint verification, SOCKS5 request building, deterministic session vectors.
@@ -142,7 +142,7 @@ Requires [CBMC](https://github.com/diffblue/cbmc).
 python3 tests/cbmc_harness.py
 ```
 
-Bounded model checking on 9 functions: `frame_open`, `frame_build`, `chain_step`, `ratchet_send`, `ratchet_receive`, `session_init`, `format_fingerprint`, `socks5_build_request`, `socks5_reply_skip`. Proves absence of buffer overflow, out-of-bounds access, null pointer dereference, and signed integer overflow for ALL possible inputs (57,161 properties verified).
+Bounded model checking on 9 functions: `frame_open`, `frame_build`, `chain_step`, `ratchet_send`, `ratchet_receive`, `session_init`, `format_fingerprint`, `socks5_build_request`, `socks5_reply_skip`. Proves absence of buffer overflow, out-of-bounds access, null pointer dereference, and signed integer overflow for inputs up to loop bound K=5 (57,161 properties verified). This is bounded model checking — loops deeper than 5 iterations are not explored. Pass `--unwind N` for deeper bounds.
 
 ### Constant-time verification (manual)
 

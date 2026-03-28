@@ -156,10 +156,9 @@ static void *server_thread(void *arg) {
     uint8_t priv[KEY], pub[KEY], peer_pub[KEY];
     uint8_t commit_self[KEY], commit_peer[KEY];
     gen_keypair(priv, pub);
-    make_commit(commit_self, pub);
-
     uint8_t self_nonce[KEY], peer_nonce[KEY];
     fill_random(self_nonce, KEY);
+    make_commit(commit_self, pub, self_nonce);
 
     uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
@@ -170,7 +169,7 @@ static void *server_thread(void *arg) {
     memcpy(peer_nonce, in1 + 1 + KEY, KEY);
     if (exchange(ctx->fd, 0, pub, KEY, peer_pub, KEY) != 0) goto done;
     if (in1[0] != PROTOCOL_VERSION) goto done;
-    if (!verify_commit(commit_peer, peer_pub)) goto done;
+    if (!verify_commit(commit_peer, peer_pub, peer_nonce)) goto done;
     if (session_init(&ctx->sess, 0, priv, pub, peer_pub, self_nonce, peer_nonce, ctx->sas_key) != 0) goto done;
     ctx->ok = 1;
 done:
@@ -246,10 +245,9 @@ int main(void) {
     uint8_t priv[KEY], pub[KEY], peer_pub[KEY];
     uint8_t commit_self[KEY], commit_peer[KEY];
     gen_keypair(priv, pub);
-    make_commit(commit_self, pub);
-
     uint8_t s5_self_nonce[KEY], s5_peer_nonce[KEY];
     fill_random(s5_self_nonce, KEY);
+    make_commit(commit_self, pub, s5_self_nonce);
 
     uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
@@ -261,7 +259,7 @@ int main(void) {
     memcpy(s5_peer_nonce, in1 + 1 + KEY, KEY);
     hs_ok = hs_ok && (exchange(client, 1, pub, KEY, peer_pub, KEY) == 0);
     hs_ok = hs_ok && (in1[0] == PROTOCOL_VERSION);
-    hs_ok = hs_ok && verify_commit(commit_peer, peer_pub);
+    hs_ok = hs_ok && verify_commit(commit_peer, peer_pub, s5_peer_nonce);
     TEST("client handshake", hs_ok);
 
     pthread_join(srv_tid, NULL);

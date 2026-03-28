@@ -143,6 +143,10 @@ config_t parse_args(int argc, char *argv[]) {
                 cfg.trust_fingerprint = 1;
             } else if (strcmp(argv[i], "--identity") == 0 && i + 1 < argc) {
                 cfg.identity_path = argv[++i];
+            } else if (strcmp(argv[i], "--socks5") == 0 || strcmp(argv[i], "--peer-fingerprint") == 0 ||
+                       strcmp(argv[i], "--identity") == 0) {
+                fprintf(stderr, "  %s requires an argument\n", argv[i]);
+                exit(EXIT_USAGE);
             } else {
                 argv[out++] = argv[i];
             }

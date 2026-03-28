@@ -573,22 +573,6 @@ static void *session_thread(void *arg) {
      * cover traffic decision in the event loop. */
     int used_socks5 = (socks5_host != NULL);
 
-    if (host) {
-        crypto_wipe(host, strlen(host));
-        free(host);
-        host = NULL;
-    }
-    if (socks5_host) {
-        crypto_wipe(socks5_host, strlen(socks5_host));
-        free(socks5_host);
-        socks5_host = NULL;
-    }
-    if (socks5_port) {
-        crypto_wipe(socks5_port, strlen(socks5_port));
-        free(socks5_port);
-        socks5_port = NULL;
-    }
-
     if (fd == INVALID_SOCK) {
         LOGE("connection failed");
         jni_call_str(env, cb, mid_onConnectionFailed, "Connection failed", "conn_fail");
@@ -835,6 +819,9 @@ static void *session_thread(void *arg) {
      * Same mechanism as the desktop --socks5 / --cover-traffic flag. */
     int      cover      = used_socks5;
     uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
+    uint8_t  pending_msg[MAX_MSG + 1];
+    uint16_t pending_len = 0;
+    memset(pending_msg, 0, sizeof pending_msg);
 
     {
         struct pollfd fds[2];
@@ -877,6 +864,20 @@ static void *session_thread(void *arg) {
                     break;
                 }
 
+                /* Rate-limit ALL incoming frames (not just messages) to
+                 * prevent CPU exhaustion from cover/ratchet frame spam
+                 * before expensive AEAD decryption + X25519 work. */
+                msg_count_window++;
+                uint64_t now_rl = monotonic_ms();
+                if (now_rl - msg_window_start >= 1000) {
+                    msg_count_window = 1;
+                    msg_window_start = now_rl;
+                } else if (msg_count_window > 50) {
+                    /* Drop silently — the peer is flooding. */
+                    crypto_wipe(frame, sizeof frame);
+                    continue;
+                }
+
                 int fo_rc = frame_open(&sess, frame, plain, &plen);
                 if (fo_rc != 0) {
                     crypto_wipe(frame, sizeof frame);
@@ -899,20 +900,6 @@ static void *session_thread(void *arg) {
                 if (plen > 0) { /* len==0 is a cover-traffic dummy — silently discard */
                     plain[plen] = '\0';
                     sanitize_peer_text(plain, plen);
-
-                    /* Rate-limit: max 50 messages per second to prevent
-                     * handler queue flooding from a malicious peer. */
-                    msg_count_window++;
-                    uint64_t now_rl = monotonic_ms();
-                    if (now_rl - msg_window_start >= 1000) {
-                        msg_count_window = 1;
-                        msg_window_start = now_rl;
-                    } else if (msg_count_window > 50) {
-                        /* Drop silently — the peer is flooding. */
-                        crypto_wipe(frame, sizeof frame);
-                        crypto_wipe(plain, sizeof plain);
-                        continue;
-                    }
 
                     jstring text = (*env)->NewStringUTF(env, (char *)plain);
                     if (!text) {
@@ -990,7 +977,24 @@ static void *session_thread(void *arg) {
                         break;
                     }
 
-                    /* Encrypt and send */
+                    if (cover) {
+                        /* Queue for next cover tick — all outgoing frames
+                         * follow the same timing distribution. */
+                        if (pending_len > 0) {
+                            crypto_wipe(msg_buf, plen);
+                            (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
+                            if (jni_callback_ok(env) != 0) { running = 0; break; }
+                            continue;
+                        }
+                        if (plen > 0) memcpy(pending_msg, msg_buf, plen);
+                        pending_len = plen;
+                        crypto_wipe(msg_buf, plen);
+                        (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)1);
+                        if (jni_callback_ok(env) != 0) { running = 0; break; }
+                        continue;
+                    }
+
+                    /* No cover: encrypt and send immediately */
                     uint8_t frame[FRAME_SZ], next_tx[KEY];
                     if (frame_build(&sess, msg_buf, plen, frame, next_tx) != 0) {
                         LOGE("frame_build failed");
@@ -1020,11 +1024,8 @@ static void *session_thread(void *arg) {
                         continue;
                     }
 
-                    /* Commit chain advance after successful send */
                     memcpy(sess.tx, next_tx, KEY);
                     sess.tx_seq++;
-                    /* Cover timer NOT reset on real sends — schedule runs independently
-                     * so real messages blend into the cover traffic pattern. */
 
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(next_tx, sizeof next_tx);
@@ -1047,10 +1048,14 @@ static void *session_thread(void *arg) {
                 }
             }
 
-            /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+            /* ---- Cover traffic: single send point for all outgoing frames.
+             * Queued real messages replace the cover payload so every frame
+             * follows the same timing distribution — defeating analysis. */
             if (cover && running && monotonic_ms() >= next_cover) {
-                uint8_t frame[FRAME_SZ], next_tx[KEY];
-                if (frame_build(&sess, NULL, 0, frame, next_tx) != 0) {
+                uint8_t        frame[FRAME_SZ], next_tx[KEY];
+                const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+                uint16_t       tx_len  = pending_len;
+                if (frame_build(&sess, payload, tx_len, frame, next_tx) != 0) {
                     crypto_wipe(frame, sizeof frame);
                     crypto_wipe(next_tx, sizeof next_tx);
                     jni_call_str(env, cb, mid_onDisconnected, "Internal error", "cover_build");
@@ -1064,6 +1069,10 @@ static void *session_thread(void *arg) {
                 }
                 memcpy(sess.tx, next_tx, KEY);
                 sess.tx_seq++;
+                if (pending_len > 0) {
+                    crypto_wipe(pending_msg, sizeof pending_msg);
+                    pending_len = 0;
+                }
                 crypto_wipe(frame, sizeof frame);
                 crypto_wipe(next_tx, sizeof next_tx);
                 next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
@@ -1104,6 +1113,24 @@ cleanup:
     if (fd != INVALID_SOCK) {
         sock_shutdown_both(fd);
         close_sock(fd);
+    }
+
+    /* Wipe and free strdup'd connection metadata — must happen on ALL
+     * exit paths (including early gotos before the handshake). */
+    if (host) {
+        crypto_wipe(host, strlen(host));
+        free(host);
+        host = NULL;
+    }
+    if (socks5_host) {
+        crypto_wipe(socks5_host, strlen(socks5_host));
+        free(socks5_host);
+        socks5_host = NULL;
+    }
+    if (socks5_port) {
+        crypto_wipe(socks5_port, strlen(socks5_port));
+        free(socks5_port);
+        socks5_port = NULL;
     }
 
     /* Close our read end of the pipe.  The write end (g_pipe_wr) is

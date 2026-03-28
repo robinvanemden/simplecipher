@@ -129,8 +129,11 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
     uint16_t plen;
     int      auth_fails = 0;
     uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
+    uint8_t  pending_msg[MAX_MSG + 1];
+    uint16_t pending_len = 0;
 
     memset(line, 0, sizeof line);
+    memset(pending_msg, 0, sizeof pending_msg);
 
     /* Show initial prompt. */
     cli_redraw_input(line, line_len);
@@ -239,7 +242,6 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
 
             /* Enter: send the message if non-empty. */
             if (ch == '\r' || ch == '\n') {
-                /* Print a newline to move past the current input line. */
                 {
                     const char *nl = "\n";
                     ssize_t     r;
@@ -250,8 +252,6 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                     cli_redraw_input(line, line_len);
                     continue;
                 }
-                /* Cap at MAX_MSG_RATCHET (not MAX_MSG) because the next send may
-                 * trigger a DH ratchet, which consumes 32 bytes of payload space. */
                 if (line_len > (size_t)MAX_MSG_RATCHET) {
                     const char *msg = "[too long]\n";
                     ssize_t     r;
@@ -262,8 +262,22 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                     continue;
                 }
 
-                /* Build the encrypted frame.  Do not advance the chain
-                 * until write_exact succeeds (same logic as the original). */
+                if (cover) {
+                    /* Queue for next cover tick — all outgoing frames
+                     * follow the same timing distribution. */
+                    if (pending_len > 0) {
+                        cli_redraw_input(line, line_len);
+                        continue;
+                    }
+                    memcpy(pending_msg, line, line_len);
+                    pending_len = (uint16_t)line_len;
+                    secure_chat_print(" me", line);
+                    crypto_wipe(line, sizeof line);
+                    line_len = 0;
+                    cli_redraw_input(line, line_len);
+                    continue;
+                }
+
                 if (frame_build(sess, (const uint8_t *)line, (uint16_t)line_len, frame, next_tx) != 0) {
                     crypto_wipe(line, sizeof line);
                     crypto_wipe(frame, sizeof frame);
@@ -281,13 +295,9 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                     break;
                 }
 
-                /* Write succeeded -- commit the chain advance. */
                 memcpy(sess->tx, next_tx, KEY);
                 sess->tx_seq++;
-                /* Cover timer NOT reset on real sends — schedule runs independently
-                 * so real messages blend into the cover traffic pattern. */
 
-                /* Print our own message, then redraw prompt for next input. */
                 secure_chat_print(" me", line);
 
                 crypto_wipe(line, sizeof line);
@@ -315,9 +325,13 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
              * rendering issues with multi-byte sequences in the line buffer. */
         }
 
-        /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+        /* ---- Cover traffic: single send point for all outgoing frames.
+         * Queued real messages replace the cover payload so every frame
+         * follows the same timing distribution — defeating analysis. */
         if (cover && g_running && monotonic_ms() >= next_cover) {
-            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) {
+            const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+            uint16_t       tx_len  = pending_len;
+            if (frame_build(sess, payload, tx_len, frame, next_tx) != 0) {
                 secure_chat_print("system", "cover traffic error -- session ended");
                 break;
             }
@@ -327,17 +341,21 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
             }
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
+            if (pending_len > 0) {
+                crypto_wipe(pending_msg, sizeof pending_msg);
+                pending_len = 0;
+            }
             crypto_wipe(frame, sizeof frame);
             crypto_wipe(next_tx, sizeof next_tx);
             next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
         }
     }
 
-    /* Wipe all sensitive data from the stack before returning. */
     crypto_wipe(line, sizeof line);
     crypto_wipe(frame, sizeof frame);
     crypto_wipe(next_tx, sizeof next_tx);
     crypto_wipe(plain, sizeof plain);
+    crypto_wipe(pending_msg, sizeof pending_msg);
 }
 
 /* ---- Cooked-mode fallback -----------------------------------------------
@@ -353,9 +371,12 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
     uint16_t plen;
     int      auth_fails = 0;
     uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
+    uint8_t  pending_msg[MAX_MSG + 1];
+    uint16_t pending_len = 0;
 
     memset(frame, 0, sizeof frame);
     memset(line, 0, sizeof line);
+    memset(pending_msg, 0, sizeof pending_msg);
 
     while (g_running) {
         struct pollfd fds[2];
@@ -431,8 +452,20 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 continue;
             }
 
-            /* Build the frame (compute next_chain) but do not advance
-             * the chain yet -- only commit after a successful write. */
+            if (cover) {
+                /* Queue for next cover tick — all outgoing frames
+                 * follow the same timing distribution. */
+                if (pending_len > 0) {
+                    crypto_wipe(line, sizeof line);
+                    continue;
+                }
+                memcpy(pending_msg, line, n);
+                pending_len = (uint16_t)n;
+                secure_chat_print(" me", line);
+                crypto_wipe(line, sizeof line);
+                continue;
+            }
+
             if (frame_build(sess, (const uint8_t *)line, (uint16_t)n, frame, next_tx) != 0) {
                 crypto_wipe(line, sizeof line);
                 crypto_wipe(frame, sizeof frame);
@@ -448,11 +481,8 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 break;
             }
 
-            /* Write succeeded -- now commit the chain advance. */
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
-            /* Cover timer NOT reset on real sends — schedule runs independently
-             * so real messages blend into the cover traffic pattern. */
 
             secure_chat_print(" me", line);
 
@@ -461,9 +491,13 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
             crypto_wipe(next_tx, sizeof next_tx);
         }
 
-        /* ---- Cover traffic: send encrypted dummy frame on schedule ---- */
+        /* ---- Cover traffic: single send point for all outgoing frames.
+         * Queued real messages replace the cover payload so every frame
+         * follows the same timing distribution — defeating analysis. */
         if (cover && g_running && monotonic_ms() >= next_cover) {
-            if (frame_build(sess, NULL, 0, frame, next_tx) != 0) {
+            const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+            uint16_t       tx_len  = pending_len;
+            if (frame_build(sess, payload, tx_len, frame, next_tx) != 0) {
                 secure_chat_print("system", "cover traffic error -- session ended");
                 break;
             }
@@ -473,17 +507,21 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
             }
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
+            if (pending_len > 0) {
+                crypto_wipe(pending_msg, sizeof pending_msg);
+                pending_len = 0;
+            }
             crypto_wipe(frame, sizeof frame);
             crypto_wipe(next_tx, sizeof next_tx);
             next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
         }
     }
 
-    /* Wipe all sensitive data from the stack before returning. */
     crypto_wipe(line, sizeof line);
     crypto_wipe(frame, sizeof frame);
     crypto_wipe(next_tx, sizeof next_tx);
     crypto_wipe(plain, sizeof plain);
+    crypto_wipe(pending_msg, sizeof pending_msg);
 }
 
 /* ---- Public entry point -------------------------------------------------
