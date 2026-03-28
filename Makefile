@@ -56,7 +56,7 @@ simplecipher: $(OBJ)
 
 # Suppress -Wconversion for vendored Monocypher (upstream code, do not modify)
 lib/monocypher.o: lib/monocypher.c
-	$(CC) $(ALL_CFLAGS) -Wno-conversion -c -o $@ $<
+	$(CC) $(ALL_CFLAGS) -Wno-conversion -fno-lto -c -o $@ $<
 
 test: tests/test_p2p
 	./tests/test_p2p

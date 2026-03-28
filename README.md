@@ -549,6 +549,12 @@ When available, `.minisig` files are attached to the release:
 minisign -Vm simplecipher-linux-x86_64 -p <pubkey>
 ```
 
+## Export Notice
+
+SimpleCipher contains cryptographic functionality (X25519, XChaCha20-Poly1305, BLAKE2b, Argon2id).
+The source code is publicly available under the MIT license. Distribution may be subject to export
+control regulations in your jurisdiction.
+
 ## License
 
 [MIT](LICENSE) — Monocypher is [BSD-2-Clause / CC0](lib/monocypher.h).

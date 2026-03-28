@@ -109,7 +109,7 @@ else()
 endif()
 
 # Suppress -Wconversion for vendored Monocypher (upstream code, do not modify).
-set_source_files_properties(lib/monocypher.c PROPERTIES COMPILE_FLAGS -Wno-conversion)
+set_source_files_properties(lib/monocypher.c PROPERTIES COMPILE_FLAGS "-Wno-conversion -fno-lto")
 
 add_executable(simplecipher src/main.c ${CORE_SRC} ${PLATFORM_SRC})
 target_include_directories(simplecipher PRIVATE src lib)
