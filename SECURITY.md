@@ -44,7 +44,7 @@ The following are out of scope:
 
 SimpleCipher's verification stack is documented in the README. If you're auditing:
 
-- `make test` — 769 P2P unit/integration tests; `make test-all` — 795 total (769 P2P + 10 SOCKS5 + 16 CLI flag tests)
+- `make test` — 879 P2P unit/integration tests; `make test-all` — 905 total (879 P2P + 10 SOCKS5 + 16 CLI flag tests)
 - `python3 tests/cbmc_harness.py` — CBMC formal verification (57K properties)
 - `valgrind --track-origins=yes ./test_timecop` — [constant-time](docs/GLOSSARY.md#constant-time) verification
 - [ASan + UBSan + MSan](docs/GLOSSARY.md#sanitizer) run in CI on every push

@@ -118,8 +118,8 @@ The runtime sandbox tightens in phases. Each phase drops privileges that are no 
 ### Unit and integration tests (CI, blocking)
 
 ```bash
-make test                      # 769 P2P tests (test_p2p only)
-make test-all                  # 795 total: 769 P2P + 10 SOCKS5 + 16 CLI flag tests
+make test                      # 879 P2P tests (test_p2p only)
+make test-all                  # 905 total: 879 P2P + 10 SOCKS5 + 16 CLI flag tests
 ```
 
 Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultaneous send), TCP loopback, tamper/replay/reserved-flag rejection, forward secrecy, KDF known-answer vectors, fingerprint verification, SOCKS5 request building, deterministic session vectors.
