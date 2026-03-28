@@ -742,8 +742,9 @@ static socket_t connect_socket_flags(const char *host, const char *port, int ai_
 #if defined(_WIN32) || defined(_WIN64)
     g_interrupt_sock = srv;
 #endif
-    do { fd = accept(srv, nullptr, nullptr); } while (fd == INVALID_SOCK && g_running &&
-                                                     (errno == EINTR || errno == ECONNABORTED));
+    do {
+        fd = accept(srv, nullptr, nullptr);
+    } while (fd == INVALID_SOCK && g_running && (errno == EINTR || errno == ECONNABORTED));
 #if defined(_WIN32) || defined(_WIN64)
     g_interrupt_sock = INVALID_SOCKET;
 #endif
