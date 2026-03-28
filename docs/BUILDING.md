@@ -46,8 +46,11 @@ See [HARDENING.md](HARDENING.md) for the complete list of security compiler and 
 ## Tests
 
 ```bash
-# Run the full test suite (669 tests: 659 P2P + 10 SOCKS5)
+# Run the full test suite (669 C tests: 659 P2P + 10 SOCKS5)
 make test
+
+# Run CLI flag integration tests (11 tests)
+bash tests/test_cli_flags.sh
 
 # Run the full local test suite (P2P + build + binary analysis)
 bash tests/test_binary.sh
