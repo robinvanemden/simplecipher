@@ -139,3 +139,89 @@ void format_fingerprint(char out[20], const uint8_t pub[KEY]) {
              hash[6], hash[7]);
     crypto_wipe(hash, sizeof hash);
 }
+
+/* ---- Persistent identity keys ------------------------------------------- */
+
+/* Argon2id parameters: ~100 MB memory, 3 passes, single-threaded.
+ * Stretches a human-chosen passphrase into a 32-byte encryption key.
+ * ~0.5-1 second on modern hardware; makes GPU brute-force expensive. */
+static const crypto_argon2_config identity_kdf_config = {
+    .algorithm = CRYPTO_ARGON2_ID,
+    .nb_blocks = 100000,  /* ~100 MB */
+    .nb_passes = 3,
+    .nb_lanes  = 1
+};
+
+/* Derive an encryption key from a passphrase and salt. */
+static void identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_SZ],
+                          const char *pass, size_t pass_len) {
+    void *work = malloc((size_t)identity_kdf_config.nb_blocks * 1024);
+    if (!work) { memset(enc_key, 0, KEY); return; }
+
+    crypto_argon2_inputs inputs = {
+        .pass      = (const uint8_t *)pass,
+        .salt      = salt,
+        .pass_size = (uint32_t)pass_len,
+        .salt_size = IDENTITY_SALT_SZ
+    };
+    crypto_argon2(enc_key, KEY, work, identity_kdf_config,
+                  inputs, crypto_argon2_no_extras);
+    crypto_wipe(work, (size_t)identity_kdf_config.nb_blocks * 1024);
+    free(work);
+}
+
+int identity_save(const char *path, const uint8_t priv[KEY],
+                  const char *pass, size_t pass_len) {
+    uint8_t salt[IDENTITY_SALT_SZ], nonce[NONCE_SZ];
+    fill_random(salt, sizeof salt);
+    fill_random(nonce, sizeof nonce);
+
+    uint8_t enc_key[KEY];
+    identity_kdf(enc_key, salt, pass, pass_len);
+
+    uint8_t ct[KEY], mac[MAC_SZ];
+    crypto_aead_lock(ct, mac, enc_key, nonce, NULL, 0, priv, KEY);
+    crypto_wipe(enc_key, sizeof enc_key);
+
+    FILE *f = fopen(path, "wb");
+    if (!f) { crypto_wipe(ct, sizeof ct); return -1; }
+
+    int ok = (fwrite(salt, 1, sizeof salt, f) == sizeof salt
+           && fwrite(nonce, 1, sizeof nonce, f) == sizeof nonce
+           && fwrite(ct, 1, sizeof ct, f) == sizeof ct
+           && fwrite(mac, 1, sizeof mac, f) == sizeof mac);
+    fclose(f);
+    crypto_wipe(ct, sizeof ct);
+    return ok ? 0 : -1;
+}
+
+int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY],
+                  const char *pass, size_t pass_len) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    uint8_t buf[IDENTITY_FILE_SZ];
+    size_t n = fread(buf, 1, sizeof buf, f);
+    fclose(f);
+    if (n != IDENTITY_FILE_SZ) { crypto_wipe(buf, sizeof buf); return -1; }
+
+    const uint8_t *salt  = buf;
+    const uint8_t *nonce = buf + IDENTITY_SALT_SZ;
+    const uint8_t *ct    = buf + IDENTITY_SALT_SZ + NONCE_SZ;
+    const uint8_t *mac   = buf + IDENTITY_SALT_SZ + NONCE_SZ + KEY;
+
+    uint8_t enc_key[KEY];
+    identity_kdf(enc_key, salt, pass, pass_len);
+
+    int ok = crypto_aead_unlock(priv, mac, enc_key, nonce, NULL, 0, ct, KEY);
+    crypto_wipe(enc_key, sizeof enc_key);
+    crypto_wipe(buf, sizeof buf);
+
+    if (ok != 0) {
+        crypto_wipe(priv, KEY);
+        return -1;
+    }
+
+    crypto_x25519_public_key(pub, priv);
+    return 0;
+}
