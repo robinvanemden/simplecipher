@@ -5137,9 +5137,9 @@ static void test_cover_traffic(void) {
     /* cover_delay_ms returns values in [500, 2500] */
     int all_in_range  = 1;
     int saw_different = 0;
-    int first         = cover_delay_ms();
+    unsigned first    = cover_delay_ms();
     for (int i = 0; i < 200; i++) {
-        int d = cover_delay_ms();
+        unsigned d = cover_delay_ms();
         if (d < 500 || d > 2500) {
             all_in_range = 0;
             break;
@@ -5986,7 +5986,7 @@ static void test_verify_peer_fingerprint(void) {
     format_fingerprint(fp, pub);
 
     /* Matching fingerprint should pass */
-    TEST("matching fingerprint passes", verify_peer_fingerprint(pub, fp, 0) == 0);
+    TEST("matching fingerprint passes", verify_peer_fingerprint(pub, fp) == 0);
 
     /* Matching with dashes removed should pass */
     char no_dashes[20];
@@ -5994,24 +5994,24 @@ static void test_verify_peer_fingerprint(void) {
     for (int i = 0; fp[i]; i++)
         if (fp[i] != '-') no_dashes[j++] = fp[i];
     no_dashes[j] = '\0';
-    TEST("no-dash fingerprint passes", verify_peer_fingerprint(pub, no_dashes, 0) == 0);
+    TEST("no-dash fingerprint passes", verify_peer_fingerprint(pub, no_dashes) == 0);
 
     /* Lowercase should match (case-insensitive) */
     char lower[20];
     for (int i = 0; fp[i]; i++) lower[i] = (fp[i] >= 'A' && fp[i] <= 'Z') ? (char)(fp[i] + 32) : fp[i];
     lower[strlen(fp)] = '\0';
-    TEST("lowercase fingerprint passes", verify_peer_fingerprint(pub, lower, 0) == 0);
+    TEST("lowercase fingerprint passes", verify_peer_fingerprint(pub, lower) == 0);
 
     /* Wrong fingerprint should fail */
-    TEST("wrong fingerprint fails", verify_peer_fingerprint(pub, "0000-0000-0000-0000", 0) == -1);
+    TEST("wrong fingerprint fails", verify_peer_fingerprint(pub, "0000-0000-0000-0000") == -1);
 
     /* NULL expected should always pass (no verification requested) */
-    TEST("null expected passes", verify_peer_fingerprint(pub, NULL, 0) == 0);
+    TEST("null expected passes", verify_peer_fingerprint(pub, NULL) == 0);
 
     /* Different key should fail same fingerprint */
     uint8_t priv2[KEY], pub2[KEY];
     gen_keypair(priv2, pub2);
-    TEST("different key fails", verify_peer_fingerprint(pub2, fp, 0) == -1);
+    TEST("different key fails", verify_peer_fingerprint(pub2, fp) == -1);
 
     crypto_wipe(priv, sizeof priv);
     crypto_wipe(pub, sizeof pub);

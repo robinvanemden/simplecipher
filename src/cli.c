@@ -21,7 +21,7 @@ void secure_chat_print(const char *label, const char *msg) {
     char t[TIMESTAMP_BUF];
     char buf[MAX_MSG + 64]; /* message + timestamp + label + formatting */
     int  n;
-    ts(t, sizeof t);
+    format_timestamp(t, sizeof t);
     n = snprintf(buf, sizeof buf, "[%s] %s: %s\n", t, label, msg);
     if (n < 0) n = 0;
     if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;

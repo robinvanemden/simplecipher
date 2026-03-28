@@ -164,29 +164,30 @@ void set_sock_opts(socket_t fd) {
 /* Send a padded exchange message as a single write.
  * Wire format: [pad_len(1)][payload][random_padding].
  * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
-static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t dl) {
+static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t deadline) {
     uint8_t buf[1 + 2 * KEY + WIRE_PAD_MAX]; /* max: hdr(1) + commitment(KEY) + nonce(KEY) + pad */
     uint8_t r;
     fill_random(&r, 1);
+    if (1 + payload_n + r > sizeof buf) r = (uint8_t)(sizeof buf - 1 - payload_n);
     buf[0] = r;
     memcpy(buf + 1, payload, payload_n);
     if (r > 0) fill_random(buf + 1 + payload_n, r);
 
-    int rc = write_exact_dl(fd, buf, 1 + payload_n + (size_t)r, dl);
+    int rc = write_exact_dl(fd, buf, 1 + payload_n + (size_t)r, deadline);
     crypto_wipe(buf, sizeof buf);
     return rc;
 }
 
 /* Receive a padded exchange message.  Reads 1-byte pad_len, then
  * expected_n bytes of payload, then drains pad_len bytes of padding. */
-static int exchange_recv(socket_t fd, uint8_t *payload, size_t expected_n, uint64_t dl) {
+static int exchange_recv(socket_t fd, uint8_t *payload, size_t expected_n, uint64_t deadline) {
     uint8_t pad_len;
-    if (read_exact_dl(fd, &pad_len, 1, dl) != 0) return -1;
-    if (read_exact_dl(fd, payload, expected_n, dl) != 0) return -1;
+    if (read_exact_dl(fd, &pad_len, 1, deadline) != 0) return -1;
+    if (read_exact_dl(fd, payload, expected_n, deadline) != 0) return -1;
 
     if (pad_len > 0) {
         uint8_t drain[255];
-        if (read_exact_dl(fd, drain, pad_len, dl) != 0) return -1;
+        if (read_exact_dl(fd, drain, pad_len, deadline) != 0) return -1;
         crypto_wipe(drain, sizeof drain);
     }
     return 0;
@@ -197,13 +198,13 @@ static int exchange_recv(socket_t fd, uint8_t *payload, size_t expected_n, uint6
      * set_sock_timeout (per-syscall), this bounds total wall-clock time
      * even if an adversary dribbles one byte just under the per-call
      * timeout.  15 seconds is generous for a padded handshake round. */
-    uint64_t dl = monotonic_ms() + EXCHANGE_DEADLINE_MS;
+    uint64_t deadline = monotonic_ms() + EXCHANGE_DEADLINE_MS;
     if (we_init) {
-        if (exchange_send(fd, out, out_n, dl) != 0) return -1;
-        if (exchange_recv(fd, in, in_n, dl) != 0) return -1;
+        if (exchange_send(fd, out, out_n, deadline) != 0) return -1;
+        if (exchange_recv(fd, in, in_n, deadline) != 0) return -1;
     } else {
-        if (exchange_recv(fd, in, in_n, dl) != 0) return -1;
-        if (exchange_send(fd, out, out_n, dl) != 0) return -1;
+        if (exchange_recv(fd, in, in_n, deadline) != 0) return -1;
+        if (exchange_send(fd, out, out_n, deadline) != 0) return -1;
     }
     return 0;
 }
@@ -465,19 +466,19 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
      * SO_RCVTIMEO alone is per-recv(), so a byte-dribble attack (one byte
      * just under the timeout) can keep the connection alive indefinitely.
      * The deadline catches this: total wall-clock time is bounded. */
-    uint64_t dl = monotonic_ms() + 30000;
+    uint64_t deadline = monotonic_ms() + 30000;
     set_sock_timeout(fd, 5); /* short per-call timeout complements the deadline */
 
     /* Phase 1: SOCKS5 greeting — offer "no authentication" (method 0x00). */
     uint8_t greeting[3] = {0x05, 0x01, 0x00};
-    if (write_exact_dl(fd, greeting, 3, dl) != 0) {
+    if (write_exact_dl(fd, greeting, 3, deadline) != 0) {
         fprintf(stderr, "  SOCKS5: failed to send greeting to proxy\n");
         close_sock(fd);
         return INVALID_SOCK;
     }
 
     uint8_t greet_reply[2];
-    if (read_exact_dl(fd, greet_reply, 2, dl) != 0 || greet_reply[0] != 0x05 || greet_reply[1] != 0x00) {
+    if (read_exact_dl(fd, greet_reply, 2, deadline) != 0 || greet_reply[0] != 0x05 || greet_reply[1] != 0x00) {
         fprintf(stderr, "  SOCKS5: proxy rejected authentication method\n");
         close_sock(fd);
         return INVALID_SOCK;
@@ -491,7 +492,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
         close_sock(fd);
         return INVALID_SOCK;
     }
-    if (write_exact_dl(fd, req, (size_t)req_len, dl) != 0) {
+    if (write_exact_dl(fd, req, (size_t)req_len, deadline) != 0) {
         fprintf(stderr, "  SOCKS5: failed to send connect request\n");
         close_sock(fd);
         return INVALID_SOCK;
@@ -500,7 +501,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     /* Phase 3: Read and parse CONNECT reply.
      * Validate version (0x05), status (0x00 = success), and reserved (0x00). */
     uint8_t reply[4];
-    if (read_exact_dl(fd, reply, 4, dl) != 0) {
+    if (read_exact_dl(fd, reply, 4, deadline) != 0) {
         fprintf(stderr, "  SOCKS5: no reply from proxy\n");
         close_sock(fd);
         return INVALID_SOCK;
@@ -525,7 +526,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     int skip;
     if (reply[3] == 0x03) {
         uint8_t dlen;
-        if (read_exact_dl(fd, &dlen, 1, dl) != 0) {
+        if (read_exact_dl(fd, &dlen, 1, deadline) != 0) {
             close_sock(fd);
             return INVALID_SOCK;
         }
@@ -541,20 +542,16 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
 
     /* Drain the bound-address bytes. */
     uint8_t drain[256 + 2];
-    if ((size_t)skip > sizeof drain || read_exact_dl(fd, drain, (size_t)skip, dl) != 0) {
+    if ((size_t)skip > sizeof drain || read_exact_dl(fd, drain, (size_t)skip, deadline) != 0) {
         fprintf(stderr, "  SOCKS5: malformed reply from proxy\n");
         close_sock(fd);
         return INVALID_SOCK;
     }
 
     /* Wipe SOCKS5 buffers — req contains the target hostname (possibly
-     * a .onion address), drain contains the proxy's bound address.
-     * Use volatile memset since network.c doesn't include crypto.h. */
-    {
-        volatile uint8_t *p;
-        for (p = req; p < req + sizeof req; p++) *p = 0;
-        for (p = drain; p < drain + sizeof drain; p++) *p = 0;
-    }
+     * a .onion address), drain contains the proxy's bound address. */
+    crypto_wipe(req, sizeof req);
+    crypto_wipe(drain, sizeof drain);
 
     /* Clear the temporary timeout — the caller sets its own. */
     set_sock_timeout(fd, 0);

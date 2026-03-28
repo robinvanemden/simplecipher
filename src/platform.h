@@ -211,7 +211,7 @@ enum { TIMESTAMP_BUF = 16 };
 
 /* Write the current local time as "HH:MM:SS" into buf (size n).
  * Uses the thread-safe localtime_r (POSIX) / localtime_s (Windows). */
-void ts(char *buf, size_t n);
+void format_timestamp(char *buf, size_t n);
 
 /* Encode a 64-bit integer in little-endian byte order.
  * Used to write sequence numbers into frames consistently on all platforms. */

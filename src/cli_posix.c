@@ -250,6 +250,8 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                     cli_redraw_input(line, line_len);
                     continue;
                 }
+                /* Cap at MAX_MSG_RATCHET (not MAX_MSG) because the next send may
+                 * trigger a DH ratchet, which consumes 32 bytes of payload space. */
                 if (line_len > (size_t)MAX_MSG_RATCHET) {
                     const char *msg = "[too long]\n";
                     ssize_t     r;
@@ -421,6 +423,8 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 crypto_wipe(line, sizeof line);
                 continue;
             }
+            /* Cap at MAX_MSG_RATCHET (not MAX_MSG) because the next send may
+             * trigger a DH ratchet, which consumes 32 bytes of payload space. */
             if (n > (size_t)MAX_MSG_RATCHET) {
                 printf("[too long -- max %d bytes]\n", MAX_MSG_RATCHET);
                 crypto_wipe(line, sizeof line);

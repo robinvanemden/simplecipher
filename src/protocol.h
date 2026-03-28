@@ -151,6 +151,6 @@ void sanitize_peer_text(uint8_t *buf, uint16_t len);
  * fingerprint.  The range provides ~0.4-2 frames/sec average throughput
  * — enough to mask real message timing over Tor without excessive
  * bandwidth (~170-500 bytes/sec overhead). */
-int cover_delay_ms(void);
+unsigned cover_delay_ms(void);
 
 #endif /* SIMPLECIPHER_PROTOCOL_H */

@@ -434,7 +434,8 @@ int main(int argc, char *argv[]) {
      * In connect mode with --peer-fingerprint, verify the peer's key matches
      * the expected fingerprint.  This catches MITM attacks even before the
      * SAS comparison, and does not require an interactive voice call. */
-    if (verify_peer_fingerprint(peer_pub, cfg.peer_fp_expected, cfg.tui_mode) != 0) {
+    if (verify_peer_fingerprint(peer_pub, cfg.peer_fp_expected) != 0) {
+        if (cfg.tui_mode) tui_restore_term();
         rc = EXIT_MITM;
         goto out;
     }

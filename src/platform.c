@@ -688,7 +688,7 @@ BOOL WINAPI on_console_ctrl(DWORD event) {
 /* Write the current local time as "HH:MM:SS" into buf (size n).
  * Uses the thread-safe localtime_r (POSIX) / localtime_s (Windows).
  * Falls back to "??:??:??" if strftime cannot fit the result. */
-void ts(char *buf, size_t n) {
+void format_timestamp(char *buf, size_t n) {
     time_t    now = time(nullptr);
     struct tm tmv;
 #if defined(_WIN32) || defined(_WIN64)

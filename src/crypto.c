@@ -10,6 +10,9 @@
  */
 
 #include "crypto.h"
+
+static const char *const DOMAIN_COMMIT = "cipher commit v3";
+
 #if !defined(_WIN32) && !defined(_WIN64)
 #    include <fcntl.h>    /* open() with O_CREAT for 0600 key file permissions */
 #    include <sys/mman.h> /* mlockall/munlockall for Argon2 work buffer */
@@ -103,7 +106,7 @@ void chain_step(const uint8_t chain[32], uint8_t mk[32], uint8_t next[32]) {
  *
  * With commitment, Mallory must commit to her fake keys before she sees
  * A or B.  She cannot adapt after the fact, so the search attack fails. */
-void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]) { domain_hash(commit, "cipher commit v3", pub, KEY); }
+void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]) { domain_hash(commit, DOMAIN_COMMIT, pub, KEY); }
 
 /* Verify a revealed public key against a previously received commitment.
  * Returns 1 if the key matches the commitment, 0 otherwise.
@@ -111,7 +114,7 @@ void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY]) { domain_hash(comm
 [[nodiscard]] int verify_commit(const uint8_t commit[KEY], const uint8_t pub[KEY]) {
     uint8_t expected[KEY];
     int     ok;
-    domain_hash(expected, "cipher commit v3", pub, KEY);
+    domain_hash(expected, DOMAIN_COMMIT, pub, KEY);
     ok = (crypto_verify32(expected, commit) == 0);
     crypto_wipe(expected, sizeof expected);
     return ok;

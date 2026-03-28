@@ -10,19 +10,12 @@ import android.text.method.ScrollingMovementMethod;
 import android.text.style.ForegroundColorSpan;
 import android.view.View;
 import android.view.WindowManager;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.io.UnsupportedEncodingException;
-import java.net.Inet6Address;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -38,6 +31,8 @@ import java.util.Locale;
  * native thread — every callback posts its UI work to the main thread via uiHandler.
  */
 public class ChatActivity extends Activity implements NativeCallback {
+
+  private static final int CHAT_LOG_MAX_CHARS = 100_000;
 
   static {
     System.loadLibrary("simplecipher");
@@ -68,6 +63,9 @@ public class ChatActivity extends Activity implements NativeCallback {
   private EditText chatInput;
   private Button sendBtn;
   private SimpleKeyboard inAppKeyboard;
+
+  private final java.text.SimpleDateFormat chatTimeFmt =
+      new java.text.SimpleDateFormat("HH:mm:ss", Locale.getDefault());
 
   /* The SAS code received from native, stored for verification. */
   private String pendingSas = null;
@@ -147,7 +145,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     chatInput.setOnFocusChangeListener(
         (v, hasFocus) -> {
           if (hasFocus) {
-            hideSystemKeyboard(chatInput);
+            UiUtil.hideSystemKeyboard(this, chatInput);
             inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
             inAppKeyboard.setTarget(chatInput);
             inAppKeyboard.setVisibility(View.VISIBLE);
@@ -158,7 +156,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     sasInput.setOnFocusChangeListener(
         (v, hasFocus) -> {
           if (hasFocus) {
-            hideSystemKeyboard(sasInput);
+            UiUtil.hideSystemKeyboard(this, sasInput);
             inAppKeyboard.setMode(SimpleKeyboard.MODE_HEX);
             inAppKeyboard.setTarget(sasInput);
             inAppKeyboard.setVisibility(View.VISIBLE);
@@ -293,7 +291,7 @@ public class ChatActivity extends Activity implements NativeCallback {
             inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
             inAppKeyboard.setTarget(chatInput);
             chatInput.requestFocus();
-            hideSystemKeyboard(chatInput);
+            UiUtil.hideSystemKeyboard(this, chatInput);
             return;
           }
 
@@ -310,7 +308,7 @@ public class ChatActivity extends Activity implements NativeCallback {
           inAppKeyboard.setTarget(sasInput);
           inAppKeyboard.setVisibility(View.VISIBLE);
           sasInput.requestFocus();
-          hideSystemKeyboard(sasInput);
+          UiUtil.hideSystemKeyboard(this, sasInput);
 
           /* Enter key on SAS input triggers the confirm button */
           sasInput.setOnEditorActionListener(
@@ -356,7 +354,7 @@ public class ChatActivity extends Activity implements NativeCallback {
                 inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
                 inAppKeyboard.setTarget(chatInput);
                 chatInput.requestFocus();
-                hideSystemKeyboard(chatInput);
+                UiUtil.hideSystemKeyboard(this, chatInput);
               });
         });
   }
@@ -427,7 +425,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     if (paused) return;
     /* Cap chat log to prevent unbounded heap growth from a flooding peer.
      * Trim oldest content when the log exceeds ~100KB. */
-    if (chatLog.length() > 100_000) {
+    if (chatLog.length() > CHAT_LOG_MAX_CHARS) {
       CharSequence text = chatLog.getText();
       int cutPoint = 0;
       for (int i = text.length() / 4; i < text.length(); i++) {
@@ -440,7 +438,7 @@ public class ChatActivity extends Activity implements NativeCallback {
         chatLog.setText(text.subSequence(cutPoint, text.length()), TextView.BufferType.SPANNABLE);
       }
     }
-    String ts = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
+    String ts = chatTimeFmt.format(new Date());
     String line = "[" + ts + "] " + who + ": " + msg + "\n";
     SpannableString spannable = new SpannableString(line);
     int color;
@@ -467,26 +465,7 @@ public class ChatActivity extends Activity implements NativeCallback {
 
   private String getLocalIps() {
     int port = sessionPort; /* use saved value, not wiped Intent */
-    List<String> ipv4 = new ArrayList<>();
-    List<String> ipv6 = new ArrayList<>();
-    try {
-      for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
-        if (!ni.isUp() || ni.isLoopback()) continue;
-        for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
-          if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()) continue;
-          String ip = addr.getHostAddress();
-          if (addr instanceof Inet6Address) {
-            ip = ip.replaceAll("%.*", "");
-            ipv6.add(ip);
-          } else {
-            ipv4.add(ip);
-          }
-        }
-      }
-    } catch (Exception ignored) {
-    }
-    /* Prefer IPv4 -- shorter, easier to type */
-    List<String> ips = ipv4.isEmpty() ? ipv6 : ipv4;
+    List<String> ips = NetworkUtil.getLocalIps();
     StringBuilder sb = new StringBuilder();
     for (String ip : ips) {
       if (sb.length() > 0) sb.append("\n");
@@ -576,23 +555,6 @@ public class ChatActivity extends Activity implements NativeCallback {
      * socket is harmless. */
     nativeStop();
     super.onDestroy();
-  }
-
-  /* ---- System keyboard suppression ------------------------------------ */
-
-  /**
-   * Forcibly dismiss the system IME for the given view.
-   *
-   * <p>We call this whenever an EditText gains focus. Combined with setShowSoftInputOnFocus(false)
-   * and SOFT_INPUT_STATE_ALWAYS_HIDDEN on the window, this ensures the system keyboard never
-   * appears. The triple-layer approach is necessary because no single method works reliably across
-   * all Android versions and OEM ROMs.
-   */
-  private void hideSystemKeyboard(View view) {
-    InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-    if (imm != null) {
-      imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
-    }
   }
 
   /* ---- Utility -------------------------------------------------------- */

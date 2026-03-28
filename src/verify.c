@@ -139,7 +139,7 @@ int keygen_main(const char *path) {
 
 /* Verify the peer's public key fingerprint against the expected value.
  * Returns 0 if OK (or no fingerprint expected), -1 on mismatch. */
-int verify_peer_fingerprint(const uint8_t peer_pub[KEY], const char *expected, int tui_mode) {
+int verify_peer_fingerprint(const uint8_t peer_pub[KEY], const char *expected) {
     char peer_fp[FINGERPRINT_STR_SZ];
     format_fingerprint(peer_fp, peer_pub);
 
@@ -151,7 +151,6 @@ int verify_peer_fingerprint(const uint8_t peer_pub[KEY], const char *expected, i
         crypto_wipe(ne, sizeof ne);
         crypto_wipe(np, sizeof np);
         if (mismatch) {
-            if (tui_mode) tui_restore_term();
             fprintf(stderr,
                     "\n  [!] Peer fingerprint mismatch!\n"
                     "  Expected: %s\n"
@@ -161,7 +160,7 @@ int verify_peer_fingerprint(const uint8_t peer_pub[KEY], const char *expected, i
             crypto_wipe(peer_fp, sizeof peer_fp);
             return -1;
         }
-        if (!tui_mode) printf("  Peer fingerprint verified: %s\n", peer_fp);
+        printf("  Peer fingerprint verified: %s\n", peer_fp);
     }
     crypto_wipe(peer_fp, sizeof peer_fp);
     return 0;

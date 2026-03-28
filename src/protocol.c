@@ -27,10 +27,10 @@
 
 /* ---- cover traffic ------------------------------------------------------ */
 
-int cover_delay_ms(void) {
+unsigned cover_delay_ms(void) {
     uint8_t r[2];
     fill_random(r, 2);
-    int d = COVER_DELAY_MIN_MS + ((r[0] | (r[1] << 8)) % (COVER_DELAY_MAX_MS - COVER_DELAY_MIN_MS + 1));
+    unsigned d = COVER_DELAY_MIN_MS + ((unsigned)(r[0] | (r[1] << 8)) % (COVER_DELAY_MAX_MS - COVER_DELAY_MIN_MS + 1));
     crypto_wipe(r, sizeof r);
     return d;
 }
@@ -230,18 +230,13 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     uint64_t seq = le64_load(frame);
     if (seq != s->rx_seq) return -1; /* replay / reorder -- reject */
 
+    int      rc = -1;
     uint8_t  mk[KEY], next_rx[KEY], nonce[NONCE_SZ], pt[CT_SZ];
     uint16_t len;
     chain_step(s->rx, mk, next_rx);
     make_nonce(nonce, seq);
 
-    if (crypto_aead_unlock(pt, frame + AD_SZ + CT_SZ, mk, nonce, frame, AD_SZ, frame + AD_SZ, CT_SZ) != 0) {
-        crypto_wipe(mk, sizeof mk);
-        crypto_wipe(next_rx, sizeof next_rx);
-        crypto_wipe(pt, sizeof pt);
-        crypto_wipe(nonce, sizeof nonce);
-        return -1;
-    }
+    if (crypto_aead_unlock(pt, frame + AD_SZ + CT_SZ, mk, nonce, frame, AD_SZ, frame + AD_SZ, CT_SZ) != 0) goto cleanup;
 
     /* Parse the plaintext slot: flags, optional ratchet key, len, message.
      *
@@ -253,13 +248,7 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     uint8_t flags = pt[off++];
 
     /* Reject frames with unknown flag bits (forward compatibility). */
-    if (flags & ~FLAG_RATCHET) {
-        crypto_wipe(mk, sizeof mk);
-        crypto_wipe(next_rx, sizeof next_rx);
-        crypto_wipe(pt, sizeof pt);
-        crypto_wipe(nonce, sizeof nonce);
-        return -1;
-    }
+    if (flags & ~FLAG_RATCHET) goto cleanup;
 
     /* Note the ratchet key position but don't process it yet. */
     size_t ratchet_off = off;
@@ -269,13 +258,7 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     off += 2;
 
     uint16_t max = (flags & FLAG_RATCHET) ? MAX_MSG_RATCHET : MAX_MSG;
-    if (len > max) {
-        crypto_wipe(mk, sizeof mk);
-        crypto_wipe(next_rx, sizeof next_rx);
-        crypto_wipe(pt, sizeof pt);
-        crypto_wipe(nonce, sizeof nonce);
-        return -1;
-    }
+    if (len > max) goto cleanup;
 
     /* All validation passed — now safe to commit state changes.
      *
@@ -285,31 +268,27 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
      * advance the existing chain as before. */
     if (flags & FLAG_RATCHET) {
         if (ratchet_receive(s, pt + ratchet_off) != 0) {
-            crypto_wipe(mk, sizeof mk);
-            crypto_wipe(next_rx, sizeof next_rx);
-            crypto_wipe(pt, sizeof pt);
-            crypto_wipe(nonce, sizeof nonce);
-            return -2; /* ratchet DH failure — session-fatal */
+            rc = -2; /* ratchet DH failure — session-fatal */
+            goto cleanup;
         }
         s->rx_no_ratchet = 0;
     } else {
         memcpy(s->rx, next_rx, KEY);
         if (++s->rx_no_ratchet > MAX_FRAMES_WITHOUT_RATCHET) {
-            crypto_wipe(mk, sizeof mk);
-            crypto_wipe(next_rx, sizeof next_rx);
-            crypto_wipe(pt, sizeof pt);
-            crypto_wipe(nonce, sizeof nonce);
-            return -2; /* ratchet stalling — session-fatal */
+            rc = -2; /* ratchet stalling — session-fatal */
+            goto cleanup;
         }
     }
     s->rx_seq++;
     s->need_send_ratchet = 1;
     if (out) memcpy(out, pt + off, len);
     if (out_len) *out_len = len;
+    rc = 0;
 
+cleanup:
     crypto_wipe(mk, sizeof mk);
     crypto_wipe(next_rx, sizeof next_rx);
     crypto_wipe(pt, sizeof pt);
     crypto_wipe(nonce, sizeof nonce);
-    return 0;
+    return rc;
 }

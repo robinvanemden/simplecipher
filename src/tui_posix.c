@@ -196,6 +196,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 }
                 if (ch == '\r' || ch == '\n') {
                     if (line_len == 0) continue;
+                    /* Cap at MAX_MSG_RATCHET (not MAX_MSG) because the next send may
+                     * trigger a DH ratchet, which consumes 32 bytes of payload space. */
                     if (line_len > (size_t)MAX_MSG_RATCHET) {
                         tui_msg_add(TUI_SYSTEM, "[message too long]");
                         tui_draw_messages();

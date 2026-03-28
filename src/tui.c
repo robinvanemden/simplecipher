@@ -7,6 +7,7 @@
  */
 
 #include "tui.h"
+#include "verify.h"
 
 #include <stdarg.h>
 #ifndef _WIN32
@@ -92,7 +93,7 @@ void tui_msg_wipe(void) {
 void tui_msg_add(enum tui_sender who, const char *text) {
     char t[TIMESTAMP_BUF];
     int  idx;
-    ts(t, sizeof t);
+    format_timestamp(t, sizeof t);
     if (tui_msg_count < TUI_MSG_MAX) {
         idx = tui_msg_count++;
     } else {
@@ -578,20 +579,9 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
      * does not need to remember whether the dash is part of the code. */
     {
         char norm_typed[SAS_STR_SZ] = {0}, norm_sas[SAS_STR_SZ] = {0};
-        int  ti = 0, si = 0;
-        for (int i = 0; typed[i] && ti < (int)sizeof(norm_typed) - 1; i++) {
-            char c = typed[i];
-            if (c == '-') continue;
-            if (c >= 'a' && c <= 'z') c -= 32;
-            norm_typed[ti++] = c;
-        }
-        for (int i = 0; sas[i] && si < (int)sizeof(norm_sas) - 1; i++) {
-            char c = sas[i];
-            if (c == '-') continue;
-            if (c >= 'a' && c <= 'z') c -= 32;
-            norm_sas[si++] = c;
-        }
-        int ok = (ti == si && ct_compare((const uint8_t *)norm_typed, (const uint8_t *)norm_sas, (size_t)ti) == 0);
+        int  ti = normalize_hex(typed, norm_typed, sizeof norm_typed);
+        int  si = normalize_hex(sas, norm_sas, sizeof norm_sas);
+        int  ok = (ti == si && ct_compare((const uint8_t *)norm_typed, (const uint8_t *)norm_sas, (size_t)ti) == 0);
         crypto_wipe(norm_typed, sizeof norm_typed);
         crypto_wipe(norm_sas, sizeof norm_sas);
         if (!ok) {

@@ -35,7 +35,7 @@ int keygen_main(const char *path);
 
 /* Verify peer's public key fingerprint against expected value.
  * Returns 0 if OK (or no fingerprint expected), -1 on mismatch. */
-int verify_peer_fingerprint(const uint8_t peer_pub[KEY], const char *expected, int tui_mode);
+int verify_peer_fingerprint(const uint8_t peer_pub[KEY], const char *expected);
 
 /* CLI-mode SAS verification: display the safety code box, read user input
  * with peer-disconnect detection, compare typed code against expected.

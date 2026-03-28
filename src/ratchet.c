@@ -11,6 +11,8 @@
 
 #include "ratchet.h"
 
+static const char *const DOMAIN_RATCHET = "cipher ratchet v2";
+
 /* Internal: perform one DH ratchet step.
  *
  * Mixes a fresh X25519 shared secret into the root key and derives a
@@ -42,7 +44,7 @@ static int ratchet_step(uint8_t root[KEY], uint8_t chain_out[KEY], const uint8_t
 
     memcpy(ikm, root, KEY);
     memcpy(ikm + KEY, dh, KEY);
-    domain_hash(root, "cipher ratchet v2", ikm, sizeof ikm);
+    domain_hash(root, DOMAIN_RATCHET, ikm, sizeof ikm);
     expand(chain_out, root, "chain");
 
     crypto_wipe(dh, sizeof dh);
@@ -90,6 +92,10 @@ int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
     return 1;
 }
 
+/* Does not call ratchet_step() because it needs staged temporaries
+ * (staged_root, staged_rx) to avoid mutating session state until
+ * all validation passes.  ratchet_step writes directly to its
+ * output parameters, which would corrupt the session on DH failure. */
 int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
     /* Stage all outputs in temporaries — commit only if DH succeeds.
      * Prevents a malicious low-order ratchet key from poisoning
@@ -107,7 +113,7 @@ int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
 
     memcpy(ikm, staged_root, KEY);
     memcpy(ikm + KEY, dh, KEY);
-    domain_hash(staged_root, "cipher ratchet v2", ikm, sizeof ikm);
+    domain_hash(staged_root, DOMAIN_RATCHET, ikm, sizeof ikm);
     expand(staged_rx, staged_root, "chain");
 
     /* All validation passed — commit state atomically. */

@@ -21,14 +21,12 @@ import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.net.Inet6Address;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class MainActivity extends Activity {
+
+  private static final int CLIPBOARD_CLEAR_DELAY_MS = 30_000;
+  private static final int FP_HEX_LENGTH = 16;
 
   static {
     System.loadLibrary("simplecipher");
@@ -105,54 +103,9 @@ public class MainActivity extends Activity {
         .setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
 
     /* Suppress system keyboard on all EditTexts and show our keyboard instead */
-    hostInput.setShowSoftInputOnFocus(false);
-    portInput.setShowSoftInputOnFocus(false);
-    socks5Input.setShowSoftInputOnFocus(false);
-
-    hostInput.setOnFocusChangeListener(
-        (v, hasFocus) -> {
-          if (hasFocus) {
-            hideSystemKeyboard(hostInput);
-            inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
-            inAppKeyboard.setTarget(hostInput);
-            inAppKeyboard.setVisibility(View.VISIBLE);
-            v.post(
-                () -> {
-                  ScrollView sv = findViewById(R.id.mainScrollView);
-                  if (sv != null) sv.smoothScrollTo(0, v.getTop());
-                });
-          }
-        });
-
-    portInput.setOnFocusChangeListener(
-        (v, hasFocus) -> {
-          if (hasFocus) {
-            hideSystemKeyboard(portInput);
-            inAppKeyboard.setMode(SimpleKeyboard.MODE_NUMERIC);
-            inAppKeyboard.setTarget(portInput);
-            inAppKeyboard.setVisibility(View.VISIBLE);
-            v.post(
-                () -> {
-                  ScrollView sv = findViewById(R.id.mainScrollView);
-                  if (sv != null) sv.smoothScrollTo(0, v.getTop());
-                });
-          }
-        });
-
-    socks5Input.setOnFocusChangeListener(
-        (v, hasFocus) -> {
-          if (hasFocus) {
-            hideSystemKeyboard(socks5Input);
-            inAppKeyboard.setMode(SimpleKeyboard.MODE_TEXT);
-            inAppKeyboard.setTarget(socks5Input);
-            inAppKeyboard.setVisibility(View.VISIBLE);
-            v.post(
-                () -> {
-                  ScrollView sv = findViewById(R.id.mainScrollView);
-                  if (sv != null) sv.smoothScrollTo(0, v.getTop());
-                });
-          }
-        });
+    bindToKeyboard(hostInput, SimpleKeyboard.MODE_TEXT);
+    bindToKeyboard(portInput, SimpleKeyboard.MODE_NUMERIC);
+    bindToKeyboard(socks5Input, SimpleKeyboard.MODE_TEXT);
 
     /* Suppress keyboard learning on all inputs — peer IPs, ports, and
      * proxy addresses are sensitive metadata that should not enter IME dictionaries. */
@@ -175,21 +128,7 @@ public class MainActivity extends Activity {
 
     int noLearnFp = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
     fpManualInput.setImeOptions(fpManualInput.getImeOptions() | noLearnFp);
-    fpManualInput.setShowSoftInputOnFocus(false);
-    fpManualInput.setOnFocusChangeListener(
-        (v, hasFocus) -> {
-          if (hasFocus) {
-            hideSystemKeyboard(fpManualInput);
-            inAppKeyboard.setMode(SimpleKeyboard.MODE_HEX);
-            inAppKeyboard.setTarget(fpManualInput);
-            inAppKeyboard.setVisibility(View.VISIBLE);
-            v.post(
-                () -> {
-                  ScrollView sv = findViewById(R.id.mainScrollView);
-                  if (sv != null) sv.smoothScrollTo(0, v.getTop());
-                });
-          }
-        });
+    bindToKeyboard(fpManualInput, SimpleKeyboard.MODE_HEX);
 
     /* Expand/collapse: on first expand, generate an ephemeral keypair
      * and display the self fingerprint.  The user shares this with their
@@ -243,7 +182,7 @@ public class MainActivity extends Activity {
           public void afterTextChanged(android.text.Editable s) {
             String text = s.toString().trim();
             String stripped = text.replace("-", "");
-            if (stripped.length() == 16 && stripped.matches("[0-9A-Fa-f]+")) {
+            if (stripped.length() == FP_HEX_LENGTH && stripped.matches("[0-9A-Fa-f]+")) {
               setPeerFingerprint(text);
             } else if (peerFingerprint != null) {
               /* Input no longer valid — clear the stored fingerprint
@@ -388,12 +327,22 @@ public class MainActivity extends Activity {
     super.onDestroy();
   }
 
-  private void hideSystemKeyboard(View view) {
-    android.view.inputmethod.InputMethodManager imm =
-        (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-    if (imm != null) {
-      imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
-    }
+  private void bindToKeyboard(EditText field, int keyboardMode) {
+    field.setShowSoftInputOnFocus(false);
+    field.setOnFocusChangeListener(
+        (v, hasFocus) -> {
+          if (hasFocus) {
+            UiUtil.hideSystemKeyboard(this, field);
+            inAppKeyboard.setMode(keyboardMode);
+            inAppKeyboard.setTarget(field);
+            inAppKeyboard.setVisibility(View.VISIBLE);
+            v.post(
+                () -> {
+                  ScrollView sv = findViewById(R.id.mainScrollView);
+                  if (sv != null) sv.smoothScrollTo(0, v.getTop());
+                });
+          }
+        });
   }
 
   private void showLocalIps() {
@@ -484,7 +433,7 @@ public class MainActivity extends Activity {
                   ClipboardManager cmClear = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                   if (cmClear != null) cmClear.setPrimaryClip(ClipData.newPlainText("", ""));
                 },
-                30000);
+                CLIPBOARD_CLEAR_DELAY_MS);
           });
       row.addView(copyBtn);
 
@@ -505,27 +454,7 @@ public class MainActivity extends Activity {
   }
 
   private List<String> getLocalIps() {
-    List<String> ipv4 = new ArrayList<>();
-    List<String> ipv6 = new ArrayList<>();
-    try {
-      for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
-        if (!ni.isUp() || ni.isLoopback()) continue;
-        for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
-          if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()) continue;
-          String ip = addr.getHostAddress();
-          if (addr instanceof Inet6Address) {
-            ip = ip.replaceAll("%.*", "");
-            ipv6.add(ip);
-          } else {
-            ipv4.add(ip);
-          }
-        }
-      }
-    } catch (Exception ignored) {
-    }
-    /* Prefer IPv4 -- shorter, easier to read aloud and type.
-     * Only show IPv6 if no IPv4 addresses are available. */
-    return ipv4.isEmpty() ? ipv6 : ipv4;
+    return NetworkUtil.getLocalIps();
   }
 
   /* ---- QR result handling (delegates to flavor-specific QrHelper) -------- */
@@ -565,7 +494,7 @@ public class MainActivity extends Activity {
   private void setPeerFingerprint(String fp) {
     String normalized = fp.trim().toUpperCase(java.util.Locale.ROOT);
     String stripped = normalized.replace("-", "");
-    if (stripped.length() != 16 || !stripped.matches("[0-9A-F]+")) {
+    if (stripped.length() != FP_HEX_LENGTH || !stripped.matches("[0-9A-F]+")) {
       /* Clear any previously valid fingerprint — don't leave stale
        * state armed after an invalid scan or edit. */
       if (peerFingerprint != null) clearPeerFingerprint();

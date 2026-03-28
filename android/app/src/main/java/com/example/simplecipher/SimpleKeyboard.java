@@ -52,6 +52,9 @@ public class SimpleKeyboard extends LinearLayout {
   private static final int COLOR_TEXT = 0xFFF0F0F0; // text_primary
   private static final int COLOR_ACCENT = 0xFF4DD0B0; // accent
 
+  private static final int REPEAT_INITIAL_DELAY_MS = 300;
+  private static final int REPEAT_INTERVAL_MS = 50;
+
   private static final int KEY_HEIGHT_DP = 48;
   private static final int KEY_SPACING_DP = 4;
   private static final int CORNER_RADIUS_DP = 6;
@@ -69,6 +72,8 @@ public class SimpleKeyboard extends LinearLayout {
   /* Hex rows */
   private static final String[] HEX_ROW_1 = {"0", "1", "2", "3", "4", "5", "6", "7"};
   private static final String[] HEX_ROW_2 = {"8", "9", "A", "B", "C", "D", "E", "F"};
+
+  private final Handler repeatHandler = new Handler(Looper.getMainLooper());
 
   private int mode = MODE_TEXT;
   private EditText target;
@@ -281,19 +286,26 @@ public class SimpleKeyboard extends LinearLayout {
       if ("\u232B".equals(label)) {
         btn.setOnLongClickListener(
             v -> {
-              final Handler handler = new Handler(Looper.getMainLooper());
               final Runnable repeater =
                   new Runnable() {
                     @Override
                     public void run() {
                       if (v.isPressed()) {
                         doBackspace();
-                        handler.postDelayed(this, 50);
+                        repeatHandler.postDelayed(this, REPEAT_INTERVAL_MS);
                       }
                     }
                   };
-              handler.postDelayed(repeater, 300);
+              repeatHandler.postDelayed(repeater, REPEAT_INITIAL_DELAY_MS);
               return true;
+            });
+        btn.setOnTouchListener(
+            (v, event) -> {
+              if (event.getAction() == android.view.MotionEvent.ACTION_UP
+                  || event.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
+                repeatHandler.removeCallbacksAndMessages(null);
+              }
+              return false;
             });
       }
     }
