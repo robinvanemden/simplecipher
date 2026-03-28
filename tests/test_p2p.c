@@ -6048,6 +6048,14 @@ static void test_identity_save_load_roundtrip(void) {
     const char *pass = "tuna sandwich at midnight";
     const char *path = "/tmp/test_identity.key";
 
+    /* Clean up stale files from previous runs (O_EXCL blocks on stale .tmp) */
+    unlink(path);
+    {
+        char tmp[PATH_MAX];
+        snprintf(tmp, sizeof tmp, "%s.tmp", path);
+        unlink(tmp);
+    }
+
     TEST("identity_save succeeds", identity_save(path, priv, pass, strlen(pass)) == 0);
 
     uint8_t loaded_priv[KEY], loaded_pub[KEY];

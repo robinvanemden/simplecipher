@@ -280,6 +280,13 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
         return -1;
     }
 
+    /* Remove stale .tmp from a previous crashed save, but only if it is
+     * a regular file (lstat + S_ISREG) — never follow symlinks here. */
+    {
+        struct stat st;
+        if (lstat(tmp_path, &st) == 0 && S_ISREG(st.st_mode)) unlink(tmp_path);
+    }
+
     /* O_EXCL prevents following a symlink-planted .tmp file. */
     int fd = open(tmp_path, O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW | O_EXCL, 0600);
     if (fd < 0) {
