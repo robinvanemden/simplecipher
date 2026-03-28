@@ -296,15 +296,17 @@ check "JNI uses crypto_wipe for key material" \
 check "MainActivity uses SimpleKeyboard for all inputs" \
     "grep -q 'mainKeyboard' '$REPO_ROOT/android/app/src/main/res/layout/activity_main.xml'"
 check "MainActivity suppresses system keyboard on host input" \
-    "grep -q 'hostInput.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+    "grep -q 'bindToKeyboard(hostInput' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 check "MainActivity suppresses system keyboard on port input" \
-    "grep -q 'portInput.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+    "grep -q 'bindToKeyboard(portInput' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 check "MainActivity suppresses system keyboard on fingerprint input" \
-    "grep -q 'fpManualInput.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+    "grep -q 'bindToKeyboard(fpManualInput' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 check "MainActivity suppresses system keyboard on SOCKS5 input" \
-    "grep -q 'socks5Input.setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+    "grep -q 'bindToKeyboard(socks5Input' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 check "MainActivity has hideSystemKeyboard helper" \
     "grep -q 'hideSystemKeyboard' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
+check "bindToKeyboard suppresses system keyboard" \
+    "grep -q 'setShowSoftInputOnFocus(false)' '$REPO_ROOT/android/app/src/main/java/com/example/simplecipher/MainActivity.java'"
 
 # SOCKS5 proxy support
 check "JNI nativeStart accepts socks5_proxy parameter" \
