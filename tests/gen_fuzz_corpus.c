@@ -36,12 +36,14 @@ static void mkdirs(const char *path) {
     mkdir(tmp, 0755);
 }
 
-static void write_file(const char *dir, const char *name,
-                        const void *data, size_t len) {
+static void write_file(const char *dir, const char *name, const void *data, size_t len) {
     char path[512];
     snprintf(path, sizeof path, "%s/%s", dir, name);
     FILE *f = fopen(path, "wb");
-    if (!f) { perror(path); return; }
+    if (!f) {
+        perror(path);
+        return;
+    }
     fwrite(data, 1, len, f);
     fclose(f);
 }
@@ -56,20 +58,19 @@ static void gen_frame_open_corpus(const char *base) {
     gen_keypair(priv2, pub2);
 
     session_t s;
-    uint8_t sas[KEY];
+    uint8_t   sas[KEY];
     (void)session_init(&s, 1, priv, pub, pub2, sas);
 
     /* Seed 1: valid frame with short message (frame + chain key for fuzzer) */
     {
         const char *msg = "hello";
-        uint8_t frame[FRAME_SZ], next[KEY];
-        (void)frame_build(&s, (const uint8_t *)msg,
-                          (uint16_t)strlen(msg), frame, next);
+        uint8_t     frame[FRAME_SZ], next[KEY];
+        (void)frame_build(&s, (const uint8_t *)msg, (uint16_t)strlen(msg), frame, next);
 
         /* fuzz_frame_open reads FRAME_SZ bytes + optional KEY bytes */
         uint8_t seed[FRAME_SZ + KEY];
         memcpy(seed, frame, FRAME_SZ);
-        memcpy(seed + FRAME_SZ, s.tx, KEY);  /* matching chain key */
+        memcpy(seed + FRAME_SZ, s.tx, KEY); /* matching chain key */
         write_file(dir, "valid_short", seed, sizeof seed);
 
         /* Also write frame-only (uses fixed 0xAA key path) */
@@ -128,8 +129,7 @@ static void gen_frame_open_corpus(const char *base) {
             s.tx_seq++;
         }
         uint8_t frame[FRAME_SZ], next[KEY];
-        (void)frame_build(&s, (const uint8_t *)"deep chain", 10,
-                    frame, next);
+        (void)frame_build(&s, (const uint8_t *)"deep chain", 10, frame, next);
         uint8_t seed[FRAME_SZ + KEY];
         memcpy(seed, frame, FRAME_SZ);
         memcpy(seed + FRAME_SZ, s.tx, KEY);
@@ -177,14 +177,22 @@ static void gen_sanitize_corpus(const char *base) {
 
     /* Single byte edge cases */
     uint8_t b;
-    b = 0x00; write_file(dir, "null_byte", &b, 1);
-    b = 0x09; write_file(dir, "tab_byte", &b, 1);
-    b = 0x1B; write_file(dir, "esc_byte", &b, 1);
-    b = 0x1F; write_file(dir, "unit_sep", &b, 1);
-    b = 0x20; write_file(dir, "space", &b, 1);
-    b = 0x7E; write_file(dir, "tilde", &b, 1);
-    b = 0x7F; write_file(dir, "del", &b, 1);
-    b = 0x80; write_file(dir, "first_high", &b, 1);
+    b = 0x00;
+    write_file(dir, "null_byte", &b, 1);
+    b = 0x09;
+    write_file(dir, "tab_byte", &b, 1);
+    b = 0x1B;
+    write_file(dir, "esc_byte", &b, 1);
+    b = 0x1F;
+    write_file(dir, "unit_sep", &b, 1);
+    b = 0x20;
+    write_file(dir, "space", &b, 1);
+    b = 0x7E;
+    write_file(dir, "tilde", &b, 1);
+    b = 0x7F;
+    write_file(dir, "del", &b, 1);
+    b = 0x80;
+    write_file(dir, "first_high", &b, 1);
 }
 
 static void gen_validate_port_corpus(const char *base) {

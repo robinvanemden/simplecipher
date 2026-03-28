@@ -23,6 +23,7 @@ CFLAGS  ?= -Os -std=c23 -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthr
 ALL_CFLAGS = $(SECURITY_CFLAGS) $(CFLAGS)
 
 LDFLAGS ?= -flto -Wl,--gc-sections -s
+LIBS    ?= -lm
 
 # Core sources (platform-independent + small inline #ifdefs)
 CORE_SRC = src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c \
@@ -52,7 +53,7 @@ SRC = src/main.c $(CORE_SRC) $(PLAT_SRC)
 OBJ = $(SRC:.c=.o)
 
 simplecipher: $(OBJ)
-	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 %.o: %.c
 	$(CC) $(ALL_CFLAGS) -c -o $@ $<
@@ -69,10 +70,10 @@ test-socks5: tests/test_socks5_proxy
 
 LIB_OBJ = $(filter-out src/main.o,$(OBJ))
 tests/test_p2p: tests/test_p2p.c $(LIB_OBJ)
-	$(CC) $(ALL_CFLAGS) -pthread -o $@ $^
+	$(CC) $(ALL_CFLAGS) -pthread -o $@ $^ -lm
 
 tests/test_socks5_proxy: tests/test_socks5_proxy.c $(LIB_OBJ)
-	$(CC) $(ALL_CFLAGS) -pthread -o $@ $^
+	$(CC) $(ALL_CFLAGS) -pthread -o $@ $^ -lm
 
 test-all: test test-socks5
 	bash tests/test_cli_flags.sh

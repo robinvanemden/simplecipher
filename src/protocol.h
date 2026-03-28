@@ -76,7 +76,8 @@ enum {
     SAS_TIMEOUT_MS       = 300000, /* 5-minute SAS verification deadline     */
     EXCHANGE_DEADLINE_MS = 15000,  /* per-round handshake deadline            */
     COVER_DELAY_MIN_MS   = 50,
-    COVER_DELAY_MAX_MS   = 100
+    COVER_DELAY_MEAN_MS  = 500,
+    COVER_DELAY_MAX_MS   = 1500
 };
 static const uint8_t FLAG_RATCHET = 0x01; /* bit 0: ratchet key follows */
 
@@ -148,13 +149,14 @@ void session_wipe(session_t *s);
  * All other bytes -- including ESC (0x1B) and tab (0x09) -- become '.'. */
 void sanitize_peer_text(uint8_t *buf, uint16_t len);
 
-/* Random delay in [50, 100] ms for cover traffic scheduling.
- * Uses the OS CSPRNG to prevent the interval itself from becoming a
- * fingerprint.  The tight interval serves the queue-on-tick design:
- * real messages are queued and sent on the next tick (replacing cover),
- * so all frames follow the same timing distribution — defeating
- * statistical timing analysis.  ~10-20 frames/sec = ~6-13 KB/s
- * overhead, acceptable for Tor sessions where cover traffic is used. */
+/* Random delay for cover traffic scheduling, drawn from a clamped
+ * exponential distribution (mean 500 ms, clamped to [50, 3000] ms).
+ * Exponential inter-arrivals mimic natural Poisson traffic (CV ≈ 1),
+ * making the cover stream much harder to fingerprint than a uniform
+ * or near-constant interval.  Clamped to [50, 1500] ms to keep
+ * UI latency under ~1.5s.  The queue-on-tick design ensures real
+ * messages are absorbed into this schedule — all frames follow the
+ * same timing distribution.  Average ~2 frames/sec ≈ 1.3 KB/s. */
 unsigned cover_delay_ms(void);
 
 #endif /* SIMPLECIPHER_PROTOCOL_H */

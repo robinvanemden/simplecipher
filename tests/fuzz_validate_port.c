@@ -19,7 +19,7 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     /* validate_port expects a NUL-terminated string */
-    if (size > 256) return 0;  /* skip absurdly long inputs */
+    if (size > 256) return 0; /* skip absurdly long inputs */
 
     char buf[257];
     memcpy(buf, data, size);

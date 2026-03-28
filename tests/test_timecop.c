@@ -69,14 +69,10 @@
 /* Helper: mark a buffer as "secret" (uninitialized in Valgrind's view).
  * The data is actually initialized — we just tell Valgrind to treat it
  * as tainted so it can detect secret-dependent branches. */
-static void poison(void *buf, size_t len) {
-    (void)VALGRIND_MAKE_MEM_UNDEFINED(buf, len);
-}
+static void poison(void *buf, size_t len) { (void)VALGRIND_MAKE_MEM_UNDEFINED(buf, len); }
 
 /* Helper: unmark a buffer (tell Valgrind it's safe to branch on again). */
-static void unpoison(void *buf, size_t len) {
-    (void)VALGRIND_MAKE_MEM_DEFINED(buf, len);
-}
+static void unpoison(void *buf, size_t len) { (void)VALGRIND_MAKE_MEM_DEFINED(buf, len); }
 
 int main(void) {
     printf("SimpleCipher Timecop Constant-Time Verification\n");
@@ -91,7 +87,7 @@ int main(void) {
     {
         uint8_t buf[32];
         fill_random(buf, 32);
-        poison(buf, 32);           /* mark input as secret */
+        poison(buf, 32); /* mark input as secret */
         volatile bool r = is_zero32(buf);
         (void)r;
         unpoison(buf, 32);
@@ -106,9 +102,9 @@ int main(void) {
         fill_random(pub, 32);
         fill_random(nonce, 32);
         make_commit(commit, pub, nonce);
-        poison(commit, 32);        /* mark commitment as secret */
-        poison(pub, 32);           /* mark public key as secret */
-        poison(nonce, 32);         /* mark nonce as secret */
+        poison(commit, 32); /* mark commitment as secret */
+        poison(pub, 32);    /* mark public key as secret */
+        poison(nonce, 32);  /* mark nonce as secret */
         volatile int r = verify_commit(commit, pub, nonce);
         (void)r;
         unpoison(commit, 32);
@@ -122,10 +118,10 @@ int main(void) {
     {
         uint8_t msg[32], out[32];
         fill_random(msg, 32);
-        poison(msg, 32);           /* mark message as secret */
+        poison(msg, 32); /* mark message as secret */
         domain_hash(out, "cipher commit v3", msg, 32);
         unpoison(msg, 32);
-        unpoison(out, 32);        /* output is derived from secret but now public */
+        unpoison(out, 32); /* output is derived from secret but now public */
     }
 
     /* --- 4. expand ---
@@ -134,7 +130,7 @@ int main(void) {
     {
         uint8_t prk[32], out[32];
         fill_random(prk, 32);
-        poison(prk, 32);           /* mark PRK as secret */
+        poison(prk, 32); /* mark PRK as secret */
         expand(out, prk, "sas");
         unpoison(prk, 32);
         unpoison(out, 32);
@@ -146,7 +142,7 @@ int main(void) {
     {
         uint8_t chain[32], mk[32], next[32];
         fill_random(chain, 32);
-        poison(chain, 32);         /* mark chain key as secret */
+        poison(chain, 32); /* mark chain key as secret */
         chain_step(chain, mk, next);
         unpoison(chain, 32);
         unpoison(mk, 32);
@@ -162,8 +158,8 @@ int main(void) {
         uint8_t priv[32], pub[32], shared[32];
         fill_random(priv, 32);
         fill_random(pub, 32);
-        crypto_x25519_public_key(pub, pub);  /* make it a valid point */
-        poison(priv, 32);          /* mark private key as secret */
+        crypto_x25519_public_key(pub, pub); /* make it a valid point */
+        poison(priv, 32);                   /* mark private key as secret */
         crypto_x25519(shared, priv, pub);
         unpoison(priv, 32);
         unpoison(shared, 32);
@@ -178,7 +174,7 @@ int main(void) {
         uint8_t a[8], b[8];
         fill_random(a, 8);
         memcpy(b, a, 8);
-        poison(a, 8);              /* mark both inputs as secret */
+        poison(a, 8); /* mark both inputs as secret */
         poison(b, 8);
         volatile int r = ct_compare(a, b, 8);
         (void)r;
@@ -205,7 +201,7 @@ int main(void) {
         (void)session_init(&s, 1, priv_a, pub_a, pub_b, nonce_a, nonce_b, sas);
 
         uint8_t msg[16] = "secret message!";
-        poison(msg, 16);           /* mark plaintext as secret */
+        poison(msg, 16); /* mark plaintext as secret */
 
         uint8_t frame[512], next[32];
         (void)frame_build(&s, msg, 16, frame, next);

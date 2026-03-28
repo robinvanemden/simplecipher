@@ -5134,20 +5134,26 @@ static void test_socks5_loopback(void) {
 static void test_cover_traffic(void) {
     printf("\n=== Cover traffic (dummy frames) ===\n");
 
-    /* cover_delay_ms returns values in [COVER_DELAY_MIN_MS, COVER_DELAY_MAX_MS] */
-    int all_in_range  = 1;
-    int saw_different = 0;
-    unsigned first    = cover_delay_ms();
-    for (int i = 0; i < 200; i++) {
+    /* cover_delay_ms returns values in [COVER_DELAY_MIN_MS, COVER_DELAY_MAX_MS]
+     * drawn from a clamped exponential distribution (mean COVER_DELAY_MEAN_MS). */
+    int      all_in_range  = 1;
+    int      saw_different = 0;
+    int      saw_short = 0, saw_long = 0;
+    unsigned first = cover_delay_ms();
+    for (int i = 0; i < 1000; i++) {
         unsigned d = cover_delay_ms();
         if (d < COVER_DELAY_MIN_MS || d > COVER_DELAY_MAX_MS) {
             all_in_range = 0;
             break;
         }
         if (d != first) saw_different = 1;
+        if (d < 200) saw_short = 1;
+        if (d > 800) saw_long = 1;
     }
-    TEST("cover_delay_ms in [50, 100] over 200 calls", all_in_range);
+    TEST("cover_delay_ms in [50, 1500] over 1000 calls", all_in_range);
     TEST("cover_delay_ms produces varying values", saw_different);
+    TEST("cover_delay_ms produces short delays (<200ms)", saw_short);
+    TEST("cover_delay_ms produces long delays (>800ms)", saw_long);
 
     /* Build and open a cover frame (len=0) */
     uint8_t   priv_a[KEY], pub_a[KEY], priv_b[KEY], pub_b[KEY];
@@ -5235,7 +5241,8 @@ static void test_cover_traffic(void) {
     (void)frame_build(&a2, (const uint8_t *)"hi", 2, real_frame, ntx2);
 
     /* Both are exactly FRAME_SZ bytes — no size difference */
-    TEST("cover and real frames are same size (512 bytes)", sizeof(cover_frame) == FRAME_SZ && sizeof(real_frame) == FRAME_SZ);
+    TEST("cover and real frames are same size (512 bytes)",
+         sizeof(cover_frame) == FRAME_SZ && sizeof(real_frame) == FRAME_SZ);
 
     /* Cover frames advance the DH ratchet correctly */
     session_t ar, br;

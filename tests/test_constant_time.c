@@ -83,11 +83,11 @@
 
 /* ---- Test state --------------------------------------------------------- */
 
-static uint8_t ct_fixed_input[512];   /* fixed-class input */
-static uint8_t ct_key[32];            /* auxiliary secret (chain key, PRK, etc.) */
-static uint8_t ct_key2[32];           /* second auxiliary (peer pub, etc.) */
+static uint8_t   ct_fixed_input[512]; /* fixed-class input */
+static uint8_t   ct_key[32];          /* auxiliary secret (chain key, PRK, etc.) */
+static uint8_t   ct_key2[32];         /* second auxiliary (peer pub, etc.) */
 static session_t ct_session;          /* session for frame_build/frame_open */
-static int ct_test_id = 0;
+static int       ct_test_id = 0;
 
 /* ---- dudect callbacks --------------------------------------------------- */
 
@@ -103,7 +103,7 @@ static int ct_test_id = 0;
  */
 void prepare_inputs(dudect_config_t *c, uint8_t *input_data, uint8_t *classes) {
     for (size_t i = 0; i < c->number_measurements; i++) {
-        classes[i] = randombit();
+        classes[i]     = randombit();
         uint8_t *input = input_data + i * c->chunk_size;
         if (classes[i] == 0) {
             memcpy(input, ct_fixed_input, c->chunk_size);
@@ -129,7 +129,7 @@ uint8_t do_one_computation(uint8_t *data) {
          * A non-constant-time implementation would return early on
          * the first non-zero byte, leaking the position. */
         volatile bool result = is_zero32(data);
-        ret = (uint8_t)result;
+        ret                  = (uint8_t)result;
         break;
     }
 
@@ -140,7 +140,7 @@ uint8_t do_one_computation(uint8_t *data) {
         uint8_t commit[32];
         memcpy(commit, ct_key, 32);
         volatile int result = verify_commit(commit, data);
-        ret = (uint8_t)result;
+        ret                 = (uint8_t)result;
         break;
     }
 
@@ -200,12 +200,12 @@ uint8_t do_one_computation(uint8_t *data) {
         /* frame_build: encrypt a message with session state.
          * The plaintext (data) varies between classes. Encryption
          * must not leak the plaintext content via timing. */
-        uint8_t frame[512], next_chain[32];
+        uint8_t   frame[512], next_chain[32];
         session_t s;
         memcpy(&s, &ct_session, sizeof s);
-        s.need_send_ratchet = 0;  /* avoid ratchet overhead noise */
+        s.need_send_ratchet = 0; /* avoid ratchet overhead noise */
         volatile int result = frame_build(&s, data, 16, frame, next_chain);
-        ret = (uint8_t)(result & 0xFF);
+        ret                 = (uint8_t)(result & 0xFF);
         crypto_wipe(frame, sizeof frame);
         crypto_wipe(next_chain, 32);
         crypto_wipe(&s, sizeof s);
@@ -219,7 +219,7 @@ uint8_t do_one_computation(uint8_t *data) {
          * Random class: random bytes (returns non-zero with overwhelming probability).
          * Leak: early exit on first differing byte. */
         volatile int result = ct_compare(data, ct_key, 8);
-        ret = (uint8_t)(result & 0xFF);
+        ret                 = (uint8_t)(result & 0xFF);
         break;
     }
 
@@ -243,19 +243,18 @@ uint8_t do_one_computation(uint8_t *data) {
         uint8_t frame[512];
         memcpy(frame, data, 512);
         /* Force seq = 0 so both classes pass the seq check */
-        memset(frame, 0, 8);  /* le64(0) = 8 zero bytes */
-        uint8_t out[486];
-        uint16_t out_len = 0;
+        memset(frame, 0, 8); /* le64(0) = 8 zero bytes */
+        uint8_t   out[486];
+        uint16_t  out_len = 0;
         session_t s;
         memcpy(&s, &ct_session, sizeof s);
-        s.rx_seq = 0;
+        s.rx_seq            = 0;
         volatile int result = frame_open(&s, frame, out, &out_len);
-        ret = (uint8_t)(result & 0xFF);
+        ret                 = (uint8_t)(result & 0xFF);
         crypto_wipe(out, sizeof out);
         crypto_wipe(&s, sizeof s);
         break;
     }
-
     }
     return ret;
 }
@@ -266,20 +265,19 @@ uint8_t do_one_computation(uint8_t *data) {
 
 /* ---- Test runner -------------------------------------------------------- */
 
-static int run_test(const char *name, int test_id, size_t chunk_size,
-                    int max_iterations) {
+static int run_test(const char *name, int test_id, size_t chunk_size, int max_iterations) {
     ct_test_id = test_id;
 
     dudect_config_t config = {
-        .chunk_size = chunk_size,
+        .chunk_size          = chunk_size,
         .number_measurements = 1e4,
     };
 
     dudect_ctx_t ctx;
     dudect_init(&ctx, &config);
 
-    dudect_state_t state = DUDECT_NO_LEAKAGE_EVIDENCE_YET;
-    int iterations = 0;
+    dudect_state_t state      = DUDECT_NO_LEAKAGE_EVIDENCE_YET;
+    int            iterations = 0;
 
     while (iterations < max_iterations) {
         state = dudect_main(&ctx);
@@ -293,8 +291,8 @@ static int run_test(const char *name, int test_id, size_t chunk_size,
         printf("  FAIL: %s — timing leakage detected\n", name);
         return 1;
     } else {
-        printf("  PASS: %s — no timing leakage (%d iterations, ~%.1fM measurements)\n",
-               name, iterations, iterations * 1e4 / 1e6);
+        printf("  PASS: %s — no timing leakage (%d iterations, ~%.1fM measurements)\n", name, iterations,
+               iterations * 1e4 / 1e6);
         return 0;
     }
 }
@@ -362,12 +360,12 @@ int main(void) {
      * Random class: random bytes.
      * Leak: early exit on first differing byte position. */
     fill_random(ct_key, 32);
-    memcpy(ct_fixed_input, ct_key, 8);  /* fixed class matches */
+    memcpy(ct_fixed_input, ct_key, 8); /* fixed class matches */
     failures += run_test("ct_compare", 8, 8, 200);
 
     printf("\n--- Core cryptographic operations ---\n");
-    fill_random(ct_key, 32);  /* fixed peer public key */
-    crypto_x25519_public_key(ct_key, ct_key);  /* make it a valid point */
+    fill_random(ct_key, 32);                  /* fixed peer public key */
+    crypto_x25519_public_key(ct_key, ct_key); /* make it a valid point */
     memset(ct_fixed_input, 0, 32);
     failures += run_test("crypto_x25519", 5, 32, 200);
 
@@ -401,8 +399,8 @@ int main(void) {
     {
         /* Build a valid frame with the session's current tx (seq=0 already) */
         session_t build_s;
-        uint8_t priv[32], pub[32], priv2[32], pub2[32];
-        uint8_t nonce1[32], nonce2[32], sas[32];
+        uint8_t   priv[32], pub[32], priv2[32], pub2[32];
+        uint8_t   nonce1[32], nonce2[32], sas[32];
         fill_random(priv, 32);
         crypto_x25519_public_key(pub, priv);
         fill_random(priv2, 32);
@@ -411,8 +409,7 @@ int main(void) {
         fill_random(nonce2, 32);
         (void)session_init(&build_s, 1, priv, pub, pub2, nonce1, nonce2, sas);
         uint8_t next[32];
-        (void)frame_build(&build_s, (const uint8_t *)"constant-time", 13,
-                          ct_fixed_input, next);
+        (void)frame_build(&build_s, (const uint8_t *)"constant-time", 13, ct_fixed_input, next);
         /* Set up ct_session for decryption with matching rx state */
         (void)session_init(&ct_session, 0, priv2, pub2, pub, nonce2, nonce1, sas);
         /* ct_session.rx_seq is already 0 */
@@ -435,9 +432,7 @@ int main(void) {
      * We run the test to document the behavior but do not count it as a failure. */
     {
         int fo_leak = run_test("frame_open (AEAD path)", 7, 512, 200);
-        if (fo_leak) {
-            printf("         ^ known-accept: Monocypher skips decryption on MAC failure\n");
-        }
+        if (fo_leak) { printf("         ^ known-accept: Monocypher skips decryption on MAC failure\n"); }
     }
 
     printf("\n================================================\n");

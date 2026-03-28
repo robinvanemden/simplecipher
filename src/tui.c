@@ -285,7 +285,7 @@ void tui_draw_messages(void) {
  * is re-shown and positioned at the end of the visible text so the user
  * can see where they are typing. */
 void tui_draw_input(const char *line, size_t len) {
-    int max_input   = tui_w - INPUT_OVERHEAD;
+    int max_input = tui_w - INPUT_OVERHEAD;
     if (max_input < 1) max_input = 1;
     int show_start  = (int)len > max_input ? (int)len - max_input : 0;
     int visible_len = (int)len - show_start;
@@ -580,9 +580,9 @@ int tui_sas_screen(const char *sas, socket_t sas_fd) {
      * This accepts "A3F2-91BC", "A3F291BC", "a3f2-91bc" etc. — the user
      * does not need to remember whether the dash is part of the code. */
     {
-        char norm_typed[SAS_STR_SZ] = {0}, norm_sas[SAS_STR_SZ] = {0};
-        int  ti = normalize_hex(typed, norm_typed, sizeof norm_typed);
-        int  si = normalize_hex(sas, norm_sas, sizeof norm_sas);
+        char   norm_typed[SAS_STR_SZ] = {0}, norm_sas[SAS_STR_SZ] = {0};
+        int    ti      = normalize_hex(typed, norm_typed, sizeof norm_typed);
+        int    si      = normalize_hex(sas, norm_sas, sizeof norm_sas);
         size_t cmp_len = (size_t)(ti > si ? ti : si);
         int    ok = (ti == si) & (ct_compare((const uint8_t *)norm_typed, (const uint8_t *)norm_sas, cmp_len) == 0);
         crypto_wipe(norm_typed, sizeof norm_typed);

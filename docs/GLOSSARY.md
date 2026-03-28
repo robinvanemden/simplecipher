@@ -94,7 +94,7 @@ A two-phase protocol: first *commit* (send a [hash](#blake2b) of your value), th
 
 ### Cover traffic
 
-Fake messages sent on a fixed random schedule to mask when real messages are being typed. SimpleCipher uses a queue-on-tick design: real messages are queued and sent on the next cover tick (CSPRNG-randomized intervals of 50-100 ms), replacing the cover payload. All outgoing frames follow the same timing distribution, defeating statistical timing analysis. Enabled automatically over [SOCKS5](#socks5)/[Tor](#tor). *See [PROTOCOL.md](PROTOCOL.md#6-wire-padding-dpi-resistance)*
+Fake messages sent on a random schedule to mask when real messages are being typed. SimpleCipher uses a queue-on-tick design: real messages are queued and sent on the next cover tick, replacing the cover payload. Inter-frame intervals follow a clamped exponential distribution (mean 500 ms, range [50, 1500] ms) that mimics natural Poisson traffic, making the stream hard to fingerprint. All outgoing frames follow the same timing distribution, defeating statistical timing analysis. Enabled automatically over [SOCKS5](#socks5)/[Tor](#tor). *See [PROTOCOL.md](PROTOCOL.md#6-wire-padding-dpi-resistance)*
 
 ### DH ratchet
 

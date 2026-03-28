@@ -18,7 +18,7 @@
 #include "protocol.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    if (size < FRAME_SZ) return 0;  /* need exactly one frame */
+    if (size < FRAME_SZ) return 0; /* need exactly one frame */
 
     /* Set up a session with a deterministic key so the fuzzer can explore
      * paths beyond the initial seq check.  We cycle through a few rx_seq
@@ -43,7 +43,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
      * match the sequence check and reach deeper code. */
     s.rx_seq = le64_load(data);
 
-    uint8_t out[MAX_MSG + 1];
+    uint8_t  out[MAX_MSG + 1];
     uint16_t out_len = 0;
 
     /* frame_open must never crash regardless of input */

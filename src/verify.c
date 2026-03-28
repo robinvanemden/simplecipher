@@ -30,8 +30,8 @@ enum {
  * here so an atexit handler (or signal) can restore it.  This prevents the
  * terminal from being left in no-echo mode if keygen is interrupted before
  * signal handlers are installed. */
-static int            g_termios_saved;  /* 1 if g_orig_termios is valid */
-static int            g_termios_fd;     /* fd used for tcsetattr restore  */
+static int            g_termios_saved; /* 1 if g_orig_termios is valid */
+static int            g_termios_fd;    /* fd used for tcsetattr restore  */
 static struct termios g_orig_termios;
 
 static void restore_terminal_echo(void) {
@@ -65,16 +65,16 @@ int read_passphrase(const char *prompt, char *buf, size_t bufsz) {
 #else
     (void)!write(STDERR_FILENO, prompt, strlen(prompt));
     struct termios old;
-    int            fd        = open("/dev/tty", O_RDWR);
-    int            have_tty  = (fd >= 0);
-    int            echo_off  = 0;
+    int            fd       = open("/dev/tty", O_RDWR);
+    int            have_tty = (fd >= 0);
+    int            echo_off = 0;
 
     /* Fall back to stdin when /dev/tty is unavailable, but only attempt
      * termios manipulation if the fd is actually a terminal.  When stdin
      * is a pipe or redirect, isatty() returns false and we skip echo
      * disable entirely — echo does not apply in that case. */
     if (!have_tty) {
-        fd = STDIN_FILENO;
+        fd       = STDIN_FILENO;
         have_tty = isatty(fd);
     }
 
@@ -145,8 +145,8 @@ int keygen_main(const char *path) {
         fprintf(stderr, "  Passphrase too long (max 255 characters).\n");
         return EXIT_USAGE;
     }
-    int p2       = read_passphrase("  Confirm passphrase: ", pass2, sizeof pass2);
-    size_t cmp_len = (size_t)(p1 > p2 ? p1 : p2);
+    int    p2       = read_passphrase("  Confirm passphrase: ", pass2, sizeof pass2);
+    size_t cmp_len  = (size_t)(p1 > p2 ? p1 : p2);
     int    mismatch = (p1 != p2) | (ct_compare((const uint8_t *)pass1, (const uint8_t *)pass2, cmp_len) != 0);
     crypto_wipe(pass2, sizeof pass2);
     if (mismatch) {
@@ -187,10 +187,10 @@ int verify_peer_fingerprint(const uint8_t peer_pub[KEY], const char *expected) {
     format_fingerprint(peer_fp, peer_pub);
 
     if (expected) {
-        char ne[FINGERPRINT_STR_SZ] = {0}, np[FINGERPRINT_STR_SZ] = {0};
-        int  ei       = normalize_hex(expected, ne, sizeof ne);
-        int  pi       = normalize_hex(peer_fp, np, sizeof np);
-        size_t cmp_len = (size_t)(ei > pi ? ei : pi);
+        char   ne[FINGERPRINT_STR_SZ] = {0}, np[FINGERPRINT_STR_SZ] = {0};
+        int    ei       = normalize_hex(expected, ne, sizeof ne);
+        int    pi       = normalize_hex(peer_fp, np, sizeof np);
+        size_t cmp_len  = (size_t)(ei > pi ? ei : pi);
         int    mismatch = (ei != pi) | (ct_compare((const uint8_t *)ne, (const uint8_t *)np, cmp_len) != 0);
         crypto_wipe(ne, sizeof ne);
         crypto_wipe(np, sizeof np);
@@ -368,10 +368,10 @@ int cli_sas_verify(const char *sas, socket_t fd) {
     }
     {
         /* Strip dashes and uppercase both strings before comparing. */
-        char nt[TYPED_SAS_BUF] = {0}, ns[TYPED_SAS_BUF] = {0};
-        int  ti       = normalize_hex(typed_sas, nt, sizeof nt);
-        int  si       = normalize_hex(sas, ns, sizeof ns);
-        size_t cmp_len = (size_t)(ti > si ? ti : si);
+        char   nt[TYPED_SAS_BUF] = {0}, ns[TYPED_SAS_BUF] = {0};
+        int    ti       = normalize_hex(typed_sas, nt, sizeof nt);
+        int    si       = normalize_hex(sas, ns, sizeof ns);
+        size_t cmp_len  = (size_t)(ti > si ? ti : si);
         int    mismatch = (ti != si) | (ct_compare((const uint8_t *)nt, (const uint8_t *)ns, cmp_len) != 0);
         crypto_wipe(nt, sizeof nt);
         crypto_wipe(ns, sizeof ns);

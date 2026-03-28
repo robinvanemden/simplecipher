@@ -49,9 +49,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     (void)socks5_build_request(small, sizeof small, host, port);
 
     /* Also test reply skip with arbitrary bytes */
-    if (size >= 3) {
-        (void)socks5_reply_skip(data[1], data[2]);
-    }
+    if (size >= 3) { (void)socks5_reply_skip(data[1], data[2]); }
 
     return 0;
 }

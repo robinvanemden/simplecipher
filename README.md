@@ -268,7 +268,7 @@ HiddenServicePort 7777 127.0.0.1:7777
 simplecipher listen --cover-traffic
 ```
 
-**What is [cover traffic](docs/GLOSSARY.md#cover-traffic)?** `--socks5` enables the queue-on-tick system: your messages are not sent when you hit Enter — instead, they are queued and transmitted on the next cover tick (every 50-100 ms). Between ticks, encrypted empty frames are sent. Every outgoing frame follows the exact same random timing, so someone watching the network cannot tell when you are actually typing. Without this, typing creates immediate bursts that correlate with Tor traffic. Listeners behind onion services should add `--cover-traffic` explicitly (since they don't use `--socks5`).
+**What is [cover traffic](docs/GLOSSARY.md#cover-traffic)?** `--socks5` enables the queue-on-tick system: your messages are not sent when you hit Enter — instead, they are queued and transmitted on the next cover tick. Between ticks, encrypted empty frames are sent. Inter-frame timing follows a clamped exponential distribution (mean 500 ms) that mimics natural traffic patterns, so someone watching the network cannot tell when you are actually typing or fingerprint the protocol by its timing. Without this, typing creates immediate bursts that correlate with Tor traffic. Listeners behind onion services should add `--cover-traffic` explicitly (since they don't use `--socks5`).
 
 See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for more details on onion service setup.
 

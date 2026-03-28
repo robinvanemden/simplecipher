@@ -11,6 +11,7 @@
 
 #include "protocol.h"
 #include "ratchet.h"
+#include <math.h> /* log() for exponential cover traffic distribution */
 
 /* ---- input validation --------------------------------------------------- */
 
@@ -28,16 +29,15 @@
 /* ---- cover traffic ------------------------------------------------------ */
 
 unsigned cover_delay_ms(void) {
-    uint8_t  r[2];
-    unsigned range = COVER_DELAY_MAX_MS - COVER_DELAY_MIN_MS + 1;
-    unsigned val;
-    do {
-        fill_random(r, 2);
-        val = (unsigned)(r[0] | (r[1] << 8));
-    } while (val >= (65536 / range) * range);
-    unsigned d = COVER_DELAY_MIN_MS + (val % range);
-    crypto_wipe(r, sizeof r);
-    return d;
+    uint32_t r;
+    fill_random((uint8_t *)&r, sizeof r);
+    if (r == 0) r = 1;                                    /* avoid log(0)           */
+    double u     = (double)r / 4294967296.0;              /* uniform in (0, 1]     */
+    double delay = -(double)COVER_DELAY_MEAN_MS * log(u); /* exp(1/mean) */
+    if (delay < (double)COVER_DELAY_MIN_MS) delay = (double)COVER_DELAY_MIN_MS;
+    if (delay > (double)COVER_DELAY_MAX_MS) delay = (double)COVER_DELAY_MAX_MS;
+    crypto_wipe(&r, sizeof r);
+    return (unsigned)delay;
 }
 
 /* ---- peer output sanitisation ------------------------------------------- */
@@ -281,7 +281,10 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     } else {
         memcpy(s->rx, next_rx, KEY);
     }
-    if (s->rx_seq == UINT64_MAX) { rc = -1; goto cleanup; }
+    if (s->rx_seq == UINT64_MAX) {
+        rc = -1;
+        goto cleanup;
+    }
     s->rx_seq++;
     s->need_send_ratchet = 1;
     if (out) memcpy(out, pt + off, len);

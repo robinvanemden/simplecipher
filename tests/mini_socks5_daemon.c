@@ -29,7 +29,10 @@ static int recv_exact(int fd, void *buf, size_t n) {
     size_t done = 0;
     while (done < n) {
         ssize_t r = recv(fd, (char *)buf + done, n - done, 0);
-        if (r <= 0) { if (r < 0 && errno == EINTR) continue; return -1; }
+        if (r <= 0) {
+            if (r < 0 && errno == EINTR) continue;
+            return -1;
+        }
         done += (size_t)r;
     }
     return 0;
@@ -38,7 +41,10 @@ static int send_all(int fd, const void *buf, size_t n) {
     size_t done = 0;
     while (done < n) {
         ssize_t r = send(fd, (const char *)buf + done, n - done, 0);
-        if (r <= 0) { if (r < 0 && errno == EINTR) continue; return -1; }
+        if (r <= 0) {
+            if (r < 0 && errno == EINTR) continue;
+            return -1;
+        }
         done += (size_t)r;
     }
     return 0;
@@ -48,24 +54,28 @@ int main(void) {
     signal(SIGPIPE, SIG_IGN);
 
     int srv = socket(AF_INET, SOCK_STREAM, 0);
-    if (srv < 0) { perror("socket"); return 1; }
+    if (srv < 0) {
+        perror("socket");
+        return 1;
+    }
     int one = 1;
     setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
 
     struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
-        .sin_port = htons(9050)
-    };
+        .sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK), .sin_port = htons(9050)};
     if (bind(srv, (struct sockaddr *)&addr, sizeof addr) != 0) {
-        perror("bind 9050"); return 1;
+        perror("bind 9050");
+        return 1;
     }
     listen(srv, 1);
     fprintf(stderr, "mini_socks5_daemon: listening on 127.0.0.1:9050\n");
 
     int client = accept(srv, NULL, NULL);
     close(srv); /* one session only */
-    if (client < 0) { perror("accept"); return 1; }
+    if (client < 0) {
+        perror("accept");
+        return 1;
+    }
 
     /* SOCKS5 greeting */
     char buf[4096];
@@ -107,7 +117,7 @@ int main(void) {
             goto done;
         }
         target_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-        int rc = (target_fd >= 0) ? connect(target_fd, res->ai_addr, (socklen_t)res->ai_addrlen) : -1;
+        int rc    = (target_fd >= 0) ? connect(target_fd, res->ai_addr, (socklen_t)res->ai_addrlen) : -1;
         freeaddrinfo(res);
         if (rc != 0) {
             char fail[10] = {5, 5};

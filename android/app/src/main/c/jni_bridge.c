@@ -612,15 +612,15 @@ static void *session_thread(void *arg) {
         } else {
             gen_keypair(self_priv, self_pub);
         }
-        make_commit(commit_self, self_pub);
+        uint8_t self_nonce[KEY], peer_nonce[KEY];
+        fill_random(self_nonce, KEY);
+        make_commit(commit_self, self_pub, self_nonce);
 
         set_sock_timeout(fd, HANDSHAKE_TIMEOUT_S);
 
         /* Two-round handshake: version+commitment+nonce, then keys.
          * Both rounds complete before any verification — timing-
          * indistinguishable failure modes from the wire. */
-        uint8_t self_nonce[KEY], peer_nonce[KEY];
-        fill_random(self_nonce, KEY);
         uint8_t peer_ver;
         {
             uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
@@ -662,7 +662,7 @@ static void *session_thread(void *arg) {
         }
 
         /* Verify commitment */
-        if (!verify_commit(commit_peer, peer_pub)) {
+        if (!verify_commit(commit_peer, peer_pub, peer_nonce)) {
             LOGE("commitment mismatch -- possible MITM");
             crypto_wipe(commit_self, sizeof commit_self);
             crypto_wipe(commit_peer, sizeof commit_peer);
@@ -983,14 +983,20 @@ static void *session_thread(void *arg) {
                         if (pending_len > 0) {
                             crypto_wipe(msg_buf, plen);
                             (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                            if (jni_callback_ok(env) != 0) { running = 0; break; }
+                            if (jni_callback_ok(env) != 0) {
+                                running = 0;
+                                break;
+                            }
                             continue;
                         }
                         if (plen > 0) memcpy(pending_msg, msg_buf, plen);
                         pending_len = plen;
                         crypto_wipe(msg_buf, plen);
                         (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)1);
-                        if (jni_callback_ok(env) != 0) { running = 0; break; }
+                        if (jni_callback_ok(env) != 0) {
+                            running = 0;
+                            break;
+                        }
                         continue;
                     }
 

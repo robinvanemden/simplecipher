@@ -13,7 +13,9 @@
 
 static const char *const DOMAIN_COMMIT = "cipher commit v3";
 
-#if !defined(_WIN32) && !defined(_WIN64)
+#if defined(_WIN32) || defined(_WIN64)
+#    include <sys/stat.h> /* chmod() for key file permissions on MinGW/MSVC */
+#else
 #    include <fcntl.h>    /* open() with O_CREAT for 0600 key file permissions */
 #    include <limits.h>   /* PATH_MAX */
 #    include <sys/mman.h> /* mlockall/munlockall for Argon2 work buffer */
@@ -256,7 +258,7 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
     int close_ok = (fclose(f) == 0);
     crypto_wipe(ct, sizeof ct);
     if (!ok || !close_ok) return -1;
-    _chmod(path, 0600);
+    chmod(path, 0600);
     return 0;
 #else
     /* Build temp path in the same directory for atomic rename. */
