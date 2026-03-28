@@ -179,8 +179,8 @@ void set_sock_opts(socket_t fd) {
  * Wire format: [pad_len(1)][payload][random_padding].
  * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
 static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t deadline) {
-    uint8_t buf[1 + 2 * KEY + WIRE_PAD_MAX];
-    if (payload_n > 2 * KEY) return -1; /* defensive: payload must fit */
+    uint8_t buf[1 + 1 + 2 * KEY + WIRE_PAD_MAX];              /* hdr(1) + version(1) + 2*KEY + pad */
+    if (1 + payload_n + WIRE_PAD_MAX > sizeof buf) return -1; /* defensive: payload must fit */
     uint8_t r;
     fill_random(&r, 1);
     if (1 + payload_n + r > sizeof buf) r = (uint8_t)(sizeof buf - 1 - payload_n);

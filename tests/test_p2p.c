@@ -679,7 +679,7 @@ static void test_seq_overflow(void) {
     uint8_t chain[KEY];
     fill_random(chain, KEY);
 
-    /* Frame at UINT64_MAX should still build successfully */
+    /* frame_build rejects UINT64_MAX to prevent sequence number overflow */
     uint8_t     frame[FRAME_SZ], next[KEY];
     const char *msg = "overflow test";
     session_t   tmp;
@@ -687,24 +687,27 @@ static void test_seq_overflow(void) {
     memcpy(tmp.tx, chain, KEY);
     tmp.tx_seq            = UINT64_MAX;
     tmp.need_send_ratchet = 0;
-    TEST("frame_build at UINT64_MAX succeeds",
+    TEST("frame_build rejects UINT64_MAX seq",
+         frame_build(&tmp, (const uint8_t *)msg, (uint16_t)strlen(msg), frame, next) != 0);
+
+    /* UINT64_MAX-1 should succeed (last valid sequence number) */
+    tmp.tx_seq = UINT64_MAX - 1;
+    TEST("frame_build at UINT64_MAX-1 succeeds",
          frame_build(&tmp, (const uint8_t *)msg, (uint16_t)strlen(msg), frame, next) == 0);
-
-    /* Verify the AD encodes UINT64_MAX correctly */
     uint64_t seq_in_frame = le64_load(frame);
-    TEST("AD contains UINT64_MAX", seq_in_frame == UINT64_MAX);
+    TEST("AD contains UINT64_MAX-1", seq_in_frame == UINT64_MAX - 1);
 
-    /* Frame should decrypt if session rx_seq matches */
+    /* frame_open at matching seq should decrypt */
     session_t s;
     memset(&s, 0, sizeof s);
     memcpy(s.rx, chain, KEY);
-    s.rx_seq = UINT64_MAX;
+    s.rx_seq = UINT64_MAX - 1;
 
     uint8_t  plain[MAX_MSG + 1];
     uint16_t plen = 0;
-    TEST("frame_open at UINT64_MAX succeeds", frame_open(&s, frame, plain, &plen) == 0);
+    TEST("frame_open at UINT64_MAX-1 succeeds", frame_open(&s, frame, plain, &plen) == 0);
     plain[plen] = '\0';
-    TEST("decrypted message at UINT64_MAX matches", strcmp((char *)plain, msg) == 0);
+    TEST("decrypted message at UINT64_MAX-1 matches", strcmp((char *)plain, msg) == 0);
 
     crypto_wipe(chain, sizeof chain);
 }
