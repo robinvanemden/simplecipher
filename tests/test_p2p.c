@@ -1260,11 +1260,8 @@ static void test_frame_build_wipes_intermediates(void) {
     }
     TEST("plaintext padding is zero (no leftover data)", pad_clean);
 
-    /* The mk used internally by frame_build is a local -- we can't inspect
-     * it directly, but we CAN verify it was derived correctly and then used,
-     * meaning the wipe path was reached (frame_build returns 0 only after
-     * crypto_wipe of mk, pt, nonce). */
-    TEST("mk matches expected derivation", crypto_verify32(mk, mk) == 0);
+    /* mk correctness is already proven: we derived it independently via
+     * chain_step and used it to successfully decrypt the frame above. */
 
     crypto_wipe(mk, sizeof mk);
     crypto_wipe(nonce, sizeof nonce);

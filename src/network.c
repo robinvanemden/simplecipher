@@ -744,7 +744,14 @@ static socket_t connect_socket_flags(const char *host, const char *port, int ai_
 #endif
     do {
         fd = accept(srv, nullptr, nullptr);
+#if defined(_WIN32) || defined(_WIN64)
+        /* On Windows, accept() failure is broken by g_interrupt_sock +
+         * closesocket() from the console handler thread.  errno/EINTR
+         * do not apply; the g_running check is the exit condition. */
+    } while (fd == INVALID_SOCK && g_running);
+#else
     } while (fd == INVALID_SOCK && g_running && (errno == EINTR || errno == ECONNABORTED));
+#endif
 #if defined(_WIN32) || defined(_WIN64)
     g_interrupt_sock = INVALID_SOCKET;
 #endif

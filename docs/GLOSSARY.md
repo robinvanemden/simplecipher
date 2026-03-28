@@ -176,7 +176,7 @@ Android Package Kit. The file format used to distribute Android applications. Si
 
 ### ASLR (Address Space Layout Randomization)
 
-Address Space Layout Randomization. An OS feature that randomizes where a program's code and data are placed in memory, making it harder for an attacker to exploit memory corruption bugs. SimpleCipher is compiled as a [PIE](#pie-position-independent-executable) binary to enable full ASLR on all platforms. *See [HARDENING.md](HARDENING.md)*
+Address Space Layout Randomization. An OS feature that randomizes where a program's code and data are placed in memory, making it harder for an attacker to exploit memory corruption bugs. SimpleCipher is compiled as a [PIE](#pie-position-independent-executable) binary where toolchain support is available (Windows, native builds); static musl-linked Linux binaries currently lack PIE (see [HARDENING.md](HARDENING.md) for status). *See [HARDENING.md](HARDENING.md)*
 
 ### BTI (Branch Target Identification)
 
@@ -232,7 +232,7 @@ Native Development Kit. Android's toolchain for compiling C/C++ code to run on A
 
 ### PIE (Position-Independent Executable)
 
-Position-Independent Executable. A binary compiled so it can be loaded at any memory address, enabling [ASLR](#aslr-address-space-layout-randomization). SimpleCipher is compiled as PIE on all platforms. *See [HARDENING.md](HARDENING.md)*
+Position-Independent Executable. A binary compiled so it can be loaded at any memory address, enabling [ASLR](#aslr-address-space-layout-randomization). SimpleCipher uses PIE where toolchain support is available; static musl-linked Linux binaries currently use `-static` without `-static-pie` (pending musl toolchain upgrade). *See [HARDENING.md](HARDENING.md)*
 
 ### pledge / unveil
 

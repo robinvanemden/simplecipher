@@ -13,14 +13,14 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | **Confidentiality** (XChaCha20-Poly1305) | `protocol.c:frame_build()`, `protocol.c:frame_open()` | `test_p2p.c:test_crypto_basics` (encrypt/decrypt roundtrip), `test_constant_time.c:frame_build` (timing) | Monocypher handles [AEAD](GLOSSARY.md#aead-authenticated-encryption-with-associated-data) |
 | **Key agreement** (X25519 [ECDH](GLOSSARY.md#diffie-hellman-dh)) | `crypto.c:gen_keypair()`, `protocol.c:session_init()` | `test_p2p.c:test_crypto_basics` (DH shared secrets match) | Monocypher handles X25519 |
 | **[Forward secrecy](GLOSSARY.md#forward-secrecy)** (chain ratchet) | `crypto.c:chain_step()` | `test_p2p.c:test_forward_secrecy_key_erasure`, `test_p2p.c:test_sequential_chain_advancement` | Old chain key wiped after each step |
-| **Post-compromise security** (DH ratchet) | `ratchet.c:ratchet_init/step_send/step_recv()` | `test_p2p.c:test_dh_ratchet_pcs`, `test_p2p.c:test_dh_ratchet_deep_pcs` | Fresh DH on each direction switch |
+| **Post-compromise security** (DH ratchet) | `ratchet.c:ratchet_send/ratchet_receive()` | `test_p2p.c:test_dh_ratchet_pcs`, `test_p2p.c:test_dh_ratchet_deep_pcs` | Fresh DH on each direction switch |
 | **Integrity** (Poly1305 [MAC](GLOSSARY.md#mac-message-authentication-code)) | `protocol.c:frame_open()` rejects on MAC failure | `test_p2p.c:test_crypto_basics` (tampered frame rejected) | |
 | **Replay rejection** (sequence numbers) | `protocol.c:frame_open()` checks `rx_seq` | `test_p2p.c:test_crypto_basics` (replayed frame rejected), `test_p2p.c:test_dh_ratchet_replay_rejection` | |
 | **[Commitment scheme](GLOSSARY.md#commitment-scheme)** (anti-MITM) | `crypto.c:make_commit()`, `crypto.c:verify_commit()` | `test_p2p.c:test_crypto_basics` (commit verifies/rejects), `test_p2p.c:test_commitment_specificity` | [Constant-time](GLOSSARY.md#constant-time) via `crypto_verify32` |
 | **[SAS](GLOSSARY.md#sas-short-authentication-string) verification** (32-bit) | `crypto.c:format_sas()` | `test_p2p.c:test_crypto_basics` (SAS format), `test_p2p.c:test_format_sas_edge_cases` | |
 | **Fingerprint verification** (64-bit) | `crypto.c:format_fingerprint()`, `crypto.c:ct_compare()` | `test_p2p.c:test_format_fingerprint`, `test_p2p.c:test_fingerprint_roundtrip`, `test_p2p.c:test_fingerprint_handshake_verification` (Tests D-G) | |
 | **Message-length hiding** (512-byte frames) | `protocol.h:FRAME_SZ=512`, `protocol.c:frame_build()` | `test_p2p.c:test_frame_boundary_message_sizes` | All frames same size |
-| **[DPI](GLOSSARY.md#dpi-deep-packet-inspection) resistance** (wire padding) | `network.c:frame_send/recv/wire_build()`, `protocol.h:WIRE_*` | Loopback tests in `test_p2p.c`, `test_socks5_proxy.c` | Wire size varies 514-769 bytes |
+| **[DPI](GLOSSARY.md#dpi-deep-packet-inspection) resistance** (wire padding) | `network.c:frame_send/recv/frame_wire_build()`, `protocol.h:WIRE_*` | Loopback tests in `test_p2p.c`, `test_socks5_proxy.c` | Wire size varies 513-768 bytes |
 
 ## Key lifecycle (wipe guarantees)
 

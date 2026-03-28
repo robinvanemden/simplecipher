@@ -86,7 +86,7 @@ protocol.c → frame_build(session, plaintext, len, frame_out, next_chain)
 4. Encrypt with [XChaCha20-Poly1305](GLOSSARY.md#xchacha20-poly1305): `crypto_aead_lock(plaintext → ciphertext + MAC)`
 5. Output: exactly 512 bytes — always, regardless of message length
 
-The caller sends the frame via `frame_send()`, which wraps it in random padding on the wire (514-769 bytes total), then commits the chain advance (`tx = next_chain; tx_seq++`). If the send fails, the chain is not advanced — both sides stay in sync.
+The caller sends the frame via `frame_send()`, which wraps it in random padding on the wire (513-768 bytes total), then commits the chain advance (`tx = next_chain; tx_seq++`). If the send fails, the chain is not advanced — both sides stay in sync.
 
 ### Decrypting a message
 
@@ -170,5 +170,5 @@ Skip all of this on first reading — the protocol is complete without it.
 
 - **PROTOCOL.md** — formal protocol specification with glossary
 - **HARDENING.md** — platform-specific security measures
-- **tests/test_p2p.c** — 770 test assertions covering every code path
+- **tests/test_p2p.c** — 769 test assertions covering every code path
 - **[Monocypher](GLOSSARY.md#monocypher) documentation** — https://monocypher.org/ (the underlying crypto library)
