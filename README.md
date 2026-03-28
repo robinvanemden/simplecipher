@@ -76,65 +76,237 @@ Grab a binary from the [latest release](https://github.com/robinvanemden/simplec
 
 All desktop binaries are fully static with zero runtime dependencies. Both Android APKs use the same encryption — the difference is QR code support. See [Android App](docs/ANDROID.md) for details.
 
-## Quick start
+## Ways to use SimpleCipher
 
-The easiest way to chat across different networks is with [Tailscale](https://tailscale.com/) (free for personal use, 2-minute setup). Tailscale creates a WireGuard mesh so your devices can reach each other. SimpleCipher encrypts on top of that — [ephemeral](docs/PROTOCOL.md#ephemeral) keys, [SAS](docs/PROTOCOL.md#sas) verification, and [forward secrecy](docs/PROTOCOL.md#forward-secrecy) that Tailscale alone does not provide.
+There are several ways to use SimpleCipher, from simplest to most secure.
+
+| Method | Security | Best for | You need |
+|--------|----------|----------|----------|
+| [Same Wi-Fi](#same-wi-fi) | Good | Chatting with someone in the same building | Wi-Fi |
+| [Tailscale](#over-the-internet-with-tailscale) | Good | Easiest way to chat across the internet | Free [Tailscale](https://tailscale.com/) account |
+| [Port forwarding](#over-the-internet-with-port-forwarding) | Good | Chatting across the internet without extra software | Router access |
+| [Pre-shared fingerprints](#with-pre-shared-fingerprints-paper) | Very strong | Verifying identity without a phone call | To meet in person first |
+| [Pre-shared fingerprints + trust](#with-pre-shared-fingerprints--trust-fingerprint) | Very strong | Fully automatic verification, no phone call | To meet in person first |
+| [Over Tor](#over-tor) | Strongest | Hiding who is talking to whom | [Tor](docs/GLOSSARY.md#tor) installed |
+| [Over Tor + fingerprints](#over-tor-with-pre-shared-fingerprints) | Strongest | Maximum: anonymous + verified identity | Tor + met in person first |
+
+All methods encrypt your conversation the same way. The difference is how you connect and how you verify each other's identity.
+
+---
+
+### Same Wi-Fi
+
+**What this is.** You and your friend are both connected to the same Wi-Fi network -- at home, at the office, or in the same building. Your computers can see each other directly.
+
+**Verification:** [Safety code](docs/GLOSSARY.md#safety-code) -- you compare a short code over the phone. Takes 10 seconds.
+
+**Steps:**
+
+1. You start listening. SimpleCipher shows your [IP address](docs/GLOSSARY.md#ip-address) (the number that identifies your computer on the network, like 192.168.1.42).
+2. Tell your friend the IP address.
+3. Your friend connects.
+4. You both see a safety code. Call each other and read it out loud. If it matches, type it in.
+5. Chat. Everything is encrypted.
+
+```bash
+# You: start listening
+simplecipher listen
+
+# Your friend: connect (type the IP address when prompted)
+simplecipher connect
+```
+
+---
+
+### Over the internet with Tailscale
+
+**What this is.** [Tailscale](https://tailscale.com/) is a free service that lets your computers find each other across the internet. Think of it as a private tunnel between your devices. SimpleCipher encrypts on top of that tunnel -- [ephemeral](docs/GLOSSARY.md#ephemeral) keys, safety code verification, and [forward secrecy](docs/GLOSSARY.md#forward-secrecy) that Tailscale alone does not provide.
+
+**Verification:** [Safety code](docs/GLOSSARY.md#safety-code) -- you compare a short code over the phone. Takes 10 seconds.
+
+**Steps:**
+
+1. Both you and your friend install Tailscale (one time, takes 2 minutes).
+2. You start listening.
+3. Your friend connects using the Tailscale IP address (it starts with `100.`).
+4. Compare the safety code over a phone call.
+5. Chat.
 
 ```bash
 # Both devices: install Tailscale (one-time)
 curl -fsSL https://tailscale.com/install.sh | sh
 tailscale up
 
-# Person A: listen for a connection
+# You: start listening
 simplecipher listen
 
-# Person B: connect (interactive prompt — address stays out of shell history)
+# Your friend: connect (type the Tailscale IP when prompted)
 simplecipher connect
 ```
 
-On the same Wi-Fi or LAN, skip Tailscale entirely — just use the local IP:
+---
+
+### Over the internet with port forwarding
+
+**What this is.** One side opens a [port](docs/GLOSSARY.md#port) (a numbered doorway) on their router so the other side can connect directly over the internet. This avoids any third-party service, but you need access to your router's settings.
+
+**Verification:** [Safety code](docs/GLOSSARY.md#safety-code) -- you compare a short code over the phone. Takes 10 seconds.
+
+**Steps:**
+
+1. Log into your router and forward port 7777 to your computer. (Search "[your router brand] port forwarding" for instructions.)
+2. Find your public IP address by searching "what is my IP" in a web browser.
+3. Start listening.
+4. Send your public IP address to your friend.
+5. Your friend connects.
+6. Compare the safety code over a phone call.
+7. Chat.
 
 ```bash
-# Person A
+# You (after setting up port forwarding): start listening
 simplecipher listen
 
-# Person B (interactive — or: simplecipher connect 192.168.1.42)
+# Your friend: connect using your public IP
 simplecipher connect
 ```
 
-### Other ways to connect
+**Note:** Anyone who knows your IP can attempt to connect while the port is open. SimpleCipher will reject anyone who does not complete the safety code verification. Close the port forwarding when you are done.
 
-SimpleCipher encrypts your messages, but your IP address is still visible to the network. The transport you choose determines who can see that you're connecting:
+---
 
-| Method | When to use | Who sees your IP |
-|--------|-------------|------------------|
-| **LAN / Wi-Fi** | Same network | Nobody outside the network |
-| **Tailscale** (easiest) | Different networks, quick setup | Tailscale's coordination server sees both endpoints |
-| **WireGuard** | Manual VPN tunnel between devices | Your VPN peer only |
-| **Port forwarding** | Forward port 7777 on your router | Anyone who knows the IP can attempt a connection |
-| **[Tor](docs/GLOSSARY.md#tor)** | Anonymity matters | Neither side learns the other's IP; network observers see Tor traffic but not the destination |
+### With pre-shared fingerprints (paper)
 
-**If you need anonymity** — not just encryption — use Tor:
+**What this is.** A [fingerprint](docs/GLOSSARY.md#fingerprint) is a short code (like `A3F2-91BC-D4E5-F678`) that identifies your copy of SimpleCipher for one session. When you meet your friend in person, you each run `simplecipher listen` to see your fingerprint, write it down on paper, and hand it to each other. Later, when you chat, SimpleCipher checks the fingerprint automatically. You still confirm a safety code, but the fingerprint adds an extra layer of trust.
+
+Think of it like exchanging secret handshakes in person, then using them later to prove who you are.
+
+**Verification:** [Fingerprint](docs/GLOSSARY.md#fingerprint) verified first, then [safety code](docs/GLOSSARY.md#safety-code). Both layers of protection.
+
+**Steps:**
+
+1. When you meet in person, both run `simplecipher listen` to see your fingerprints. Write them on paper and exchange.
+2. Later, when you want to chat, you start listening with your friend's fingerprint.
+3. Your friend connects with your fingerprint.
+4. SimpleCipher checks the fingerprints automatically. If they don't match, it stops.
+5. Compare the safety code over a phone call.
+6. Chat.
 
 ```bash
-# Connecting through Tor (interactive — keeps .onion address out of shell history):
+# You: start listening with your friend's fingerprint from the paper
+simplecipher listen --peer-fingerprint B7E2-04AC-F931-8D56
+
+# Your friend: connect with your fingerprint from the paper
+simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678
+```
+
+**Note:** Fingerprints change every session. Exchange new ones each time you meet.
+
+---
+
+### With pre-shared fingerprints + --trust-fingerprint
+
+**What this is.** Same as above, but you add `--trust-fingerprint` to skip the safety code entirely. Since you exchanged fingerprints on paper in person, the fingerprint alone is enough to verify identity. No phone call needed at chat time.
+
+The fingerprint (64-bit) is cryptographically stronger than the safety code (32-bit), so this is safe when the fingerprint was exchanged through a trusted channel like paper.
+
+**Verification:** [Fingerprint](docs/GLOSSARY.md#fingerprint) only -- fully automatic, no phone call needed.
+
+**Steps:**
+
+1. Exchange fingerprints on paper when you meet in person (same as above).
+2. When you want to chat, both add `--trust-fingerprint`.
+3. SimpleCipher checks the fingerprints and starts the chat automatically.
+
+```bash
+# You: listen with your friend's fingerprint + trust
+simplecipher listen --peer-fingerprint B7E2-04AC-F931-8D56 --trust-fingerprint
+
+# Your friend: connect with your fingerprint + trust
+simplecipher connect --peer-fingerprint A3F2-91BC-D4E5-F678 --trust-fingerprint
+```
+
+---
+
+### Over Tor
+
+**What this is.** [Tor](docs/GLOSSARY.md#tor) is free software that hides your [IP address](docs/GLOSSARY.md#ip-address) (the number that identifies your computer on the network). Without Tor, your internet provider and anyone watching the network can see *that* you are connecting to your friend, even though they cannot read your messages. With Tor, nobody can see who is talking to whom.
+
+Think of it like mailing a letter through a chain of intermediaries, each one only knowing the next step. Nobody sees both the sender and the recipient.
+
+**Verification:** [Safety code](docs/GLOSSARY.md#safety-code) -- you compare a short code over the phone. Takes 10 seconds.
+
+**Steps for the person connecting:**
+
+1. Install Tor: `sudo apt install tor` (Linux) or download from [torproject.org](https://www.torproject.org/).
+2. Start the Tor service: `sudo systemctl start tor`
+3. Your friend gives you their `.onion` address (a special Tor address).
+4. Connect through Tor.
+5. Compare the safety code over a phone call.
+
+```bash
+# Connect through Tor (type the .onion address when prompted):
 simplecipher connect --socks5 127.0.0.1:9050
-#   Host: <paste .onion address>
-
-# Listening as a Tor onion service:
-# 0. Install Tor:  sudo apt install tor
-# 1. Add to /etc/tor/torrc:
-#      HiddenServiceDir /var/lib/tor/simplecipher/
-#      HiddenServicePort 7777 127.0.0.1:7777
-# 2. Restart Tor:  sudo systemctl restart tor
-# 3. Get your .onion address:  cat /var/lib/tor/simplecipher/hostname
-# 4. Listen with cover traffic:  simplecipher listen --cover-traffic
-# Your peer connects to the .onion address via --socks5.
 ```
 
-`--socks5` automatically enables **[cover traffic](docs/GLOSSARY.md#cover-traffic)**: the app keeps sending encrypted empty messages at random intervals, even when you're not typing. Without this, someone watching the network can match *when* you type to *when* encrypted data flows through Tor — and figure out who's talking to whom. With cover traffic, the data flows constantly, so your typing pattern disappears into the noise.
+**Steps for the person listening (setting up an onion service):**
 
-Listeners behind onion services should add `--cover-traffic` explicitly (since they don't use `--socks5`). See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for onion service setup.
+1. Install Tor: `sudo apt install tor`
+2. Edit the Tor configuration file (`/etc/tor/torrc`) and add these two lines:
+
+```
+HiddenServiceDir /var/lib/tor/simplecipher/
+HiddenServicePort 7777 127.0.0.1:7777
+```
+
+3. Restart Tor: `sudo systemctl restart tor`
+4. Find your `.onion` address: `cat /var/lib/tor/simplecipher/hostname`
+5. Send the `.onion` address to your friend through a secure channel.
+6. Start listening with cover traffic:
+
+```bash
+simplecipher listen --cover-traffic
+```
+
+**What is [cover traffic](docs/GLOSSARY.md#cover-traffic)?** `--socks5` automatically sends encrypted empty messages at random intervals, even when you are not typing. Without this, someone watching the network can match *when* you type to *when* encrypted data flows through Tor -- and figure out who is talking to whom. With cover traffic, data flows constantly, so your typing pattern disappears into the noise. Listeners behind onion services should add `--cover-traffic` explicitly (since they don't use `--socks5`).
+
+See the [Tor onion services documentation](https://community.torproject.org/onion-services/setup/) for more details on onion service setup.
+
+---
+
+### Over Tor with pre-shared fingerprints
+
+**What this is.** The strongest option. You get full anonymity from Tor *and* verified identity from pre-shared fingerprints. Nobody can see who is talking to whom, and you know for certain it is your friend on the other end.
+
+**Verification:** [Fingerprint](docs/GLOSSARY.md#fingerprint) verified first, then [safety code](docs/GLOSSARY.md#safety-code). Both layers, plus Tor anonymity.
+
+**Steps:**
+
+1. Exchange fingerprints on paper when you meet in person.
+2. Set up Tor (see [Over Tor](#over-tor) above for the full Tor setup).
+3. Use both `--peer-fingerprint` and Tor together.
+
+```bash
+# You: listen as a Tor onion service with your friend's fingerprint
+simplecipher listen --cover-traffic --peer-fingerprint B7E2-04AC-F931-8D56
+
+# Your friend: connect through Tor with your fingerprint
+simplecipher connect --socks5 127.0.0.1:9050 --peer-fingerprint A3F2-91BC-D4E5-F678
+```
+
+You can also add `--trust-fingerprint` on both sides to skip the safety code entirely, making the connection fully automatic.
+
+---
+
+### Which method sees your IP address?
+
+SimpleCipher encrypts your messages, but your [IP address](docs/GLOSSARY.md#ip-address) is still visible to the network. The method you choose determines who can see that you are connecting:
+
+| Method | Who sees your IP |
+|--------|------------------|
+| **Same Wi-Fi** | Nobody outside the network |
+| **Tailscale** | Tailscale's coordination server sees both endpoints |
+| **Port forwarding** | Anyone who knows the IP can attempt a connection |
+| **Tor** | Neither side learns the other's IP; network observers see Tor traffic but not the destination |
 
 ### Options
 
@@ -293,7 +465,7 @@ The session is gone. Keys exist only in memory. Reconnect and start fresh — yo
 Signal requires a phone number, an account, and a central server that knows who talks to whom. SimpleCipher has none of that. Nothing is stored, no sign-up needed. Use Signal when you need persistent contacts. Use SimpleCipher when storing nothing to disk matters more.
 
 **Can I use this over the internet without a VPN?**
-Yes, if one side has a reachable IP (port forwarding, cloud server, etc.). See [Quick start](#quick-start) for options. For anonymity, use [Tor](#other-ways-to-connect).
+Yes, if one side has a reachable IP (port forwarding, cloud server, etc.). See [Ways to use SimpleCipher](#ways-to-use-simplecipher) for options. For anonymity, use [Tor](#over-tor).
 
 **Why is it so small?**
 No dependencies. No TLS library, no HTTP stack, no JSON parser. Just a handful of C files compiled into one static binary.
