@@ -1374,8 +1374,8 @@ JNIEXPORT jint JNICALL Java_com_example_simplecipher_ChatActivity_nativeStart(JN
                 ta->socks5_host = strndup(p, hlen);
                 ta->socks5_port = strdup(colon + 1);
                 /* Defence in depth: reject non-loopback proxies.
-                 * Blocking connect to a remote proxy can hang the
-                 * session thread beyond nativeStop()'s reach. */
+                 * A remote proxy exposes the target hostname to a
+                 * third party and adds an untrusted network hop. */
                 if (ta->socks5_host && strcmp(ta->socks5_host, "127.0.0.1") != 0 &&
                     strcmp(ta->socks5_host, "localhost") != 0 && strcmp(ta->socks5_host, "::1") != 0) {
                     LOGE("SOCKS5 proxy must be localhost, got: %s", ta->socks5_host);

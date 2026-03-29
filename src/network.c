@@ -488,9 +488,9 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
  * socks5_reply_skip above for the pure logic; this function handles I/O.
  *
  * A 30-second absolute deadline protects the SOCKS5 greeting/request/reply
- * against byte-dribble attacks.  The initial TCP connect to the proxy is
- * still blocking (typically localhost, completes instantly); on Android,
- * the connect is done via non-blocking poll() with nativeStop() interrupt.
+ * against byte-dribble attacks.  The initial TCP connect to the proxy uses
+ * connect_socket() which does non-blocking connect with a 15-second
+ * per-address timeout on all platforms (see connect_socket_flags).
  * The deadline is removed before returning the connected socket. */
 [[nodiscard]] socket_t connect_socket_socks5(const char *proxy_host, const char *proxy_port, const char *target_host,
                                              const char *target_port) {

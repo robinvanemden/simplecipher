@@ -187,14 +187,15 @@ This assumes Mallory cannot predict the honest parties' ephemeral keys (which ar
 Time   Alice                 Mallory (MITM)              Bob
  |
  |     gen (sk_A, pk_A)      intercepts both sides
- |     commit_A = H(pk_A)
- |        ----- commit_A -------->
+ |     gen nonce_A
+ |     commit_A = H(pk_A||nonce_A)
+ |        ----- commit_A + nonce_A ---->
  |                            must commit NOW
  |                            (hasn't seen pk_A yet!)
- |                               ---- commit_M1 ----------->
- |                               <--- commit_B ------------ gen (sk_B, pk_B)
- |        <--- commit_M2 --------                           commit_B = H(pk_B)
- |                            (hasn't seen pk_B yet!)
+ |                               ---- commit_M1 + nonce_M1 ----->
+ |                               <--- commit_B + nonce_B ------- gen (sk_B, pk_B)
+ |        <--- commit_M2 + nonce_M2 --                          gen nonce_B
+ |                            (hasn't seen pk_B yet!)            commit_B = H(pk_B||nonce_B)
  |
  |     reveal pk_A ---------->
  |                            sees pk_A -- TOO LATE
@@ -208,7 +209,7 @@ Time   Alice                 Mallory (MITM)              Bob
  |     SAS_A = SAS_B only if Mallory guessed right (Pr <= 2^-32)
 ```
 
-Once `commit_M1 = H(pk_M1)` is sent, Mallory cannot find an alternative `pk_M1'` that produces the same commitment without breaking BLAKE2b collision resistance (Section 4.2). Her only strategy is guessing, over the 32-bit SAS output space.
+Once `commit_M1 = H(pk_M1 || nonce_M1)` is sent, Mallory cannot find an alternative `pk_M1'` that produces the same commitment without breaking BLAKE2b collision resistance (Section 4.2). Her only strategy is guessing, over the 32-bit SAS output space.
 
 **Why 32 bits is acceptable for interactive verification.** The SAS is verified by a human in real-time over an out-of-band channel (voice/video call). A 2<sup>-32</sup> &asymp; 2.3 &times; 10<sup>-10</sup> probability of success per session is negligible in the interactive setting. The adversary gets exactly one attempt per session (the commitment prevents retry after failure). Even at one session per second sustained for a year, the cumulative probability remains below 10<sup>-2</sup>. For automated/unattended verification where an adversary can attempt many sessions without human oversight, 32 bits is insufficient.
 
@@ -260,7 +261,7 @@ rx'               = expand(root', "chain")
 
 **Post-compromise security claim.** If an adversary compromises all session state (root, tx, rx, dh_priv, staged_*) at time t, then after one DH round-trip (one send from each party) *with no further compromise*, the adversary can no longer derive session keys.
 
-**Note on eager pre-computation.** Because `ratchet_prepare` runs at receive time (not send time), the fresh keypair and derived chain exist in `staged_*` fields from the moment a frame is received until the next send commits them. A RAM compromise during this window recovers the staged private key and the next outbound chain. The practical PCS recovery window is therefore: one receive (which creates the staged state) followed by one send (which commits and wipes it), with no compromise in between.
+**Note on eager pre-computation.** `ratchet_prepare` runs eagerly: first during `ratchet_init` (session setup), then after every received frame in `frame_open`. The fresh keypair and derived chain exist in `staged_*` fields from session initialization onward — not just after the first receive. A RAM compromise at any point recovers the staged private key and the next outbound chain. The practical PCS recovery window is: staged state is created (at init or after receive), then committed and wiped on the next send. No compromise of the staged state may occur in between.
 
 **Proof sketch.** After compromise at time t, the next `ratchet_prepare` generates dh_priv' &larr;$ {0,1}<sup>256</sup> from the OS CSPRNG. The adversary does not know dh_priv' (assuming CSPRNG security and no further RAM access). The new root key depends on X25519(dh_priv', peer_dh), which the adversary cannot compute without dh_priv'. Under CDH:
 

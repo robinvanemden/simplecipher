@@ -120,9 +120,10 @@ typedef struct {
 
     /* Pre-computed ratchet state -- eliminates DH timing asymmetry.
      *
-     * ratchet_prepare() pre-computes the full DH ratchet step eagerly in
-     * the receive path (frame_open), so ratchet_send() in the send path
-     * (frame_build) just copies pre-staged results -- no X25519 at send time.
+     * ratchet_prepare() pre-computes the full DH ratchet step eagerly:
+     * first during ratchet_init() (session setup), then after every
+     * received frame in frame_open().  Staged state exists from session
+     * init onward.  ratchet_send() just copies pre-staged results.
      *
      * ratchet_prepared  -- 1 if staged fields below are valid.
      * staged_ratchet_ok -- 0 on success, -1 if DH produced all-zero output. */

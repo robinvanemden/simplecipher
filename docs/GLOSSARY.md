@@ -138,7 +138,7 @@ Pseudo-Random Function. A deterministic function whose output is indistinguishab
 
 ### Ratchet (DH)
 
-A mechanism that injects fresh randomness into the key hierarchy. When the conversation direction switches (one side was receiving, now they send), the sender generates a fresh [X25519](#x25519) keypair, computes a new shared secret with the peer's latest public key, and derives a new sending chain from it. This provides [post-compromise security](#post-compromise-security-pcs). *See [PROTOCOL.md](PROTOCOL.md#4-encrypted-messaging-with-forward-secrecy-and-post-compromise-security)*
+A mechanism that injects fresh randomness into the key hierarchy. When the conversation direction switches (one side was receiving, now they send), a fresh [X25519](#x25519) keypair is generated, a new shared secret is computed with the peer's latest public key, and a new sending chain is derived from it. In SimpleCipher, this computation is pre-staged eagerly (at session init and after each receive) so that sends have no timing asymmetry. This provides [post-compromise security](#post-compromise-security-pcs). *See [PROTOCOL.md](PROTOCOL.md#4-encrypted-messaging-with-forward-secrecy-and-post-compromise-security)*
 
 ### Ratchet (symmetric/chain)
 

@@ -390,8 +390,14 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     }
 
 win_tui_done:
-    if (pending_len > 0)
-        tui_msg_add(TUI_SYSTEM, "[queued message was not sent]");
+    if (pending_len > 0 || (out_active && out_text[0])) {
+        /* Print to stderr — the TUI alternate screen is about to be
+         * restored and tui_msg_wipe clears the ring buffer immediately,
+         * so tui_msg_add here would be invisible. */
+        DWORD w;
+        const char *msg = "[message was not sent]\r\n";
+        WriteFile(GetStdHandle(STD_ERROR_HANDLE), msg, (DWORD)strlen(msg), &w, NULL);
+    }
     if (fd != INVALID_SOCK) WSAEventSelect(fd, nullptr, 0);
     WSACloseEvent(net_ev);
     crypto_wipe(in_wire, sizeof in_wire);

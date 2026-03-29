@@ -389,10 +389,16 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
     uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
     uint8_t  pending_msg[MAX_MSG + 1];
     uint16_t pending_len = 0;
+    /* Staging buffer for piped/redirected input: read() may return
+     * multiple newline-delimited lines in one call.  We accumulate
+     * here and extract complete lines one at a time. */
+    char     rdbuf[MAX_MSG + 2];
+    size_t   rdbuf_len = 0;
 
     memset(frame, 0, sizeof frame);
     memset(line, 0, sizeof line);
     memset(pending_msg, 0, sizeof pending_msg);
+    memset(rdbuf, 0, sizeof rdbuf);
 
     while (g_running) {
         struct pollfd fds[2];
@@ -451,66 +457,82 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
         /* ----- Outgoing message typed by the user ----- */
         if (g_running && (fds[1].revents & POLLIN)) {
             /* read() instead of fgets() to bypass libc's stdin buffer.
-             * fgets copies user input into an internal ~4KB buffer that is
-             * never wiped; read() goes straight from kernel to our buffer.
-             * In cooked (canonical) mode the terminal driver still handles
-             * line editing (backspace, Ctrl+U, etc.) and delivers a complete
-             * line when the user presses Enter. */
-            ssize_t rn = read(STDIN_FILENO, line, sizeof line - 1);
+             * Piped/redirected input may deliver multiple lines in one
+             * read(); we accumulate in rdbuf and extract each line. */
+            size_t space = sizeof rdbuf - 1 - rdbuf_len;
+            if (space == 0) {
+                /* Buffer full with no newline — discard and warn. */
+                fprintf(stderr, "[line too long -- discarded]\n");
+                crypto_wipe(rdbuf, sizeof rdbuf);
+                rdbuf_len = 0;
+                continue;
+            }
+            ssize_t rn = read(STDIN_FILENO, rdbuf + rdbuf_len, space);
             if (rn <= 0) break;
-            size_t n = (size_t)rn;
-            line[n]  = '\0';
-            if (n > 0 && line[n - 1] == '\n') line[--n] = '\0';
-            if (n == 0) {
-                crypto_wipe(line, sizeof line);
-                continue;
-            }
-            /* Cap at MAX_MSG_RATCHET (not MAX_MSG) because the next send may
-             * trigger a DH ratchet, which consumes 32 bytes of payload space. */
-            if (n > (size_t)MAX_MSG_RATCHET) {
-                printf("[too long -- max %d bytes]\n", MAX_MSG_RATCHET);
-                crypto_wipe(line, sizeof line);
-                continue;
-            }
+            rdbuf_len += (size_t)rn;
+            rdbuf[rdbuf_len] = '\0';
 
-            if (cover) {
-                /* Queue for next cover tick — all outgoing frames
-                 * follow the same timing distribution. */
-                if (pending_len > 0) {
-                    fprintf(stderr, "[message dropped: previous message still queued]\n");
+            /* Process all complete lines in the buffer. */
+            int send_error = 0;
+            char *start = rdbuf;
+            for (;;) {
+                char *nl = memchr(start, '\n', rdbuf_len - (size_t)(start - rdbuf));
+                if (!nl) break;
+                size_t n = (size_t)(nl - start);
+                /* Strip \r\n if present */
+                if (n > 0 && start[n - 1] == '\r') n--;
+                if (n == 0) { start = nl + 1; continue; }
+                if (n > (size_t)MAX_MSG_RATCHET) {
+                    printf("[too long -- max %d bytes]\n", MAX_MSG_RATCHET);
+                    start = nl + 1;
+                    continue;
+                }
+                memcpy(line, start, n);
+                line[n] = '\0';
+                start = nl + 1;
+
+                if (cover) {
+                    if (pending_len > 0) {
+                        fprintf(stderr, "[message dropped: previous message still queued]\n");
+                        crypto_wipe(line, sizeof line);
+                        continue;
+                    }
+                    memcpy(pending_msg, line, n);
+                    pending_len = (uint16_t)n;
+                    secure_chat_print(" me (queued)", line);
                     crypto_wipe(line, sizeof line);
                     continue;
                 }
-                memcpy(pending_msg, line, n);
-                pending_len = (uint16_t)n;
-                secure_chat_print(" me (queued)", line);
-                crypto_wipe(line, sizeof line);
-                continue;
-            }
 
-            if (frame_build(sess, (const uint8_t *)line, (uint16_t)n, frame, next_tx) != 0) {
+                if (frame_build(sess, (const uint8_t *)line, (uint16_t)n, frame, next_tx) != 0) {
+                    crypto_wipe(line, sizeof line);
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(next_tx, sizeof next_tx);
+                    send_error = 1;
+                    break;
+                }
+                if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                    fprintf(stderr, "[send error]\n");
+                    crypto_wipe(line, sizeof line);
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(next_tx, sizeof next_tx);
+                    send_error = 1;
+                    break;
+                }
+                memcpy(sess->tx, next_tx, KEY);
+                sess->tx_seq++;
+                secure_chat_print(" me", line);
                 crypto_wipe(line, sizeof line);
                 crypto_wipe(frame, sizeof frame);
                 crypto_wipe(next_tx, sizeof next_tx);
-                break;
             }
-
-            if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
-                fprintf(stderr, "[send error]\n");
-                crypto_wipe(line, sizeof line);
-                crypto_wipe(frame, sizeof frame);
-                crypto_wipe(next_tx, sizeof next_tx);
-                break;
-            }
-
-            memcpy(sess->tx, next_tx, KEY);
-            sess->tx_seq++;
-
-            secure_chat_print(" me", line);
-
-            crypto_wipe(line, sizeof line);
-            crypto_wipe(frame, sizeof frame);
-            crypto_wipe(next_tx, sizeof next_tx);
+            if (send_error) break;
+            /* Shift leftover partial line to buffer start. */
+            size_t remaining = rdbuf_len - (size_t)(start - rdbuf);
+            if (remaining > 0 && start != rdbuf)
+                memmove(rdbuf, start, remaining);
+            rdbuf_len = remaining;
+            crypto_wipe(rdbuf + rdbuf_len, sizeof rdbuf - rdbuf_len);
         }
 
         /* ---- Cover traffic: single send point for all outgoing frames.
@@ -541,6 +563,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
 
     if (pending_len > 0)
         fprintf(stderr, "  [queued message was not sent]\n");
+    crypto_wipe(rdbuf, sizeof rdbuf);
     crypto_wipe(line, sizeof line);
     crypto_wipe(frame, sizeof frame);
     crypto_wipe(next_tx, sizeof next_tx);

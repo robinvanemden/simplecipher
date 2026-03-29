@@ -100,8 +100,8 @@ This is what goes over the wire. Each arrow is one exchange round. Payload sizes
           |<-- pub_B [32B] -----------------|
           |                                  |
           |  verify version matches          |  both sides
-          |  verify H(pub_B||nonce_B) == commitment   |
-          |  verify H(pub_A) == commitment   |
+          |  verify H(pub_B||nonce_B) == commitment   |  (Bob's key)
+          |  verify H(pub_A||nonce_A) == commitment   |  (Alice's key)
           |                                  |
           |  dh  = X25519(priv, peer_pub)    |  both compute
           |  ikm = dh || both pubs || both nonces || version

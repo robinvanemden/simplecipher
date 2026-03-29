@@ -523,8 +523,8 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
             break;
         }
 
-        if (pending_len > 0)
-            win_print_status("[queued message was not sent]", line, line_len);
+        if (pending_len > 0 || (out_active && out_text[0]))
+            win_print_status("[message was not sent]", line, line_len);
         crypto_wipe(in_wire, sizeof in_wire);
         crypto_wipe(out_frame, sizeof out_frame);
         crypto_wipe(out_wire, sizeof out_wire);

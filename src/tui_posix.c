@@ -313,7 +313,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     }
 
     if (pending_len > 0)
-        tui_msg_add(TUI_SYSTEM, "[queued message was not sent]");
+        fprintf(stderr, "[queued message was not sent]\n");
     crypto_wipe(line, sizeof line);
     crypto_wipe(frame, sizeof frame);
     crypto_wipe(next_tx, sizeof next_tx);
