@@ -71,6 +71,8 @@ Grab a binary from the [latest release](https://github.com/robinvanemden/simplec
 | **Linux** (Raspberry Pi, ARM) | [simplecipher-linux-aarch64](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-linux-aarch64) | ~91 KB |
 | **Windows** (most PCs) | [simplecipher-win-x86_64.exe](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-win-x86_64.exe) | ~65 KB |
 | **Windows** (ARM laptops) | [simplecipher-win-aarch64.exe](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-win-aarch64.exe) | ~58 KB |
+| **macOS** (Apple Silicon) | [simplecipher-macos-aarch64](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-macos-aarch64) | ~100 KB |
+| **macOS** (Intel) | [simplecipher-macos-x86_64](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-macos-x86_64) | ~100 KB |
 | **Android** (minimal) | [simplecipher-minimal.apk](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-minimal.apk) | ~154 KB, no extra permissions |
 | **Android** (full) | [simplecipher-full.apk](https://github.com/robinvanemden/simplecipher/releases/latest/download/simplecipher-full.apk) | ~854 KB, adds QR scanning |
 

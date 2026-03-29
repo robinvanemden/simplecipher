@@ -22,7 +22,6 @@ CFLAGS  ?= -Os -std=c23 -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthr
 # Combined: security flags are prepended and cannot be removed by overriding CFLAGS.
 ALL_CFLAGS = $(SECURITY_CFLAGS) $(CFLAGS)
 
-LDFLAGS ?= -flto -Wl,--gc-sections -s
 LIBS    ?= -lm
 
 # Core sources (platform-independent + small inline #ifdefs)
@@ -37,15 +36,20 @@ ifeq ($(UNAME),Linux)
   # CET-based control-flow integrity (Intel IBT + shadow stack) on x86_64.
   # Silently ignored by GCC/Clang on non-x86 architectures.
   CFLAGS  += -fcf-protection=full
+  LDFLAGS ?= -flto -Wl,--gc-sections -s
   LDFLAGS += -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,nodlopen
 else ifeq ($(UNAME),Darwin)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
+  LDFLAGS ?= -flto -Wl,-dead_strip -Wl,-x
 else ifeq ($(UNAME),OpenBSD)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
+  LDFLAGS ?= -flto -Wl,--gc-sections -s
 else ifeq ($(UNAME),FreeBSD)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
+  LDFLAGS ?= -flto -Wl,--gc-sections -s
 else
   PLAT_SRC = src/tui_win.c src/cli_win.c
+  LDFLAGS ?= -flto -Wl,--gc-sections -s
   LDFLAGS += -lws2_32 -lbcrypt -liphlpapi
 endif
 

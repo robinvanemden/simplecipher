@@ -1,6 +1,6 @@
 # SimpleCipher
 
-P2P encrypted chat. Modular C protocol, cross-compiled to 5 targets.
+P2P encrypted chat. Modular C protocol, compiled to 7 targets.
 
 ## Build
 
@@ -50,7 +50,7 @@ Consumers (main.c, test_p2p.c, jni_bridge.c) include headers and link object fil
 
 - `src/` contains all protocol logic — each module has a header and implementation
 - `lib/monocypher.c/h` is vendored upstream — never modify
-- All binaries must be fully static, zero runtime dependencies
+- All binaries must be fully static, zero runtime dependencies (macOS: only libSystem.B.dylib)
 - C23 standard, size-optimized (`-Os -flto`). OpenBSD 7.7 uses `-std=c2x` (Clang 16); `constexpr` compat shim in `platform.h`.
 - Crypto: X25519, XChaCha20-Poly1305, BLAKE2b (all via Monocypher)
 - Every key/secret must be wiped with `crypto_wipe()` after use
@@ -58,7 +58,7 @@ Consumers (main.c, test_p2p.c, jni_bridge.c) include headers and link object fil
 - `--peer-fingerprint` works for both listen and connect (64-bit BLAKE2b hash of peer's public key)
 - `--trust-fingerprint` (requires `--peer-fingerprint`): skips SAS when fingerprint matches — enables fully non-interactive mutual verification via pre-shared paper fingerprints
 - Fingerprints are stable when using `keygen` + `--identity`; ephemeral (change every session) without them
-- CI builds and tests natively on 8 runners (Linux/Windows x86_64/aarch64)
+- CI builds and tests natively on 10 runners (Linux/Windows/macOS x86_64/aarch64)
 - Release: push a `v*` tag — CI builds, tests, publishes GitHub release
 
 ## Tests

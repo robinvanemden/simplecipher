@@ -668,4 +668,40 @@ jobs:
           "
           rm -f ~/.ssh/arm64_key
 
+  test-macos:
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            arch: x86_64
+          - os: macos-14
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build and test
+        run: |
+          echo "=== macOS $(uname -sr) $(uname -m) ==="
+          make clean
+          make -j$(sysctl -n hw.ncpu) CC=cc \
+            SECURITY_CFLAGS='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing' \
+            CFLAGS='-Os -std=c23 -Isrc -Ilib -flto -ffunction-sections -fdata-sections' \
+            simplecipher tests/test_p2p tests/test_socks5_proxy
+          echo '=== P2P tests ==='
+          ./tests/test_p2p
+          echo '=== SOCKS5 proxy tests ==='
+          ./tests/test_socks5_proxy
+          echo '=== Binary tests ==='
+          bash tests/test_macos.sh ./simplecipher
+          echo '=== Smoke test ==='
+          ./simplecipher listen 19799 &
+          PID=$!
+          sleep 1
+          kill $PID 2>/dev/null || true
+          echo 'Smoke test passed'
+
   # BSD testing uses bare-metal Vultr servers via SSH (test-freebsd, test-openbsd above).

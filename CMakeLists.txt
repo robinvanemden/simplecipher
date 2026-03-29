@@ -79,6 +79,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     #   --nxcompat          DEP (data execution prevention)
     set(CMAKE_C_FLAGS_RELEASE "${COMMON_C_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto -Wl,--gc-sections -Wl,--dynamicbase -Wl,--high-entropy-va -Wl,--nxcompat")
+elseif(APPLE)
+    # macOS: Apple ld uses -dead_strip instead of --gc-sections.
+    # -Wl,-x strips local symbols (like GNU ld -s).
+    set(CMAKE_C_FLAGS_RELEASE "${COMMON_C_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto -Wl,-dead_strip -Wl,-x")
 else()
     set(CMAKE_C_FLAGS_RELEASE "${COMMON_C_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto -Wl,--gc-sections")

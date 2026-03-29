@@ -236,6 +236,46 @@ jobs:
           name: simplecipher-android
           path: android-release/
 
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            arch: x86_64
+          - os: macos-14
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build release binary
+        run: |
+          make -j$(sysctl -n hw.ncpu) CC=cc \
+            SECURITY_CFLAGS='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing' \
+            CFLAGS='-Os -std=c23 -Isrc -Ilib -flto -ffunction-sections -fdata-sections' \
+            simplecipher
+
+      - name: Build and run tests
+        run: |
+          make -j$(sysctl -n hw.ncpu) CC=cc \
+            SECURITY_CFLAGS='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing' \
+            CFLAGS='-Os -std=c23 -Isrc -Ilib -flto -ffunction-sections -fdata-sections' \
+            tests/test_p2p tests/test_socks5_proxy
+          ./tests/test_p2p
+          ./tests/test_socks5_proxy
+
+      - name: Run binary tests
+        run: bash tests/test_macos.sh ./simplecipher
+
+      - name: Upload macOS binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: simplecipher-macos-${{ matrix.arch }}
+          path: simplecipher
+
   test-linux:
     needs: build
     strategy:
@@ -569,7 +609,7 @@ jobs:
             APK=$(ls android/app/build/outputs/apk/full/release/app-full-release*.apk 2>/dev/null | head -1) && [ -n "$APK" ] && bash tests/test_android_emulator.sh "$APK" || { echo "::error::Release APK not found for emulator test"; exit 1; }
 
   release:
-    needs: [test-p2p, test-linux, test-linux-aarch64, test-windows, test-windows-aarch64, build-android, test-asan-ubsan, static-analysis, fuzz, test-android-emulator, test-freebsd, test-openbsd, test-arm64]
+    needs: [test-p2p, test-linux, test-linux-aarch64, test-windows, test-windows-aarch64, build-macos, build-android, test-asan-ubsan, static-analysis, fuzz, test-android-emulator, test-freebsd, test-openbsd, test-arm64]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -601,6 +641,18 @@ jobs:
           name: simplecipher-win-aarch64
           path: win-aarch64
 
+      - name: Download macOS x86_64 binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: simplecipher-macos-x86_64
+          path: macos-x86_64
+
+      - name: Download macOS aarch64 binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: simplecipher-macos-aarch64
+          path: macos-aarch64
+
       - name: Download Android APKs
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -614,6 +666,8 @@ jobs:
           cp linux-aarch64/simplecipher release/simplecipher-linux-aarch64
           cp win-x86_64/simplecipher.exe release/simplecipher-win-x86_64.exe
           cp win-aarch64/simplecipher.exe release/simplecipher-win-aarch64.exe
+          cp macos-x86_64/simplecipher release/simplecipher-macos-x86_64
+          cp macos-aarch64/simplecipher release/simplecipher-macos-aarch64
           cp android-apks/simplecipher-minimal.apk release/simplecipher-minimal.apk
           cp android-apks/simplecipher-full.apk release/simplecipher-full.apk
           cd release
@@ -627,6 +681,8 @@ jobs:
             release/simplecipher-linux-aarch64
             release/simplecipher-win-x86_64.exe
             release/simplecipher-win-aarch64.exe
+            release/simplecipher-macos-x86_64
+            release/simplecipher-macos-aarch64
             release/simplecipher-minimal.apk
             release/simplecipher-full.apk
 
@@ -650,6 +706,7 @@ jobs:
           cd release
           for f in simplecipher-linux-x86_64 simplecipher-linux-aarch64 \
                    simplecipher-win-x86_64.exe simplecipher-win-aarch64.exe \
+                   simplecipher-macos-x86_64 simplecipher-macos-aarch64 \
                    simplecipher-minimal.apk simplecipher-full.apk SHA256SUMS.txt; do
             cosign sign-blob --yes "$f" --output-signature "${f}.sig" --output-certificate "${f}.cert"
           done
@@ -672,6 +729,8 @@ jobs:
             release/simplecipher-linux-aarch64 \
             release/simplecipher-win-x86_64.exe \
             release/simplecipher-win-aarch64.exe \
+            release/simplecipher-macos-x86_64 \
+            release/simplecipher-macos-aarch64 \
             release/simplecipher-minimal.apk \
             release/simplecipher-full.apk \
             release/SHA256SUMS.txt \
