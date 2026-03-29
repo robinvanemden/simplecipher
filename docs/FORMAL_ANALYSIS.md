@@ -137,19 +137,19 @@ The commitment scheme prevents a man-in-the-middle from adaptively choosing keys
 
 **Commit phase:**
 ```
-commit = make_commit(pub) = BLAKE2b_keyed("cipher commit v3", pub)
+commit = make_commit(pub, nonce) = BLAKE2b_keyed("cipher commit v3", pub || nonce)
 ```
-where the key is the ASCII encoding of `"cipher commit v3"` (17 bytes) and the message is the 32-byte X25519 public key.
+where the key is the ASCII encoding of `"cipher commit v3"` (17 bytes) and the message is the concatenation of the 32-byte X25519 public key and a 32-byte random session nonce (64 bytes total). The nonce is generated fresh each session and binds the commitment to a specific handshake, preventing cross-session replay.
 
-**Reveal phase:** The committer sends `pub` in the clear. The verifier recomputes:
+**Reveal phase:** The committer sends `pub` and `nonce` in the clear. The verifier recomputes:
 ```
-expected = BLAKE2b_keyed("cipher commit v3", pub)
+expected = BLAKE2b_keyed("cipher commit v3", pub || nonce)
 ```
 and checks `expected == commit` using `crypto_verify32` (constant-time 32-byte comparison). The intermediate `expected` is wiped after comparison.
 
 ### 4.2 Security properties
 
-**Binding.** The commitment is binding if an adversary cannot find pub &ne; pub' such that `make_commit(pub) = make_commit(pub')`. This reduces directly to collision resistance of BLAKE2b with a fixed key:
+**Binding.** The commitment is binding if an adversary cannot find `(pub, nonce) ≠ (pub', nonce')` such that `make_commit(pub, nonce) = make_commit(pub', nonce')`. This reduces directly to collision resistance of BLAKE2b with a fixed key:
 
 Adv<sup>binding</sup><sub>A</sub> &le; Adv<sup>CR</sup><sub>A</sub>(BLAKE2b<sub>"cipher commit v3"</sub>)
 
@@ -159,7 +159,7 @@ Adv<sup>binding</sup><sub>A</sub> &le; q<sup>2</sup> / 2<sup>256</sup>
 
 where q is the number of hash evaluations. For any feasible q, this is negl(&lambda;).
 
-**Hiding.** The commitment is computationally hiding if an adversary cannot determine pub from commit without the reveal. Since X25519 public keys are points on Curve25519 (not uniformly random bitstrings), hiding requires that BLAKE2b behaves as a one-way function on the image of `crypto_x25519_public_key`. Under the PRF assumption on BLAKE2b (Section 3.2), the commitment output is indistinguishable from random, which implies hiding.
+**Hiding.** The commitment is computationally hiding if an adversary cannot determine pub from commit without the reveal. Since X25519 public keys are points on Curve25519 (not uniformly random bitstrings), hiding requires that BLAKE2b behaves as a one-way function on the image of `crypto_x25519_public_key`. Under the PRF assumption on BLAKE2b (Section 3.2), the commitment output is indistinguishable from random, which implies hiding. The session nonce adds 256 bits of additional entropy, ensuring identical public keys in different sessions produce unrelated commitments.
 
 ### 4.3 SAS security
 
