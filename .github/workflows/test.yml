@@ -1,0 +1,77 @@
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test-p2p:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build and run P2P integration tests
+        run: |
+          mkdir -p build/native
+          cd build/native
+          cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-g -O0" ../..
+          make -j$(nproc) test_p2p
+          ./test_p2p
+
+      - name: Build and run with CIPHER_HARDEN
+        run: |
+          gcc -std=c2x -DCIPHER_HARDEN -pthread -Isrc -Ilib -O2 \
+            -o build/native/test_p2p_harden \
+            tests/test_p2p.c src/platform.c src/crypto.c src/protocol.c \
+            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
+          build/native/test_p2p_harden
+
+      - name: Build and run SOCKS5 proxy loopback test
+        run: |
+          gcc -std=c2x -DCIPHER_HARDEN -DNDEBUG -pthread -Isrc -Ilib -O2 \
+            -o build/native/test_socks5_proxy \
+            tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
+            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
+          build/native/test_socks5_proxy
+
+  test-tui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install tmux
+        run: sudo apt-get install -y --no-install-recommends tmux
+
+      - name: Build native binary
+        run: |
+          mkdir -p build/native
+          cd build/native
+          cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-g -O0" ../..
+          make -j$(nproc) simplecipher
+
+      - name: Run TUI integration test
+        run: bash tests/test_tui.sh build/native/simplecipher
+
+      - name: Verify README demo matches actual output
+        run: |
+          # Regenerate the demo from a real session and check it still
+          # parses correctly (SAS code captured, README updated without error).
+          # We don't commit the change — the SAS is random each run — but we
+          # verify the script works and the README has a valid demo block.
+          cp README.md /tmp/readme_before.md
+          PATH="$(pwd)/build/native:$PATH" bash docs/generate-demo.sh
+          # Verify the demo block exists and has a SAS code
+          grep -qP 'Step 1.*listen|Safety code:.*[0-9A-F]{4}' README.md || {
+            echo "::error::Demo block has no SAS code after regeneration"
+            exit 1
+          }
+          echo "Demo regeneration verified"

@@ -1,0 +1,118 @@
+name: Security
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install clang-19 (C23 constexpr + sanitizer runtimes)
+        run: sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev
+
+      - name: Build fuzz targets (clang + libFuzzer + ASan + UBSan)
+        run: |
+          mkdir -p build/fuzz
+          cd build/fuzz
+          CC=clang-19 cmake -DFUZZ=ON ../..
+          make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5
+
+      - name: Smoke-fuzz frame_open (30s)
+        run: build/fuzz/fuzz_frame_open tests/corpus/frame_open -max_total_time=30 -print_final_stats=1
+
+      - name: Smoke-fuzz sanitize_peer_text (30s)
+        run: build/fuzz/fuzz_sanitize tests/corpus/sanitize -max_total_time=30 -print_final_stats=1
+
+      - name: Smoke-fuzz validate_port (30s)
+        run: build/fuzz/fuzz_validate_port tests/corpus/validate_port -max_total_time=30 -print_final_stats=1
+
+      - name: Smoke-fuzz socks5_build_request (30s)
+        run: build/fuzz/fuzz_socks5 -max_total_time=30 -print_final_stats=1
+
+  test-asan-ubsan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install clang-19
+        run: sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev
+
+      - name: Build test_p2p with ASan + UBSan
+        run: |
+          mkdir -p build/sanitize
+          cd build/sanitize
+          CC=clang-19 cmake \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            ../..
+          make -j$(nproc) test_p2p
+
+      - name: Run tests under ASan + UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: build/sanitize/test_p2p
+
+      - name: Build test_p2p with MSan
+        run: |
+          mkdir -p build/msan
+          cd build/msan
+          CC=clang-19 cmake \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer -g -O1" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=memory" \
+            ../..
+          make -j$(nproc) test_p2p
+
+      - name: Run tests under MSan
+        env:
+          MSAN_OPTIONS: halt_on_error=1
+        run: build/msan/test_p2p
+
+  static-analysis:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install clang-tidy-19 and clang-format-19
+        run: sudo apt-get install -y --no-install-recommends clang-19 clang-tidy-19 clang-format-19
+
+      - name: Generate compilation database
+        run: |
+          cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+                -DCMAKE_C_COMPILER=clang-19 \
+                -B build/analysis
+
+      - name: Run clang-tidy
+        run: |
+          clang-tidy-19 -p build/analysis \
+            src/main.c src/platform.c src/crypto.c src/protocol.c \
+            src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c \
+            src/args.c src/verify.c
+
+      - name: Check C code formatting (clang-format)
+        run: clang-format-19 --dry-run -Werror src/*.c src/*.h
+
+      - name: Check Java code formatting (google-java-format)
+        run: |
+          GJF_VERSION=1.25.2
+          GJF_SHA256=25157797a0a972c2290b5bc71530c4f7ad646458025e3484412a6e5a9b8c9aa6
+          GJF_JAR="google-java-format-${GJF_VERSION}-all-deps.jar"
+          curl -sL "https://github.com/google/google-java-format/releases/download/v${GJF_VERSION}/${GJF_JAR}" -o /tmp/gjf.jar
+          echo "${GJF_SHA256}  /tmp/gjf.jar" | sha256sum -c -
+          find android -name '*.java' -not -path '*/build/*' | sort | \
+            xargs java -jar /tmp/gjf.jar --dry-run --set-exit-if-changed

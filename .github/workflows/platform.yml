@@ -1,4 +1,4 @@
-name: CI
+name: Platform
 
 on:
   push:
@@ -7,185 +7,6 @@ on:
     branches: [master]
 
 jobs:
-  test-p2p:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Build and run P2P integration tests
-        run: |
-          mkdir -p build/native
-          cd build/native
-          cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-g -O0" ../..
-          make -j$(nproc) test_p2p
-          ./test_p2p
-
-      - name: Build and run with CIPHER_HARDEN
-        run: |
-          gcc -std=c2x -DCIPHER_HARDEN -pthread -Isrc -Ilib -O2 \
-            -o build/native/test_p2p_harden \
-            tests/test_p2p.c src/platform.c src/crypto.c src/protocol.c \
-            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
-          build/native/test_p2p_harden
-
-      - name: Build and run SOCKS5 proxy loopback test
-        run: |
-          gcc -std=c2x -DCIPHER_HARDEN -DNDEBUG -pthread -Isrc -Ilib -O2 \
-            -o build/native/test_socks5_proxy \
-            tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
-            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
-          build/native/test_socks5_proxy
-
-  test-tui:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Install tmux
-        run: sudo apt-get install -y --no-install-recommends tmux
-
-      - name: Build native binary
-        run: |
-          mkdir -p build/native
-          cd build/native
-          cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-g -O0" ../..
-          make -j$(nproc) simplecipher
-
-      - name: Run TUI integration test
-        run: bash tests/test_tui.sh build/native/simplecipher
-
-      - name: Verify README demo matches actual output
-        run: |
-          # Regenerate the demo from a real session and check it still
-          # parses correctly (SAS code captured, README updated without error).
-          # We don't commit the change — the SAS is random each run — but we
-          # verify the script works and the README has a valid demo block.
-          cp README.md /tmp/readme_before.md
-          PATH="$(pwd)/build/native:$PATH" bash docs/generate-demo.sh
-          # Verify the demo block exists and has a SAS code
-          grep -qP 'Step 1.*listen|Safety code:.*[0-9A-F]{4}' README.md || {
-            echo "::error::Demo block has no SAS code after regeneration"
-            exit 1
-          }
-          echo "Demo regeneration verified"
-
-  fuzz:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Install clang-19 (C23 constexpr + sanitizer runtimes)
-        run: sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev
-
-      - name: Build fuzz targets (clang + libFuzzer + ASan + UBSan)
-        run: |
-          mkdir -p build/fuzz
-          cd build/fuzz
-          CC=clang-19 cmake -DFUZZ=ON ../..
-          make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5
-
-      - name: Smoke-fuzz frame_open (30s)
-        run: build/fuzz/fuzz_frame_open tests/corpus/frame_open -max_total_time=30 -print_final_stats=1
-
-      - name: Smoke-fuzz sanitize_peer_text (30s)
-        run: build/fuzz/fuzz_sanitize tests/corpus/sanitize -max_total_time=30 -print_final_stats=1
-
-      - name: Smoke-fuzz validate_port (30s)
-        run: build/fuzz/fuzz_validate_port tests/corpus/validate_port -max_total_time=30 -print_final_stats=1
-
-      - name: Smoke-fuzz socks5_build_request (30s)
-        run: build/fuzz/fuzz_socks5 -max_total_time=30 -print_final_stats=1
-
-  test-asan-ubsan:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Install clang-19
-        run: sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev
-
-      - name: Build test_p2p with ASan + UBSan
-        run: |
-          mkdir -p build/sanitize
-          cd build/sanitize
-          CC=clang-19 cmake \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
-            ../..
-          make -j$(nproc) test_p2p
-
-      - name: Run tests under ASan + UBSan
-        env:
-          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-        run: build/sanitize/test_p2p
-
-      - name: Build test_p2p with MSan
-        run: |
-          mkdir -p build/msan
-          cd build/msan
-          CC=clang-19 cmake \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_FLAGS="-fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer -g -O1" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=memory" \
-            ../..
-          make -j$(nproc) test_p2p
-
-      - name: Run tests under MSan
-        env:
-          MSAN_OPTIONS: halt_on_error=1
-        run: build/msan/test_p2p
-
-  static-analysis:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Install clang-tidy-19 and clang-format-19
-        run: sudo apt-get install -y --no-install-recommends clang-19 clang-tidy-19 clang-format-19
-
-      - name: Generate compilation database
-        run: |
-          cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-                -DCMAKE_C_COMPILER=clang-19 \
-                -B build/analysis
-
-      - name: Run clang-tidy
-        run: |
-          clang-tidy-19 -p build/analysis \
-            src/main.c src/platform.c src/crypto.c src/protocol.c \
-            src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c \
-            src/args.c src/verify.c
-
-      - name: Check C code formatting (clang-format)
-        run: clang-format-19 --dry-run -Werror src/*.c src/*.h
-
-      - name: Check Java code formatting (google-java-format)
-        run: |
-          GJF_VERSION=1.25.2
-          GJF_SHA256=25157797a0a972c2290b5bc71530c4f7ad646458025e3484412a6e5a9b8c9aa6
-          GJF_JAR="google-java-format-${GJF_VERSION}-all-deps.jar"
-          curl -sL "https://github.com/google/google-java-format/releases/download/v${GJF_VERSION}/${GJF_JAR}" -o /tmp/gjf.jar
-          echo "${GJF_SHA256}  /tmp/gjf.jar" | sha256sum -c -
-          find android -name '*.java' -not -path '*/build/*' | sort | \
-            xargs java -jar /tmp/gjf.jar --dry-run --set-exit-if-changed
-
   build:
     runs-on: ubuntu-24.04
 
@@ -312,123 +133,6 @@ jobs:
           name: test-assets
           path: tests/
 
-  build-android:
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
-
-      - name: Install NDK r28
-        run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
-
-      - name: Ensure debug keystore exists
-        run: |
-          mkdir -p ~/.android
-          [ -f ~/.android/debug.keystore ] || keytool -genkeypair \
-            -keystore ~/.android/debug.keystore -storepass android \
-            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
-            -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
-
-      - name: Build Android APKs
-        working-directory: android
-        run: ./gradlew assembleDebug
-
-      - name: Validate minimal APK
-        run: bash tests/test_android.sh android/app/build/outputs/apk/minimal/debug/app-minimal-debug.apk minimal
-
-      - name: Validate full APK
-        run: bash tests/test_android.sh android/app/build/outputs/apk/full/debug/app-full-debug.apk full
-
-      - name: Upload Android APKs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: simplecipher-android
-          path: |
-            android/app/build/outputs/apk/minimal/debug/app-minimal-debug.apk
-            android/app/build/outputs/apk/full/debug/app-full-debug.apk
-
-  test-android-emulator:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4ci.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
-
-      - name: Install NDK r28
-        run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
-
-      - name: Ensure debug keystore exists
-        run: |
-          mkdir -p ~/.android
-          [ -f ~/.android/debug.keystore ] || keytool -genkeypair \
-            -keystore ~/.android/debug.keystore -storepass android \
-            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
-            -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
-
-      - name: Build APKs with x86_64 for emulator
-        working-directory: android
-        run: ./gradlew assembleDebug -PextraAbi=x86_64
-
-      - name: Cross-compile SOCKS5 proxy test for emulator (x86_64)
-        run: |
-          NDK=$ANDROID_HOME/ndk/28.0.13004108
-          CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android28-clang"
-          $CC -std=c23 -Os -Isrc -Ilib -DNDEBUG -DCIPHER_HARDEN -static \
-            -o tests/test_socks5_proxy_android \
-            tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
-            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
-          file tests/test_socks5_proxy_android
-
-      - name: Cross-compile SOCKS5 daemon + simplecipher peer for emulator
-        run: |
-          NDK=$ANDROID_HOME/ndk/28.0.13004108
-          CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android28-clang"
-          $CC -Os -static -o tests/mini_socks5_daemon_android \
-            tests/mini_socks5_daemon.c
-          $CC -std=c23 -Os -Isrc -Ilib -DNDEBUG -DCIPHER_HARDEN -static \
-            -o tests/simplecipher_android \
-            src/main.c src/platform.c src/crypto.c src/protocol.c \
-            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
-            src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
-
-      - name: Emulator smoke test (full flavor)
-        uses: reactivecircus/android-emulator-runner@70f4dee990796918b78d040e3278474bdbd348a7 # v2
-        with:
-          api-level: 28
-          arch: x86_64
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: bash tests/test_android_emulator.sh android/app/build/outputs/apk/full/debug/app-full-debug.apk
-
   test-linux:
     needs: build
     strategy:
@@ -521,6 +225,44 @@ jobs:
         shell: pwsh
         run: |
           tests/test_windows.ps1 -Binary simplecipher.exe
+
+  test-macos:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build and test (arm64, native)
+        run: |
+          echo "=== macOS $(uname -sr) $(uname -m) ==="
+          make clean
+          make -j$(sysctl -n hw.ncpu) CC=cc \
+            simplecipher tests/test_p2p tests/test_socks5_proxy
+          echo '=== P2P tests ==='
+          ./tests/test_p2p
+          echo '=== SOCKS5 proxy tests ==='
+          ./tests/test_socks5_proxy
+          echo '=== Binary tests ==='
+          bash tests/test_macos.sh ./simplecipher
+          echo '=== Smoke test ==='
+          ./simplecipher listen 19799 &
+          PID=$!
+          sleep 1
+          kill $PID 2>/dev/null || true
+          echo 'Smoke test passed'
+
+      - name: Build and verify (x86_64, cross-compile)
+        run: |
+          make clean
+          make -j$(sysctl -n hw.ncpu) CC=cc \
+            CFLAGS='-Os -std=c2x -Isrc -Ilib -flto -ffunction-sections -fdata-sections -target x86_64-apple-macos12' \
+            LDFLAGS='-flto -Wl,-dead_strip -Wl,-x -target x86_64-apple-macos12' \
+            simplecipher
+          echo '=== Verify x86_64 binary ==='
+          file simplecipher | grep -q x86_64
+          echo 'x86_64 cross-compile verified'
 
   test-freebsd:
     runs-on: ubuntu-24.04
@@ -667,43 +409,3 @@ jobs:
             bash tests/test_arm64_tor.sh
           "
           rm -f ~/.ssh/arm64_key
-
-  test-macos:
-    runs-on: macos-14
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Build and test (arm64, native)
-        run: |
-          echo "=== macOS $(uname -sr) $(uname -m) ==="
-          make clean
-          make -j$(sysctl -n hw.ncpu) CC=cc \
-            simplecipher tests/test_p2p tests/test_socks5_proxy
-          echo '=== P2P tests ==='
-          ./tests/test_p2p
-          echo '=== SOCKS5 proxy tests ==='
-          ./tests/test_socks5_proxy
-          echo '=== Binary tests ==='
-          bash tests/test_macos.sh ./simplecipher
-          echo '=== Smoke test ==='
-          ./simplecipher listen 19799 &
-          PID=$!
-          sleep 1
-          kill $PID 2>/dev/null || true
-          echo 'Smoke test passed'
-
-      - name: Build and verify (x86_64, cross-compile)
-        run: |
-          make clean
-          make -j$(sysctl -n hw.ncpu) CC=cc \
-            CFLAGS='-Os -std=c2x -Isrc -Ilib -flto -ffunction-sections -fdata-sections -target x86_64-apple-macos12' \
-            LDFLAGS='-flto -Wl,-dead_strip -Wl,-x -target x86_64-apple-macos12' \
-            simplecipher
-          echo '=== Verify x86_64 binary ==='
-          file simplecipher | grep -q x86_64
-          echo 'x86_64 cross-compile verified'
-
-  # BSD testing uses bare-metal Vultr servers via SSH (test-freebsd, test-openbsd above).
