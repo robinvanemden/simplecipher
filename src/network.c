@@ -586,6 +586,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     uint8_t drain[256 + 2];
     if ((size_t)skip > sizeof drain || read_exact_dl(fd, drain, (size_t)skip, deadline) != 0) {
         fprintf(stderr, "  SOCKS5: malformed reply from proxy\n");
+        crypto_wipe(drain, sizeof drain);
         crypto_wipe(req, sizeof req);
         close_sock(fd);
         return INVALID_SOCK;

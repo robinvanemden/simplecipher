@@ -69,6 +69,16 @@ enum {
     LOCAL_IPS_BUF  = 1024, /* buffer for local IP address list       */
 };
 
+/* Sanitize a string for terminal display: replace non-printable ASCII
+ * (including ESC, tab, control chars) with '.' to prevent ANSI/OSC
+ * escape injection from argv or other untrusted local sources. */
+static void sanitize_for_display(char *dst, const char *src, size_t dst_sz) {
+    size_t i;
+    for (i = 0; i < dst_sz - 1 && src[i] != '\0'; i++)
+        dst[i] = (src[i] >= 0x20 && src[i] <= 0x7E) ? src[i] : '.';
+    dst[i] = '\0';
+}
+
 /* g_fd and g_sess are file-scope statics, passed as parameters to the
  * event loops.  They are static here so the cleanup code at the bottom
  * of main() can always reach them. */
@@ -224,15 +234,19 @@ int main(int argc, char *argv[]) {
      * ------------------------------------------------------------------ */
 
     if (cfg.we_init) {
+        /* Sanitize host for display — argv could contain ANSI escapes. */
+        char safe_host[256];
+        sanitize_for_display(safe_host, cfg.host, sizeof safe_host);
         if (cfg.tui_mode) {
             char msg[STATUS_MSG_BUF];
-            snprintf(msg, sizeof msg, "Connecting to %s:%s ...", cfg.host, cfg.port);
+            snprintf(msg, sizeof msg, "Connecting to %s:%s ...", safe_host, cfg.port);
             tui_status_screen(msg, "Ctrl+C to cancel");
             crypto_wipe(msg, sizeof msg); /* contains peer address */
         } else {
-            printf("  Connecting to %s:%s ...", cfg.host, cfg.port);
+            printf("  Connecting to %s:%s ...", safe_host, cfg.port);
             fflush(stdout);
         }
+        crypto_wipe(safe_host, sizeof safe_host);
         if (cfg.socks5_host) {
             g_fd = connect_socket_socks5(cfg.socks5_host, cfg.socks5_port, cfg.host, cfg.port);
         } else {
@@ -263,10 +277,15 @@ int main(int argc, char *argv[]) {
             g_fd = connect_socket_numeric(cfg.host, cfg.port);
         }
         if (g_fd == INVALID_SOCK) {
-            fprintf(stderr,
-                    "\n  Connection failed. Check the address and make sure\n"
-                    "  the peer is listening on %s:%s.\n",
-                    cfg.host, cfg.port);
+            {
+                char sh[256];
+                sanitize_for_display(sh, cfg.host, sizeof sh);
+                fprintf(stderr,
+                        "\n  Connection failed. Check the address and make sure\n"
+                        "  the peer is listening on %s:%s.\n",
+                        sh, cfg.port);
+                crypto_wipe(sh, sizeof sh);
+            }
             rc = EXIT_NET;
             goto out;
         }

@@ -90,7 +90,7 @@ See [Ratchet (symmetric/chain)](#ratchet-symmetricchain).
 
 ### Commitment scheme
 
-A two-phase protocol: first *commit* (send a [hash](#blake2b) of your value), then *reveal* (send the actual value). The receiver checks that the hash matches. In SimpleCipher, both sides commit to their public keys before revealing them. This prevents a [man-in-the-middle](#man-in-the-middle-mitm) from seeing one key and crafting a fake key that produces a matching [SAS](#sas-short-authentication-string) code. *See [PROTOCOL.md](PROTOCOL.md#commitment-scheme)*
+A two-phase protocol: first *commit* (send `H(pub || nonce)` — a [hash](#blake2b) binding the public key to a fresh random nonce), then *reveal* (send the actual public key). The receiver checks that the hash of the revealed key and previously received nonce matches the commitment. In SimpleCipher, both sides commit to their public keys before revealing them. This prevents a [man-in-the-middle](#man-in-the-middle-mitm) from seeing one key and crafting a fake key that produces a matching [SAS](#sas-short-authentication-string) code. *See [PROTOCOL.md](PROTOCOL.md#commitment-scheme)*
 
 ### Cover traffic
 

@@ -477,6 +477,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 /* Queue for next cover tick — all outgoing frames
                  * follow the same timing distribution. */
                 if (pending_len > 0) {
+                    fprintf(stderr, "[message dropped: previous message still queued]\n");
                     crypto_wipe(line, sizeof line);
                     continue;
                 }

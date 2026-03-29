@@ -78,12 +78,12 @@ Each side generates a random [X25519](#x25519) keypair for this session only. Th
 
 ### 2. Commitment scheme (anti-MITM)
 
-Before revealing public keys, each side sends a [hash](#blake2b) ([commitment](#commitment-scheme)) of their key. This prevents a man-in-the-middle from seeing one key and then crafting a fake key that produces a matching safety code. The commitment locks both sides into their keys before the reveal. The version byte and commitment are sent together in a single exchange so that version-mismatch and commitment-mismatch failures are timing-indistinguishable from the wire.
+Before revealing public keys, each side sends a [hash](#blake2b) ([commitment](#commitment-scheme)) of their key and a random nonce. The commitment is `H(pub || nonce)` — binding the key to a fresh random value prevents a man-in-the-middle from seeing one key and then crafting a fake key that produces a matching safety code. The commitment locks both sides into their keys before the reveal. The version byte, commitment, and nonce are sent together in a single exchange so that version-mismatch and commitment-mismatch failures are timing-indistinguishable from the wire.
 
 ```
-Round 1:  Alice -> version || H(key_A) || nonce_A    Bob -> version || H(key_B) || nonce_B    (commit)
-Round 2:  Alice -> key_A                             Bob -> key_B                             (reveal)
-Verify:   H(revealed_key) == commitment                                (both sides)
+Round 1:  Alice -> version || H(pub_A || nonce_A) || nonce_A    Bob -> version || H(pub_B || nonce_B) || nonce_B    (commit)
+Round 2:  Alice -> pub_A                                        Bob -> pub_B                                        (reveal)
+Verify:   H(revealed_pub || nonce) == commitment                                (both sides)
 ```
 
 ### Full handshake sequence
@@ -93,14 +93,14 @@ This is what goes over the wire. Each arrow is one exchange round. Payload sizes
 ```
         Alice                              Bob
           |                                  |
-          |--- version + H(pub_A) + nonce_A [65B] --->|  commit
-          |<-- version + H(pub_B) + nonce_B [65B] ----|  (locked in)
+          |--- version + H(pub_A||nonce_A) + nonce_A [65B] --->|  commit
+          |<-- version + H(pub_B||nonce_B) + nonce_B [65B] ----|  (locked in)
           |                                  |
           |--- pub_A [32B] ---------------->|  reveal
           |<-- pub_B [32B] -----------------|
           |                                  |
           |  verify version matches          |  both sides
-          |  verify H(pub_B) == commitment   |
+          |  verify H(pub_B||nonce_B) == commitment   |
           |  verify H(pub_A) == commitment   |
           |                                  |
           |  dh  = X25519(priv, peer_pub)    |  both compute

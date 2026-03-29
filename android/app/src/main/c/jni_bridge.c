@@ -1098,16 +1098,11 @@ static void *session_thread(void *arg) {
         }
     }
 
-    if (pending_len > 0)
+    if (pending_len > 0) {
         LOGE("queued message was not sent before disconnect");
-        /* Notify Java side — the callback takes a single jstring. */
-        {
-            jstring js = (*env)->NewStringUTF(env, "[queued message was not sent]");
-            if (js) {
-                (*env)->CallVoidMethod(env, cb, mid_onMessageReceived, js);
-                (*env)->DeleteLocalRef(env, js);
-            }
-        }
+        jni_call_str(env, cb, mid_onDisconnected,
+                     "[queued message was not sent]", "queued_lost");
+    }
     crypto_wipe(pending_msg, sizeof pending_msg);
     goto cleanup_session;
 

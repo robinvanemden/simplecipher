@@ -251,10 +251,8 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                 }
                 out_wire_len = frame_wire_build(out_wire, out_frame);
                 crypto_wipe(out_frame, sizeof out_frame);
-                if (pending_len > 0) {
-                    crypto_wipe(pending_msg, sizeof pending_msg);
-                    pending_len = 0;
-                }
+                /* pending_msg wipe is deferred until send actually completes
+                 * so the cleanup path can detect unsent queued messages. */
                 out_off            = 0;
                 out_active         = 1;
                 out_frame_start_ms = GetTickCount64();
@@ -270,6 +268,10 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                         memcpy(sess->tx, out_next_tx, KEY);
                         sess->tx_seq++;
                         out_active = 0;
+                        if (pending_len > 0) {
+                            crypto_wipe(pending_msg, sizeof pending_msg);
+                            pending_len = 0;
+                        }
                         crypto_wipe(out_wire, sizeof out_wire);
                         crypto_wipe(out_next_tx, sizeof out_next_tx);
                         next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
@@ -499,6 +501,10 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                          * so always schedule the next tick after completion. */
                         if (cover) next_cover = GetTickCount64() + (uint64_t)cover_delay_ms();
                         out_active = 0;
+                        if (pending_len > 0) {
+                            crypto_wipe(pending_msg, sizeof pending_msg);
+                            pending_len = 0;
+                        }
                         if (out_text[0]) win_print_chat(" me", out_text, line, line_len);
                         crypto_wipe(out_wire, sizeof out_wire);
                         crypto_wipe(out_next_tx, sizeof out_next_tx);

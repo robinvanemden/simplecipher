@@ -6974,6 +6974,97 @@ static void test_socks5_request_wipe(void) {
     TEST("request buffer zeroed after failed build + wipe", all_zero);
 }
 
+/* ---- test: PCS staged ratchet state ------------------------------------- */
+
+static void test_pcs_staged_ratchet_state(void) {
+    printf("\n=== PCS: staged ratchet state lifecycle ===\n");
+
+    session_t alice, bob;
+    uint8_t   alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* After session_init, ratchet_init eagerly calls ratchet_prepare,
+     * so staged state is already populated for the first send. */
+    TEST("alice: staged state prepared after init", alice.ratchet_prepared == 1);
+    TEST("bob: staged state prepared after init", bob.ratchet_prepared == 1);
+
+    /* Alice sends a message — triggers ratchet_send (first send after init) */
+    uint8_t  frame[FRAME_SZ], next_tx[KEY];
+    int rc = frame_build(&alice, (const uint8_t *)"hello", 5, frame, next_tx);
+    TEST("alice builds first frame", rc == 0);
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+
+    /* Bob receives — frame_open calls ratchet_prepare eagerly */
+    uint8_t  plain[MAX_MSG + 1];
+    uint16_t plen = 0;
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("bob opens first frame", rc == 0);
+
+    /* After receiving, Bob should have staged ratchet state */
+    TEST("bob: ratchet_prepared == 1 after receive", bob.ratchet_prepared == 1);
+    TEST("bob: staged_dh_priv is non-zero", !is_zero32(bob.staged_dh_priv));
+    TEST("bob: staged_dh_pub is non-zero", !is_zero32(bob.staged_dh_pub));
+    TEST("bob: staged_root is non-zero", !is_zero32(bob.staged_root));
+    TEST("bob: staged_tx is non-zero", !is_zero32(bob.staged_tx));
+
+    /* Snapshot the staged private key — simulates attacker reading RAM */
+    uint8_t stolen_staged_priv[KEY], stolen_staged_tx[KEY];
+    memcpy(stolen_staged_priv, bob.staged_dh_priv, KEY);
+    memcpy(stolen_staged_tx, bob.staged_tx, KEY);
+
+    /* Bob sends — ratchet_send commits the staged state and wipes it */
+    rc = frame_build(&bob, (const uint8_t *)"reply", 5, frame, next_tx);
+    TEST("bob builds reply (commits staged state)", rc == 0);
+    memcpy(bob.tx, next_tx, KEY);
+    bob.tx_seq++;
+
+    /* After send, staged_dh_priv should be wiped (committed to dh_priv) */
+    TEST("bob: staged_dh_priv wiped after send", is_zero32(bob.staged_dh_priv));
+    TEST("bob: staged_dh_pub wiped after send", is_zero32(bob.staged_dh_pub));
+    TEST("bob: staged_root wiped after send", is_zero32(bob.staged_root));
+    TEST("bob: staged_tx wiped after send", is_zero32(bob.staged_tx));
+    TEST("bob: ratchet_prepared cleared after send", bob.ratchet_prepared == 0);
+
+    /* Alice receives Bob's reply — staged state prepared again */
+    plen = 0;
+    rc = frame_open(&alice, frame, plain, &plen);
+    TEST("alice opens bob's reply", rc == 0);
+    TEST("alice: ratchet_prepared == 1 after receive", alice.ratchet_prepared == 1);
+
+    /* Alice sends again — new ratchet step with fresh keying material */
+    rc = frame_build(&alice, (const uint8_t *)"second", 6, frame, next_tx);
+    TEST("alice builds second message", rc == 0);
+    memcpy(alice.tx, next_tx, KEY);
+    alice.tx_seq++;
+
+    /* Bob receives Alice's second message — triggers new ratchet_prepare
+     * with fresh keying material that the attacker cannot predict. */
+    plen = 0;
+    rc = frame_open(&bob, frame, plain, &plen);
+    TEST("bob opens alice's second message", rc == 0);
+    plain[plen] = '\0';
+    TEST("content correct after PCS recovery", strcmp((char *)plain, "second") == 0);
+
+    /* Now Bob's NEW staged state should differ from the stolen snapshot.
+     * The stolen staged_dh_priv was committed to bob.dh_priv on Bob's send,
+     * but Bob's NEXT staged state (from alice's new ratchet) is fresh. */
+    TEST("bob's new staged priv differs from stolen",
+         crypto_verify32(stolen_staged_priv, bob.staged_dh_priv) != 0);
+    TEST("bob's new staged tx differs from stolen",
+         crypto_verify32(stolen_staged_tx, bob.staged_tx) != 0);
+
+    crypto_wipe(stolen_staged_priv, KEY);
+    crypto_wipe(stolen_staged_tx, KEY);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next_tx, KEY);
+    crypto_wipe(plain, sizeof plain);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -7097,6 +7188,7 @@ int main(void) {
     test_tui_me_queued();
     test_inbound_frame_rate_limit();
     test_socks5_request_wipe();
+    test_pcs_staged_ratchet_state();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();
     test_dudect_is_zero32();

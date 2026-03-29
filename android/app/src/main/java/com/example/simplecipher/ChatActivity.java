@@ -77,6 +77,9 @@ public class ChatActivity extends Activity implements NativeCallback {
   private String pendingSendMsg = null;
   /* True after onConnected, false after onDisconnected/onStop. */
   private boolean sessionLive = false;
+  /* True when cover traffic is active (SOCKS5 connect). Sends are
+   * queued, not immediate — UI should reflect this. */
+  private boolean coverMode = false;
   /* Port saved from Intent before extras are wiped (for getLocalIps). */
   private int sessionPort = 7777;
 
@@ -177,9 +180,10 @@ public class ChatActivity extends Activity implements NativeCallback {
     getIntent().replaceExtras((android.os.Bundle) null);
 
     boolean isConnect = "connect".equals(mode);
+    coverMode = (socks5Proxy != null && !socks5Proxy.isEmpty());
 
     if (isConnect) {
-      if (socks5Proxy != null && !socks5Proxy.isEmpty()) {
+      if (coverMode) {
         statusText.setText("Connecting via SOCKS5 to " + host + ":" + port + " ...");
       } else {
         statusText.setText("Connecting to " + host + ":" + port + " ...");
@@ -388,7 +392,7 @@ public class ChatActivity extends Activity implements NativeCallback {
     uiHandler.post(
         () -> {
           if (ok && pendingSendMsg != null) {
-            appendChat("me", pendingSendMsg);
+            appendChat(coverMode ? "me (queued)" : "me", pendingSendMsg);
           } else if (!ok) {
             appendChat("system", "[send failed]");
           }
