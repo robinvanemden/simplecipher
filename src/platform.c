@@ -328,8 +328,7 @@ static int install_seccomp_phase1(void) {
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getrandom, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* SYS_nanosleep excluded: not called after sandbox */
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW), /* nanosleep excluded: not called after sandbox */
 #            ifdef SYS_gettimeofday
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_gettimeofday, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
