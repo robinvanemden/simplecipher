@@ -193,13 +193,17 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             }
             if (acc == NB_RECV_FRAME) {
                 uint64_t now_rl = monotonic_ms();
-                if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
-                else { ++rx_count; }
+                if (now_rl - rx_window >= 1000) {
+                    rx_count  = 1;
+                    rx_window = now_rl;
+                } else {
+                    ++rx_count;
+                }
 
                 if (rx_count > 50) {
                     nb_io_reset_recv(&io);
                 } else {
-                    plen = 0;
+                    plen      = 0;
                     int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);
                     nb_io_reset_recv(&io);
 
@@ -257,7 +261,10 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
             for (ssize_t bi = 0; bi < sr; bi++) {
                 unsigned char ch = inbuf[bi];
 
-                if (ch == 0x03 || ch == 0x04) { g_running = 0; break; }
+                if (ch == 0x03 || ch == 0x04) {
+                    g_running = 0;
+                    break;
+                }
                 if (ch == 0x7F || ch == 0x08) {
                     if (line_len > 0) line[--line_len] = '\0';
                     continue;
@@ -283,9 +290,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
 
                     if (io.out_active) continue; /* send in progress */
 
-                    if (nb_io_start_send(&io, sess, fd,
-                                         (const uint8_t *)line, (uint16_t)line_len,
-                                         line) < 0) {
+                    if (nb_io_start_send(&io, sess, fd, (const uint8_t *)line, (uint16_t)line_len, line) < 0) {
                         crypto_wipe(line, sizeof line);
                         g_running = 0; /* exit outer while loop */
                         break;
@@ -330,8 +335,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
         }
     }
 
-    if (pending_len > 0 || (io.out_active && io.out_text[0]))
-        fprintf(stderr, "[message was not sent]\n");
+    if (pending_len > 0 || (io.out_active && io.out_text[0])) fprintf(stderr, "[message was not sent]\n");
     crypto_wipe(line, sizeof line);
     crypto_wipe(plain, sizeof plain);
     crypto_wipe(pending_msg, sizeof pending_msg);

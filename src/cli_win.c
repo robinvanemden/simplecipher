@@ -430,10 +430,14 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
                                 /* Full wire message: frame is at in_wire[WIRE_HDR] */
                                 {
                                     uint64_t now_rl = GetTickCount64();
-                                    if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
-                                    else if (++rx_count > 50) {
+                                    if (now_rl - rx_window >= 1000) {
+                                        rx_count  = 1;
+                                        rx_window = now_rl;
+                                    } else if (++rx_count > 50) {
                                         crypto_wipe(in_wire, sizeof in_wire);
-                                        in_have = 0; in_need = WIRE_HDR; in_frame_start_ms = 0;
+                                        in_have           = 0;
+                                        in_need           = WIRE_HDR;
+                                        in_frame_start_ms = 0;
                                         break;
                                     }
                                 }
@@ -523,8 +527,7 @@ void cli_chat_loop(socket_t fd, session_t *sess, int cover) {
             break;
         }
 
-        if (pending_len > 0 || (out_active && out_text[0]))
-            win_print_status("[message was not sent]", line, line_len);
+        if (pending_len > 0 || (out_active && out_text[0])) win_print_status("[message was not sent]", line, line_len);
         crypto_wipe(in_wire, sizeof in_wire);
         crypto_wipe(out_frame, sizeof out_frame);
         crypto_wipe(out_wire, sizeof out_wire);

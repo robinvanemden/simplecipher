@@ -127,7 +127,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
     uint8_t  plain[MAX_MSG + 1];
     uint16_t plen;
     int      auth_fails = 0;
-    int      rx_count   = 0;       /* inbound frame rate limiter */
+    int      rx_count   = 0; /* inbound frame rate limiter */
     uint64_t rx_window  = 0;
     uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
     uint8_t  pending_msg[MAX_MSG + 1];
@@ -205,13 +205,17 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                  * the frame (it is the first in the new window).
                  * Over limit: drop silently. */
                 uint64_t now_rl = monotonic_ms();
-                if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
-                else { ++rx_count; }
+                if (now_rl - rx_window >= 1000) {
+                    rx_count  = 1;
+                    rx_window = now_rl;
+                } else {
+                    ++rx_count;
+                }
 
                 if (rx_count > 50) {
                     nb_io_reset_recv(&io);
                 } else {
-                    plen = 0;
+                    plen      = 0;
                     int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);
                     nb_io_reset_recv(&io);
 
@@ -289,7 +293,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
             if (ch == 0x7F || ch == 0x08) {
                 if (line_len > 0) {
                     line[--line_len] = '\0';
-                    const char *bs = "\b \b";
+                    const char *bs   = "\b \b";
                     ssize_t     r;
                     do { r = write(STDOUT_FILENO, bs, 3); } while (r < 0 && errno == EINTR);
                 }
@@ -341,11 +345,9 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                     continue;
                 }
 
-                if (nb_io_start_send(&io, sess, fd,
-                                     (const uint8_t *)line, (uint16_t)line_len,
-                                     line) < 0) {
+                if (nb_io_start_send(&io, sess, fd, (const uint8_t *)line, (uint16_t)line_len, line) < 0) {
                     crypto_wipe(line, sizeof line);
-                    line_len = 0;
+                    line_len        = 0;
                     const char *msg = "[send error]\n";
                     ssize_t     r;
                     do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
@@ -427,8 +429,8 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
     nb_io_t  io;
     /* Staging buffer for piped/redirected input: read() may return
      * multiple newline-delimited lines in one call. */
-    char     rdbuf[MAX_MSG + 2];
-    size_t   rdbuf_len = 0;
+    char   rdbuf[MAX_MSG + 2];
+    size_t rdbuf_len = 0;
 
     memset(line, 0, sizeof line);
     memset(pending_msg, 0, sizeof pending_msg);
@@ -477,13 +479,17 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
             }
             if (acc == NB_RECV_FRAME) {
                 uint64_t now_rl = monotonic_ms();
-                if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
-                else { ++rx_count; }
+                if (now_rl - rx_window >= 1000) {
+                    rx_count  = 1;
+                    rx_window = now_rl;
+                } else {
+                    ++rx_count;
+                }
 
                 if (rx_count > 50) {
                     nb_io_reset_recv(&io);
                 } else {
-                    plen = 0;
+                    plen      = 0;
                     int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);
                     nb_io_reset_recv(&io);
 
@@ -518,8 +524,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                     crypto_wipe(pending_msg, sizeof pending_msg);
                     pending_len = 0;
                 }
-                if (io.out_text[0])
-                    secure_chat_print(" me", io.out_text);
+                if (io.out_text[0]) secure_chat_print(" me", io.out_text);
                 nb_io_complete_send(&io, sess);
             }
         }
@@ -538,14 +543,17 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
             rdbuf_len += (size_t)rn;
             rdbuf[rdbuf_len] = '\0';
 
-            int send_failed = 0;
-            char *start = rdbuf;
+            int   send_failed = 0;
+            char *start       = rdbuf;
             for (;;) {
                 char *nl = memchr(start, '\n', rdbuf_len - (size_t)(start - rdbuf));
                 if (!nl) break;
                 size_t n = (size_t)(nl - start);
                 if (n > 0 && start[n - 1] == '\r') n--;
-                if (n == 0) { start = nl + 1; continue; }
+                if (n == 0) {
+                    start = nl + 1;
+                    continue;
+                }
                 if (n > (size_t)MAX_MSG_RATCHET) {
                     printf("[too long -- max %d bytes]\n", MAX_MSG_RATCHET);
                     start = nl + 1;
@@ -553,7 +561,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 }
                 memcpy(line, start, n);
                 line[n] = '\0';
-                start = nl + 1;
+                start   = nl + 1;
 
                 if (cover) {
                     if (pending_len > 0) {
@@ -572,9 +580,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                  * stay in rdbuf for the next poll iteration. */
                 if (io.out_active) break;
 
-                if (nb_io_start_send(&io, sess, fd,
-                                     (const uint8_t *)line, (uint16_t)n,
-                                     line) < 0) {
+                if (nb_io_start_send(&io, sess, fd, (const uint8_t *)line, (uint16_t)n, line) < 0) {
                     fprintf(stderr, "[send error]\n");
                     crypto_wipe(line, sizeof line);
                     send_failed = 1;
@@ -588,8 +594,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 break; /* one send per iteration */
             }
             size_t remaining = rdbuf_len - (size_t)(start - rdbuf);
-            if (remaining > 0 && start != rdbuf)
-                memmove(rdbuf, start, remaining);
+            if (remaining > 0 && start != rdbuf) memmove(rdbuf, start, remaining);
             rdbuf_len = remaining;
             crypto_wipe(rdbuf + rdbuf_len, sizeof rdbuf - rdbuf_len);
             if (send_failed) break;
@@ -618,8 +623,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
         }
     }
 
-    if (pending_len > 0 || (io.out_active && io.out_text[0]))
-        fprintf(stderr, "  [message was not sent]\n");
+    if (pending_len > 0 || (io.out_active && io.out_text[0])) fprintf(stderr, "  [message was not sent]\n");
     crypto_wipe(rdbuf, sizeof rdbuf);
     crypto_wipe(line, sizeof line);
     crypto_wipe(plain, sizeof plain);
