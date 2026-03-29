@@ -180,8 +180,8 @@ jobs:
           $SSH "
             set -e
 
-            # Kill stale processes from cancelled runs
-            pkill -u \$(whoami) -f 'simplecipher|test_p2p|test_socks5' 2>/dev/null || true
+            # Kill stale test/listen processes from cancelled runs (exclude our shell)
+            pkill -u \$(whoami) -f './tests/test_p2p|./tests/test_socks5|./simplecipher listen' 2>/dev/null || true
             sleep 1
 
             # Clean stale test artifacts
@@ -258,8 +258,8 @@ jobs:
           $SSH "
             set -e
 
-            # Kill stale processes from cancelled runs
-            pkill -u \$(whoami) -f 'simplecipher|test_p2p|test_socks5' 2>/dev/null || true
+            # Kill stale test/listen processes from cancelled runs (exclude our shell)
+            pkill -u \$(whoami) -f './tests/test_p2p|./tests/test_socks5|./simplecipher listen' 2>/dev/null || true
             sleep 1
 
             # Clean stale test artifacts
@@ -328,8 +328,8 @@ jobs:
           $SSH "
             set -e
 
-            # Kill stale processes from cancelled runs
-            pkill -u \$(whoami) -f 'simplecipher|test_p2p|test_socks5' 2>/dev/null || true
+            # Kill stale test/listen processes from cancelled runs (exclude our shell)
+            pkill -u \$(whoami) -f './tests/test_p2p|./tests/test_socks5|./simplecipher listen' 2>/dev/null || true
             sleep 1
 
             # Clean stale test artifacts
