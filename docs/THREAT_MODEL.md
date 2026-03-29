@@ -48,7 +48,7 @@ An authenticated peer who completes the handshake legitimately can:
 
 | Attack | Impact | Mitigation |
 |--------|--------|-----------|
-| Ratchet bombing (FLAG_RATCHET every frame) or high-rate ordinary frames | CPU exhaustion on low-power devices (~3ms X25519 per frame on RPi Zero). Note: eager ratchet pre-computation (`ratchet_prepare`) runs after every accepted frame, not just FLAG_RATCHET frames — any valid inbound frame triggers X25519 work until the local side sends once | Session can be terminated with Ctrl+C; Android rate-limits incoming frames (not just messages) at 50/sec, rejecting excess frames before AEAD decryption |
+| Ratchet bombing (FLAG_RATCHET every frame) or high-rate ordinary frames | CPU exhaustion on low-power devices (~3ms X25519 per frame on RPi Zero). Note: eager ratchet pre-computation (`ratchet_prepare`) runs after every accepted frame, not just FLAG_RATCHET frames — any valid inbound frame triggers X25519 work until the local side sends once | All platforms rate-limit incoming frames at 50/sec, dropping excess frames before AEAD decryption + X25519 work; session can be terminated with Ctrl+C |
 | Message flooding (1000 messages) | Overwrites legitimate message history in TUI ring buffer; Android could grow handler queue | Ring buffer is fixed-size (desktop); Android rate-limits incoming frames at 50/sec before decryption and caps chatLog at ~100KB |
 | Steganographic padding | Up to 485 bytes/frame covert channel in authenticated zero-padding | Padding is AEAD-protected; not readable without session keys |
 | Session keepalive | Session stays alive indefinitely (no idle timeout) | User can always disconnect; TCP keepalive eventually fires |

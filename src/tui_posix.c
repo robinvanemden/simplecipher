@@ -130,6 +130,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     uint16_t    plen;
     const char *status     = "Secure session active  |  Ctrl+C to quit";
     int         auth_fails = 0;
+    int         rx_count   = 0;
+    uint64_t    rx_window  = 0;
     uint64_t    next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
     uint8_t     pending_msg[MAX_MSG + 1]; /* queued real message for cover tick */
     uint16_t    pending_len = 0;
@@ -176,6 +178,11 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 status = "Peer disconnected  |  Ctrl+C to exit";
                 tui_draw_screen(status, line, line_len);
                 break;
+            }
+            {
+                uint64_t now_rl = monotonic_ms();
+                if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
+                else if (++rx_count > 50) { crypto_wipe(frame, sizeof frame); continue; }
             }
             plen      = 0;
             int fo_rc = frame_open(sess, frame, plain, &plen);

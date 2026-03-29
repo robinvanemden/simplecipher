@@ -128,6 +128,8 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
     uint8_t  plain[MAX_MSG + 1];
     uint16_t plen;
     int      auth_fails = 0;
+    int      rx_count   = 0;       /* inbound frame rate limiter */
+    uint64_t rx_window  = 0;
     uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
     uint8_t  pending_msg[MAX_MSG + 1];
     uint16_t pending_len = 0;
@@ -174,6 +176,13 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                     do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
                 }
                 break;
+            }
+            /* Rate-limit inbound frames before expensive AEAD + X25519
+             * work.  Same 50-frame/sec window as Android. */
+            {
+                uint64_t now_rl = monotonic_ms();
+                if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
+                else if (++rx_count > 50) { crypto_wipe(frame, sizeof frame); continue; }
             }
             plen      = 0;
             int fo_rc = frame_open(sess, frame, plain, &plen);
@@ -375,6 +384,8 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
     char     line[MAX_MSG + 2];
     uint16_t plen;
     int      auth_fails = 0;
+    int      rx_count   = 0;
+    uint64_t rx_window  = 0;
     uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
     uint8_t  pending_msg[MAX_MSG + 1];
     uint16_t pending_len = 0;
@@ -410,6 +421,11 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
             if (frame_recv(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
                 printf("\n  [peer disconnected]\n");
                 break;
+            }
+            {
+                uint64_t now_rl = monotonic_ms();
+                if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
+                else if (++rx_count > 50) { crypto_wipe(frame, sizeof frame); continue; }
             }
             plen      = 0;
             int fo_rc = frame_open(sess, frame, plain, &plen);

@@ -91,6 +91,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     WSAEVENT    net_ev;
     const char *status     = "Secure session active  |  Ctrl+C to quit";
     int         auth_fails = 0;
+    int         rx_count   = 0;
+    uint64_t    rx_window  = 0;
     uint64_t    next_cover = cover ? GetTickCount64() + (uint64_t)cover_delay_ms() : 0;
     uint8_t     pending_msg[MAX_MSG + 1];
     uint16_t    pending_len = 0;
@@ -259,6 +261,15 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                         }
                         if (in_have == in_need) {
                             /* Full wire message: frame is at in_wire[WIRE_HDR] */
+                            {
+                                uint64_t now_rl = GetTickCount64();
+                                if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
+                                else if (++rx_count > 50) {
+                                    crypto_wipe(in_wire, sizeof in_wire);
+                                    in_have = 0; in_need = WIRE_HDR; in_frame_start_ms = 0;
+                                    break;
+                                }
+                            }
                             uint16_t plen  = 0;
                             int      fo_rc = frame_open(sess, in_wire + WIRE_HDR, plain, &plen);
                             if (fo_rc != 0) {
