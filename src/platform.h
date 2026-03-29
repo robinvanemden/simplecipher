@@ -58,17 +58,11 @@
  * headers below use enum/const directly for portability across all
  * compilers including Clang 16. */
 
-/* nullptr is C23.  GCC 13+ and Clang 16+ in C2x mode accept it, but Apple
- * Clang (Xcode 15/16) does not recognise nullptr in -std=c2x.  Fall back
- * to the preprocessor NULL which every C compiler supports. */
-#if !defined(__cplusplus) && !defined(nullptr)
-#    if defined(__has_feature)
-#        if !__has_feature(c_nullptr)
-#            define nullptr NULL
-#        endif
-#    elif defined(__STDC_VERSION__) && __STDC_VERSION__ < 202311L
-#        define nullptr NULL
-#    endif
+/* nullptr is C23.  Compilers in -std=c2x mode (Apple Clang, older Clang/GCC)
+ * may not support it.  Fall back to NULL on pre-C23 compilers. */
+#if !defined(__cplusplus) && !defined(nullptr) && \
+    (!defined(__STDC_VERSION__) || __STDC_VERSION__ < 202311L)
+#    define nullptr NULL
 #endif
 
 #include <stdio.h>

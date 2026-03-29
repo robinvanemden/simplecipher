@@ -679,11 +679,8 @@ jobs:
       - name: Build and test (arm64, native)
         run: |
           echo "=== macOS $(uname -sr) $(uname -m) ==="
-          MACOS_SECURITY='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing'
-          MACOS_CFLAGS='-Os -std=c2x -Isrc -Ilib -flto -ffunction-sections -fdata-sections'
           make clean
           make -j$(sysctl -n hw.ncpu) CC=cc \
-            SECURITY_CFLAGS="$MACOS_SECURITY" CFLAGS="$MACOS_CFLAGS" \
             simplecipher tests/test_p2p tests/test_socks5_proxy
           echo '=== P2P tests ==='
           ./tests/test_p2p
@@ -700,11 +697,9 @@ jobs:
 
       - name: Build and verify (x86_64, cross-compile)
         run: |
-          MACOS_SECURITY='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing'
-          MACOS_CFLAGS='-Os -std=c2x -Isrc -Ilib -flto -ffunction-sections -fdata-sections -target x86_64-apple-macos12'
           make clean
           make -j$(sysctl -n hw.ncpu) CC=cc \
-            SECURITY_CFLAGS="$MACOS_SECURITY" CFLAGS="$MACOS_CFLAGS" \
+            CFLAGS='-Os -std=c2x -Isrc -Ilib -flto -ffunction-sections -fdata-sections -target x86_64-apple-macos12' \
             LDFLAGS='-flto -Wl,-dead_strip -Wl,-x -target x86_64-apple-macos12' \
             simplecipher
           echo '=== Verify x86_64 binary ==='

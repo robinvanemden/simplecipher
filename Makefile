@@ -1,20 +1,28 @@
 CC      ?= gcc
 
-# Security-critical flags — always applied, cannot be overridden.
+# ---- Compiler capability detection ----------------------------------------
+# Probe whether $(CC) accepts a flag.  Returns the flag if supported, empty
+# string otherwise.  Runs once per flag during Makefile parsing.
+cc_ok = $(shell echo 'int main(){return 0;}' | $(CC) $(1) -x c - -o /dev/null 2>/dev/null && echo $(1))
+
+# Detect C23 vs C2x support (Apple Clang, older Clang need -std=c2x)
+STD_FLAG := $(or $(call cc_ok,-std=c23),-std=c2x)
+
+# ---- Security-critical flags — always applied, cannot be overridden --------
 # CIPHER_HARDEN enables mlockall, core dump suppression, ptrace blocking,
 # and seccomp/Capsicum/pledge sandboxing.
 SECURITY_CFLAGS = -DCIPHER_HARDEN -DNDEBUG \
                   -fstack-protector-strong \
-                  -ftrivial-auto-var-init=zero \
                   -fvisibility=hidden \
-                  -fno-delete-null-pointer-checks \
-                  -fno-strict-overflow \
                   -fno-strict-aliasing \
-                  -fstrict-flex-arrays=3
+                  $(call cc_ok,-ftrivial-auto-var-init=zero) \
+                  $(call cc_ok,-fno-delete-null-pointer-checks) \
+                  $(call cc_ok,-fno-strict-overflow) \
+                  $(call cc_ok,-fstrict-flex-arrays=3)
 
-# User-overridable flags (optimization, warnings, includes).
-CFLAGS  ?= -Os -std=c23 -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough \
-           -Wbidi-chars=any \
+# ---- User-overridable flags (optimization, warnings, includes) -------------
+CFLAGS  ?= -Os $(STD_FLAG) -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough \
+           $(call cc_ok,-Wbidi-chars=any) \
            -Werror=format-security -Werror=incompatible-pointer-types -Werror=int-conversion \
            -Isrc -Ilib \
            -flto -ffunction-sections -fdata-sections -fmerge-all-constants
@@ -28,14 +36,12 @@ LIBS    ?= -lm
 CORE_SRC = src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c \
            src/tui.c src/cli.c src/args.c src/verify.c lib/monocypher.c
 
-# Platform-specific event loops and hardening
+# Platform-specific event loops, hardening, and linker flags
 UNAME := $(shell uname -s)
 ifeq ($(UNAME),Linux)
   PLAT_SRC = src/tui_posix.c src/cli_posix.c
-  CFLAGS  += -fstack-clash-protection -D_FORTIFY_SOURCE=3
-  # CET-based control-flow integrity (Intel IBT + shadow stack) on x86_64.
-  # Silently ignored by GCC/Clang on non-x86 architectures.
-  CFLAGS  += -fcf-protection=full
+  CFLAGS  += $(call cc_ok,-fstack-clash-protection) $(call cc_ok,-D_FORTIFY_SOURCE=3)
+  CFLAGS  += $(call cc_ok,-fcf-protection=full)
   LDFLAGS ?= -flto -Wl,--gc-sections -s
   LDFLAGS += -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,nodlopen
 else ifeq ($(UNAME),Darwin)
