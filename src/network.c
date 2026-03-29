@@ -379,7 +379,11 @@ int get_local_ips(char *buf, size_t buf_sz) {
             int w = snprintf(buf + off, buf_sz - off, "%s%s", n ? "\n" : "", ip);
             if (w > 0) {
                 off += (size_t)w;
-                if (off >= buf_sz) { off = buf_sz - 1; n++; break; }
+                if (off >= buf_sz) {
+                    off = buf_sz - 1;
+                    n++;
+                    break;
+                }
             }
             n++;
         }
@@ -398,7 +402,11 @@ int get_local_ips(char *buf, size_t buf_sz) {
         int w = snprintf(buf + off, buf_sz - off, "%s%s", n ? "\n" : "", ip);
         if (w > 0) {
             off += (size_t)w;
-            if (off >= buf_sz) { off = buf_sz - 1; n++; break; }
+            if (off >= buf_sz) {
+                off = buf_sz - 1;
+                n++;
+                break;
+            }
         }
         n++;
     }

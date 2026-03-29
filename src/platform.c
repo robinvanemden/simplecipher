@@ -320,15 +320,17 @@ static int install_seccomp_phase1(void) {
          * TCSETSF (0x5404) — tcsetattr(TCSAFLUSH)
          * TIOCGWINSZ (0x5413) — ioctl(fd, TIOCGWINSZ, &ws)
          * Everything else (TIOCSTI, TIOCLINUX, FIONBIO, …) is killed. */
+        // clang-format off
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 8),
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[1])),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5401 /* TCGETS */,    4, 0),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5402 /* TCSETS */,    3, 0),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5403 /* TCSETSW */,   2, 0),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5404 /* TCSETSF */,   1, 0),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5413 /* TIOCGWINSZ */, 0, 1),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5401 /* TCGETS    */, 4, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5402 /* TCSETS    */, 3, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5403 /* TCSETSW   */, 2, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5404 /* TCSETSF   */, 1, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5413 /* TIOCGWINSZ*/, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+        // clang-format on
 
         /* Entropy and timing */
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getrandom, 0, 1),
@@ -475,15 +477,17 @@ static int install_seccomp_phase2(void) {
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         /* ioctl: whitelist only needed terminal requests (see phase 1) */
+        // clang-format off
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 8),
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[1])),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5401 /* TCGETS */,    4, 0),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5402 /* TCSETS */,    3, 0),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5403 /* TCSETSW */,   2, 0),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5404 /* TCSETSF */,   1, 0),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5413 /* TIOCGWINSZ */, 0, 1),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5401 /* TCGETS    */, 4, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5402 /* TCSETS    */, 3, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5403 /* TCSETSW   */, 2, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5404 /* TCSETSF   */, 1, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5413 /* TIOCGWINSZ*/, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+        // clang-format on
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mmap, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_munmap, 0, 1),
