@@ -246,8 +246,8 @@ static int identity_kdf(uint8_t enc_key[KEY], const uint8_t salt[IDENTITY_SALT_S
  * mid-write.  After rename, chmod ensures 0600 even if the directory
  * has a permissive umask or the file previously had looser permissions.
  *
- * On Windows: uses a simple fopen("wb") since rename-over-existing is
- * not atomic; _chmod tightens permissions after close. */
+ * On Windows: writes to a temp file (GetTempFileNameA), then replaces
+ * via MoveFileExA(MOVEFILE_REPLACE_EXISTING); _chmod tightens permissions. */
 int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, size_t pass_len) {
     uint8_t salt[IDENTITY_SALT_SZ], nonce[NONCE_SZ];
     fill_random(salt, sizeof salt);
@@ -261,17 +261,58 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
     crypto_wipe(enc_key, sizeof enc_key);
 
 #if defined(_WIN32) || defined(_WIN64)
-    FILE *f = fopen(path, "wb");
+    /* Write to a temp file in the same directory, then atomically replace
+     * the target.  Mirrors the POSIX path below. */
+    char dir[MAX_PATH], tmp_path[MAX_PATH];
+
+    /* Extract parent directory from path. */
+    {
+        const char *slash = strrchr(path, '\\');
+        const char *fslash = strrchr(path, '/');
+        if (fslash && (!slash || fslash > slash)) slash = fslash;
+        if (slash) {
+            size_t dlen = (size_t)(slash - path);
+            if (dlen >= sizeof dir) {
+                crypto_wipe(ct, sizeof ct);
+                return -1;
+            }
+            memcpy(dir, path, dlen);
+            dir[dlen] = '\0';
+        } else {
+            dir[0] = '.';
+            dir[1] = '\0';
+        }
+    }
+
+    if (GetTempFileNameA(dir, "sci", 0, tmp_path) == 0) {
+        crypto_wipe(ct, sizeof ct);
+        return -1;
+    }
+
+    FILE *f = fopen(tmp_path, "wb");
     if (!f) {
+        DeleteFileA(tmp_path);
         crypto_wipe(ct, sizeof ct);
         return -1;
     }
 
     int ok = (fwrite(salt, 1, sizeof salt, f) == sizeof salt && fwrite(nonce, 1, sizeof nonce, f) == sizeof nonce &&
               fwrite(ct, 1, sizeof ct, f) == sizeof ct && fwrite(mac, 1, sizeof mac, f) == sizeof mac);
+    int flush_ok = (fflush(f) == 0);
     int close_ok = (fclose(f) == 0);
     crypto_wipe(ct, sizeof ct);
-    if (!ok || !close_ok) return -1;
+
+    if (!ok || !flush_ok || !close_ok) {
+        DeleteFileA(tmp_path);
+        return -1;
+    }
+
+    /* Atomic replace: the original file is untouched until this succeeds. */
+    if (!MoveFileExA(tmp_path, path, MOVEFILE_REPLACE_EXISTING)) {
+        DeleteFileA(tmp_path);
+        return -1;
+    }
+
     chmod(path, 0600);
     return 0;
 #else
