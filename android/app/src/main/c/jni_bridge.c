@@ -773,7 +773,13 @@ static void *session_thread(void *arg) {
          * peer disconnect during SAS verification would go unnoticed until
          * the user tapped Confirm or Back. */
         uint8_t hdr[3];
+        uint64_t sas_deadline = monotonic_ms() + SAS_TIMEOUT_MS;
         for (;;) {
+            if (monotonic_ms() >= sas_deadline) {
+                LOGE("SAS verification timed out");
+                jni_call_str(env, cb, mid_onHandshakeFailed, "SAS verification timed out", "sas_timeout");
+                goto cleanup_keys;
+            }
             struct pollfd sas_fds[2] = {{pipe_rd, POLLIN, 0}, {(int)fd, POLLHUP, 0}};
             int           pr         = poll(sas_fds, 2, 1000); /* 1-second poll */
             if (pr < 0 && errno == EINTR) continue;
