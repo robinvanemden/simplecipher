@@ -271,7 +271,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                     }
                     memcpy(pending_msg, line, line_len);
                     pending_len = (uint16_t)line_len;
-                    secure_chat_print(" me", line);
+                    secure_chat_print(" me (queued)", line);
                     crypto_wipe(line, sizeof line);
                     line_len = 0;
                     cli_redraw_input(line, line_len);
@@ -351,6 +351,11 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
         }
     }
 
+    if (pending_len > 0) {
+        const char *msg = "  [queued message was not sent]\n";
+        ssize_t     r;
+        do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
+    }
     crypto_wipe(line, sizeof line);
     crypto_wipe(frame, sizeof frame);
     crypto_wipe(next_tx, sizeof next_tx);
@@ -461,7 +466,7 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 }
                 memcpy(pending_msg, line, n);
                 pending_len = (uint16_t)n;
-                secure_chat_print(" me", line);
+                secure_chat_print(" me (queued)", line);
                 crypto_wipe(line, sizeof line);
                 continue;
             }
@@ -517,6 +522,8 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
         }
     }
 
+    if (pending_len > 0)
+        fprintf(stderr, "  [queued message was not sent]\n");
     crypto_wipe(line, sizeof line);
     crypto_wipe(frame, sizeof frame);
     crypto_wipe(next_tx, sizeof next_tx);

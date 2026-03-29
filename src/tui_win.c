@@ -185,7 +185,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                         if (pending_len > 0) continue;
                         memcpy(pending_msg, line, line_len);
                         pending_len = (uint16_t)line_len;
-                        tui_msg_add(TUI_ME, line);
+                        tui_msg_add(TUI_ME_QUEUED, line);
                         crypto_wipe(line, sizeof line);
                         line_len = 0;
                         tui_draw_messages();
@@ -374,6 +374,8 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
     }
 
 win_tui_done:
+    if (pending_len > 0)
+        tui_msg_add(TUI_SYSTEM, "[queued message was not sent]");
     if (fd != INVALID_SOCK) WSAEventSelect(fd, nullptr, 0);
     WSACloseEvent(net_ev);
     crypto_wipe(in_wire, sizeof in_wire);

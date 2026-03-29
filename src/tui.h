@@ -97,7 +97,7 @@ enum {
 #define TUI_MSG_MAX 1000
 #define TUI_MSG_TEXT (MAX_MSG + 1) /* must hold null-terminated message */
 
-enum tui_sender { TUI_ME, TUI_PEER, TUI_SYSTEM };
+enum tui_sender { TUI_ME, TUI_ME_QUEUED, TUI_PEER, TUI_SYSTEM };
 
 /* The ring buffer is declared as extern so both tui.c and the platform
  * event loop files (tui_posix.c / tui_win.c) can access it. */

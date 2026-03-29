@@ -35,9 +35,18 @@
  * WHEN DOES THE RATCHET TRIGGER?
  *
  * Only on direction switch: if your last action was receiving and you are
- * about to send, a DH ratchet step happens first.  If you send multiple
- * messages in a row, only the first one triggers a ratchet.  This matches
- * natural conversation flow and avoids unnecessary key generation.
+ * about to send, a DH ratchet step happens.  If you send multiple messages
+ * in a row, only the first one triggers a ratchet.  This matches natural
+ * conversation flow and avoids unnecessary key generation.
+ *
+ * EAGER PRE-COMPUTATION: The expensive X25519 work is performed eagerly
+ * in ratchet_prepare() immediately after receiving a frame (called from
+ * frame_open), NOT deferred to send time.  The fresh keypair, DH secret,
+ * and derived chain are stored in staged_* fields; ratchet_send() just
+ * copies the pre-computed results.  This eliminates timing asymmetry
+ * between ratcheted and non-ratcheted sends, but means the staged private
+ * key and derived chain exist in RAM from receive time until the next send.
+ * A RAM compromise in that window recovers the next outbound ratchet state.
  *
  * A misbehaving peer that sends a ratchet key on every frame is harmless —
  * each step is one X25519 + one BLAKE2b, and the root key advances correctly.

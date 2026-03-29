@@ -8,6 +8,8 @@ set -uo pipefail
 BIN="${1:?Usage: $0 <binary> <machine-hex> <arch-label>}"
 EXPECTED_MACHINE="${2:?Usage: $0 <binary> <machine-hex> <arch-label>}"
 ARCH_LABEL="${3:?Usage: $0 <binary> <machine-hex> <arch-label>}"
+# Reject paths with shell metacharacters to prevent eval injection.
+case "$BIN" in *[\'\"\`\$\;\&\|\!\(\)\{\}\[\]]*) echo "ERROR: binary path contains shell metacharacters" >&2; exit 1;; esac
 
 PASS=0
 FAIL=0

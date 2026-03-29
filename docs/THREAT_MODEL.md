@@ -36,6 +36,8 @@
 | 32-bit SAS | 1-in-4-billion chance of MITM per session | Commitment scheme prevents brute-force; adequate for interactive verification |
 | Protocol fingerprint | All wire messages use a 1-byte CSPRNG pad_len header + random padding, coalesced into single writes. The random padding varies total message size from 513 to 768 bytes, which defeats naive fixed-size DPI rules but does not provide full traffic indistinguishability. The pad_len byte and the 8-byte sequence number in the frame AD are not encrypted, and the fixed 512-byte inner frame is a distinguishing feature for a sophisticated observer. | Frames are 512 bytes internally (message-length hiding); the wire encoding wraps each with random padding. Use `--socks5` with Tor for metadata protection. |
 | Cover traffic minimum 500ms interval | Frames arriving <500ms apart are distinguishable from cover | Delaying real sends to cover boundaries would add latency |
+| DNS resolution outside connect timeout | The 15-second non-blocking connect timeout does not cover `getaddrinfo()`, which runs before the timed loop. A hostname-based SOCKS5 proxy can stall pre-auth connect well past the stated bound via DNS delays. Multiple resolved addresses multiply the per-candidate 15-second wait. | Use numeric IP addresses for SOCKS5 proxies (localhost `127.0.0.1`); `connect_socket_numeric` enforces `AI_NUMERICHOST` for peer connections |
+| Listen mode single-slot | `listen_socket` accepts exactly one TCP peer and closes the listener. Any reachable host can grab the only slot before the intended peer connects, forcing a restart. | SimpleCipher is a 1:1 chat tool, not a server. Use Tor onion services or firewall rules to restrict inbound access; re-run on failure |
 | No sandbox on Windows | Code execution vuln has full system access on Windows | Windows has no equivalent to seccomp/Capsicum/pledge; process mitigation policies provide partial defense |
 | mlockall may fail silently | Key material can be swapped to disk | Fails on systems with low RLIMIT_MEMLOCK; warning printed |
 | X25519 is not post-quantum | Vulnerable to future quantum computers (Shor's algorithm) | Symmetric layer (BLAKE2b, XChaCha20) provides 128-bit quantum security; X25519 is the single quantum-vulnerable component. Practical quantum threat is 2035-2045 (requires millions of physical qubits). A hybrid X25519 + ML-KEM-768 handshake (following Signal's PQXDH model) will be added when quantum computing advances warrant it. |
@@ -46,7 +48,7 @@ An authenticated peer who completes the handshake legitimately can:
 
 | Attack | Impact | Mitigation |
 |--------|--------|-----------|
-| Ratchet bombing (FLAG_RATCHET every frame) | CPU exhaustion on low-power devices (~3ms X25519 per frame on RPi Zero) | Session can be terminated with Ctrl+C; Android rate-limits incoming frames (not just messages) at 50/sec, rejecting excess frames before AEAD decryption |
+| Ratchet bombing (FLAG_RATCHET every frame) or high-rate ordinary frames | CPU exhaustion on low-power devices (~3ms X25519 per frame on RPi Zero). Note: eager ratchet pre-computation (`ratchet_prepare`) runs after every accepted frame, not just FLAG_RATCHET frames — any valid inbound frame triggers X25519 work until the local side sends once | Session can be terminated with Ctrl+C; Android rate-limits incoming frames (not just messages) at 50/sec, rejecting excess frames before AEAD decryption |
 | Message flooding (1000 messages) | Overwrites legitimate message history in TUI ring buffer; Android could grow handler queue | Ring buffer is fixed-size (desktop); Android rate-limits incoming frames at 50/sec before decryption and caps chatLog at ~100KB |
 | Steganographic padding | Up to 485 bytes/frame covert channel in authenticated zero-padding | Padding is AEAD-protected; not readable without session keys |
 | Session keepalive | Session stays alive indefinitely (no idle timeout) | User can always disconnect; TCP keepalive eventually fires |
@@ -74,7 +76,7 @@ An authenticated peer who completes the handshake legitimately can:
 - TIOCSTI ioctl explicitly blocked in seccomp filter
 - Alternate screen buffer (TUI) erases chat on exit
 - All sensitive buffers wiped via Monocypher's volatile-based crypto_wipe
-  (including SOCKS5 target hostname, pipe command buffers, local IP strings)
+  (including SOCKS5 target hostname on all code paths, pipe command buffers, local IP strings)
 - SAS displayed via write() (not printf) to avoid libc stdio buffer residue
 - SAS verification monitors peer socket for disconnect (POLLHUP/FD_CLOSE)
   and enforces a 5-minute timeout on all platforms

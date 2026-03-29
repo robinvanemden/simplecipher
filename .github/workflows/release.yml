@@ -74,10 +74,25 @@ jobs:
               sudo tar -xJf "$ARCHIVE" -C /opt/x-tools/
               rm -f "$ARCHIVE"
             fi
-            # Re-verify after cache restore: detect poisoned cache.
+            # After fresh extraction, record SHA256 of the GCC binary for
+            # future cache-restore verification.
             GCC="/opt/x-tools/$TRIPLE/bin/$TRIPLE-gcc"
+            HASH_FILE="/opt/x-tools/$TRIPLE/.gcc-sha256"
+            if [ ! -f "$HASH_FILE" ]; then
+              sha256sum "$GCC" | cut -d' ' -f1 | sudo tee "$HASH_FILE" >/dev/null
+            fi
+            # Re-verify after cache restore: check ELF format and SHA256 digest
+            # to detect a poisoned cache that swapped the compiler binary.
             if [ ! -x "$GCC" ] || ! file "$GCC" | grep -q "ELF"; then
               echo "::error::Toolchain $TRIPLE appears corrupted (missing or non-ELF gcc)"
+              exit 1
+            fi
+            EXPECTED_GCC_HASH=$(cat "$HASH_FILE")
+            ACTUAL_GCC_HASH=$(sha256sum "$GCC" | cut -d' ' -f1)
+            if [ "$ACTUAL_GCC_HASH" != "$EXPECTED_GCC_HASH" ]; then
+              echo "::error::Toolchain $TRIPLE GCC binary hash mismatch (cache may be poisoned)"
+              echo "::error::Expected: $EXPECTED_GCC_HASH"
+              echo "::error::Actual:   $ACTUAL_GCC_HASH"
               exit 1
             fi
             echo "/opt/x-tools/$TRIPLE/$TRIPLE/bin" >> "$GITHUB_PATH"
@@ -99,10 +114,24 @@ jobs:
             sudo mv /opt/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64 /opt/llvm-mingw
             rm -f "$ARCHIVE"
           fi
+          # After fresh extraction, record SHA256 of a clang binary.
+          CLANG="$(ls /opt/llvm-mingw/bin/x86_64-w64-mingw32-clang 2>/dev/null | head -1)"
+          HASH_FILE="/opt/llvm-mingw/.clang-sha256"
+          if [ -n "$CLANG" ] && [ ! -f "$HASH_FILE" ]; then
+            sha256sum "$CLANG" | cut -d' ' -f1 | sudo tee "$HASH_FILE" >/dev/null
+          fi
           # Re-verify after cache restore: detect poisoned cache.
           if [ ! -d /opt/llvm-mingw/bin ] || ! ls /opt/llvm-mingw/bin/*-clang >/dev/null 2>&1; then
             echo "::error::llvm-mingw appears corrupted (missing bin/ or clang binaries)"
             exit 1
+          fi
+          if [ -f "$HASH_FILE" ] && [ -n "$CLANG" ]; then
+            EXPECTED_CLANG=$(cat "$HASH_FILE")
+            ACTUAL_CLANG=$(sha256sum "$CLANG" | cut -d' ' -f1)
+            if [ "$ACTUAL_CLANG" != "$EXPECTED_CLANG" ]; then
+              echo "::error::llvm-mingw clang hash mismatch (cache may be poisoned)"
+              exit 1
+            fi
           fi
 
       - name: Patch llvm-mingw toolchain path for CI

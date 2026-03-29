@@ -525,11 +525,13 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     int req_len = socks5_build_request(req, sizeof req, target_host, target_port);
     if (req_len <= 0) {
         fprintf(stderr, "  SOCKS5: invalid target address\n");
+        crypto_wipe(req, sizeof req);
         close_sock(fd);
         return INVALID_SOCK;
     }
     if (write_exact_dl(fd, req, (size_t)req_len, deadline) != 0) {
         fprintf(stderr, "  SOCKS5: failed to send connect request\n");
+        crypto_wipe(req, sizeof req);
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -539,6 +541,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     uint8_t reply[4];
     if (read_exact_dl(fd, reply, 4, deadline) != 0) {
         fprintf(stderr, "  SOCKS5: no reply from proxy\n");
+        crypto_wipe(req, sizeof req);
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -554,6 +557,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
         else if (reply[1] == 0x08) reason = "address type not supported";
         else if (reply[0] != 0x05) reason = "invalid SOCKS version in reply";
         fprintf(stderr, "  SOCKS5: proxy connect failed (%s)\n", reason);
+        crypto_wipe(req, sizeof req);
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -563,6 +567,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     if (reply[3] == 0x03) {
         uint8_t dlen;
         if (read_exact_dl(fd, &dlen, 1, deadline) != 0) {
+            crypto_wipe(req, sizeof req);
             close_sock(fd);
             return INVALID_SOCK;
         }
@@ -572,6 +577,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     }
     if (skip < 0) {
         fprintf(stderr, "  SOCKS5: malformed reply from proxy\n");
+        crypto_wipe(req, sizeof req);
         close_sock(fd);
         return INVALID_SOCK;
     }
@@ -580,6 +586,7 @@ int socks5_reply_skip(uint8_t atyp, uint8_t domain_len) {
     uint8_t drain[256 + 2];
     if ((size_t)skip > sizeof drain || read_exact_dl(fd, drain, (size_t)skip, deadline) != 0) {
         fprintf(stderr, "  SOCKS5: malformed reply from proxy\n");
+        crypto_wipe(req, sizeof req);
         close_sock(fd);
         return INVALID_SOCK;
     }

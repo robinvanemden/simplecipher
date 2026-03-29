@@ -143,6 +143,8 @@ chain[2]  -->  ...
 
 When the conversation direction switches (Alice was listening, now she replies), the sender generates a fresh [X25519](#x25519) keypair and mixes the new shared secret into a root key. This derives a completely new chain that an attacker cannot predict, even if they stole the old chain key.
 
+**Note on eager pre-computation:** The DH ratchet step (X25519 keypair generation, DH computation, KDF) is performed eagerly upon receiving a frame, not deferred to send time. The results are staged in session memory and committed when the next frame is built. This eliminates timing differences between ratcheted and non-ratcheted sends, but means the staged private key exists in RAM from receive time until the next send. A RAM compromise in that window can recover the next outbound ratchet state — PCS recovery requires both a send *and* no compromise of the staged state.
+
 **Note on recovery timing:** The ratchet key is included in a frame encrypted with the pre-ratchet chain. The receiver derives the new chain only after decrypting that frame, so the first post-ratchet message is encrypted under the old chain — recovery takes effect from the second message onward.
 
 ```

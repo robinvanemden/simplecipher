@@ -239,7 +239,7 @@ which is negl(&lambda;) for polynomial n.
 
 ### 5.2 DH ratchet (post-compromise security)
 
-**Construction.** When the conversation direction switches, `ratchet_send` executes:
+**Construction.** When the conversation direction switches, `ratchet_prepare` (called eagerly from `frame_open` at receive time) pre-computes the next DH ratchet step. The results are staged in session memory and committed by `ratchet_send` at the next `frame_build`. The computation is:
 
 ```
 dh_priv', dh_pub' = fresh X25519 keypair       (from OS CSPRNG)
@@ -258,9 +258,11 @@ root'             = domain_hash("cipher ratchet v2", ikm)
 rx'               = expand(root', "chain")
 ```
 
-**Post-compromise security claim.** If an adversary compromises all session state (root, tx, rx, dh_priv) at time t, then after one DH round-trip (one send from each party), the adversary can no longer derive session keys.
+**Post-compromise security claim.** If an adversary compromises all session state (root, tx, rx, dh_priv, staged_*) at time t, then after one DH round-trip (one send from each party) *with no further compromise*, the adversary can no longer derive session keys.
 
-**Proof sketch.** After compromise at time t, the next `ratchet_send` generates dh_priv' &larr;$ {0,1}<sup>256</sup> from the OS CSPRNG. The adversary does not know dh_priv' (assuming CSPRNG security). The new root key depends on X25519(dh_priv', peer_dh), which the adversary cannot compute without dh_priv'. Under CDH:
+**Note on eager pre-computation.** Because `ratchet_prepare` runs at receive time (not send time), the fresh keypair and derived chain exist in `staged_*` fields from the moment a frame is received until the next send commits them. A RAM compromise during this window recovers the staged private key and the next outbound chain. The practical PCS recovery window is therefore: one receive (which creates the staged state) followed by one send (which commits and wipes it), with no compromise in between.
+
+**Proof sketch.** After compromise at time t, the next `ratchet_prepare` generates dh_priv' &larr;$ {0,1}<sup>256</sup> from the OS CSPRNG. The adversary does not know dh_priv' (assuming CSPRNG security and no further RAM access). The new root key depends on X25519(dh_priv', peer_dh), which the adversary cannot compute without dh_priv'. Under CDH:
 
 Adv<sup>PCS</sup><sub>A</sub> &le; Adv<sup>CDH</sup><sub>B</sub>(Curve25519) + Adv<sup>PRF</sup><sub>B'</sub>(BLAKE2b)
 
@@ -382,8 +384,9 @@ Inter-frame intervals are drawn from a **clamped exponential distribution** (mea
 - Total session duration and frame count are observable
 - Rapid-fire messages (faster than the tick rate) queue and serialize, introducing observable delivery delay if message rate exceeds ~2 msg/sec average
 - The exponential distribution approximates natural traffic but is not a perfect model of any specific application's traffic pattern; a sufficiently sophisticated classifier may still identify the stream
+- **Protocol fingerprinting is not defeated.** The fixed 512-byte inner frame (`FRAME_SZ`) and cleartext `pad_len` byte (uniform random 0-255) create a recognizable wire signature: total sizes between 513-768 bytes with a fixed inner structure. A DPI system that looks beyond timing — at frame sizes, pad_len distribution, or the constant inner frame offset — can identify SimpleCipher traffic regardless of cover traffic timing
 
-Cover traffic provides strong timing-analysis resistance for interactive chat but does not eliminate all metadata leakage.
+Cover traffic provides strong timing-analysis resistance for interactive chat but does not eliminate all metadata leakage. It mitigates *when* you type, not *that* you are using SimpleCipher.
 
 ### 7.6 No PIE on static musl binaries
 

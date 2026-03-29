@@ -5,6 +5,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+# Reject paths with shell metacharacters to prevent eval injection.
+case "$PROJECT_DIR" in *[\'\"\`\$\;\&\|\!\(\)\{\}\[\]]*) echo "ERROR: project path contains shell metacharacters" >&2; exit 1;; esac
 
 PASS=0
 FAIL=0

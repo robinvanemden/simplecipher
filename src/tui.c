@@ -224,6 +224,10 @@ void tui_draw_messages(void) {
             color = "";
             label = "  me";
             break;
+        case TUI_ME_QUEUED:
+            color = "";
+            label = "  me (queued)";
+            break;
         case TUI_PEER:
             color = TUI_COLOR_CYAN;
             label = "peer";
