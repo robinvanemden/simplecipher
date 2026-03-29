@@ -84,7 +84,7 @@ An authenticated peer who completes the handshake legitimately can:
   FD_SET overflow when fd >= FD_SETSIZE (1024)
 
 ### Verified by
-- 905 automated tests (879 P2P + 10 SOCKS5 + 16 CLI flag integration)
+- 930 automated tests (904 P2P + 10 SOCKS5 + 16 CLI flag integration)
 - ASan + UBSan + MSan in CI
 - 5 libFuzzer targets (frame_open, sanitize, validate_port, socks5, fingerprint)
 - dudect statistical timing tests (ct_compare, is_zero32)

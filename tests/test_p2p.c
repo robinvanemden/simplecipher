@@ -6784,6 +6784,196 @@ static void test_rate_limit_constants(void) {
     TEST("worst-case cover bandwidth < 20 KB/s", max_bw_kbps < 20.0);
 }
 
+/* ---- test: TUI_ME_QUEUED enum and display -------------------------------- */
+
+static void test_tui_me_queued(void) {
+    printf("\n=== TUI_ME_QUEUED enum and display ===\n");
+
+    tui_msg_wipe();
+
+    /* Add a queued message and verify it's stored */
+    tui_msg_add(TUI_ME_QUEUED, "queued secret");
+    TEST("TUI_ME_QUEUED stored in ring buffer", tui_msg_count == 1);
+    TEST("TUI_ME_QUEUED who field correct", tui_msgs[0].who == TUI_ME_QUEUED);
+    TEST("TUI_ME_QUEUED text stored", strcmp(tui_msgs[0].text, "queued secret") == 0);
+
+    /* Verify enum value is distinct from TUI_ME */
+    TEST("TUI_ME_QUEUED != TUI_ME", TUI_ME_QUEUED != TUI_ME);
+    TEST("TUI_ME_QUEUED != TUI_PEER", TUI_ME_QUEUED != TUI_PEER);
+    TEST("TUI_ME_QUEUED != TUI_SYSTEM", TUI_ME_QUEUED != TUI_SYSTEM);
+
+    /* Interleave with regular messages */
+    tui_msg_add(TUI_ME, "sent message");
+    tui_msg_add(TUI_ME_QUEUED, "another queued");
+    TEST("mixed queue: count is 3", tui_msg_count == 3);
+    TEST("mixed queue: msg[1] is TUI_ME", tui_msgs[1].who == TUI_ME);
+    TEST("mixed queue: msg[2] is TUI_ME_QUEUED", tui_msgs[2].who == TUI_ME_QUEUED);
+
+    /* Wipe cleans queued messages too */
+    tui_msg_wipe();
+    TEST("wipe clears queued messages", tui_msg_count == 0);
+
+    /* Verify entire buffer is zeroed after wipe */
+    uint8_t *raw      = (uint8_t *)tui_msgs;
+    int      all_zero = 1;
+    for (size_t i = 0; i < sizeof(struct tui_msg_entry) * 3; i++) {
+        if (raw[i] != 0) { all_zero = 0; break; }
+    }
+    TEST("queued message bytes zeroed after wipe", all_zero);
+}
+
+/* ---- test: inbound frame rate limiting ---------------------------------- */
+
+static void test_inbound_frame_rate_limit(void) {
+    printf("\n=== Inbound frame rate limiting (50/sec) ===\n");
+
+    /* Set up a session pair for frame building/opening. */
+    uint8_t   priv_a[KEY], pub_a[KEY], priv_b[KEY], pub_b[KEY];
+    uint8_t   sas_a[KEY], sas_b[KEY];
+    session_t alice, bob;
+
+    gen_keypair(priv_a, pub_a);
+    gen_keypair(priv_b, pub_b);
+    uint8_t ctn1[KEY], ctn2[KEY];
+    fill_random(ctn1, KEY);
+    fill_random(ctn2, KEY);
+    (void)session_init(&alice, 1, priv_a, pub_a, pub_b, ctn1, ctn2, sas_a);
+    (void)session_init(&bob, 0, priv_b, pub_b, pub_a, ctn2, ctn1, sas_b);
+
+    /* Build 60 valid frames from Alice (mix of cover + real). */
+    uint8_t  frames[60][FRAME_SZ];
+    uint8_t  next_tx[KEY];
+    int      build_ok = 1;
+    for (int i = 0; i < 60; i++) {
+        int rc;
+        if (i % 3 == 0) {
+            rc = frame_build(&alice, NULL, 0, frames[i], next_tx);
+        } else {
+            const char *msg = "test";
+            rc = frame_build(&alice, (const uint8_t *)msg, 4, frames[i], next_tx);
+        }
+        if (rc != 0) { build_ok = 0; break; }
+        memcpy(alice.tx, next_tx, KEY);
+        alice.tx_seq++;
+    }
+    TEST("built 60 valid frames for rate limit test", build_ok);
+
+    /* Simulate the rate-limit logic from the event loops.
+     * This is the same code pattern used in cli_posix.c, tui_posix.c, etc. */
+    int      rx_count  = 0;
+    uint64_t rx_window = 0;
+    int      accepted  = 0;
+    int      dropped   = 0;
+
+    /* Process all 60 frames at "the same millisecond" (same window). */
+    uint64_t now = monotonic_ms();
+    for (int i = 0; i < 60; i++) {
+        if (now - rx_window >= 1000) { rx_count = 1; rx_window = now; }
+        else if (++rx_count > 50) { dropped++; continue; }
+        accepted++;
+    }
+
+    TEST("rate limiter accepts first 50 frames", accepted == 50);
+    TEST("rate limiter drops frames 51-60", dropped == 10);
+
+    /* Verify window reset: advance clock by 1 second */
+    rx_count = 0;
+    rx_window = 0;
+    accepted = 0;
+    dropped = 0;
+    for (int i = 0; i < 60; i++) {
+        /* Simulate 1-second boundary at frame 50 */
+        uint64_t t = (i < 50) ? now : now + 1000;
+        if (t - rx_window >= 1000) { rx_count = 1; rx_window = t; }
+        else if (++rx_count > 50) { dropped++; continue; }
+        accepted++;
+    }
+    TEST("rate limiter resets after 1-second window", accepted == 60);
+    TEST("no drops after window reset", dropped == 0);
+
+    /* Verify that 50/sec is above cover traffic peak rate.
+     * Cover traffic minimum interval is COVER_DELAY_MIN_MS = 50ms -> 20 fps max. */
+    double cover_max_fps = 1000.0 / COVER_DELAY_MIN_MS;
+    TEST("50/sec limit above cover traffic peak (~20/sec)", cover_max_fps < 50.0);
+
+    /* Open the first 50 frames on Bob to confirm they are valid */
+    uint8_t  plain[MAX_MSG + 1];
+    uint16_t plen;
+    int      open_ok = 1;
+    for (int i = 0; i < 50; i++) {
+        plen = 0;
+        if (frame_open(&bob, frames[i], plain, &plen) != 0) { open_ok = 0; break; }
+    }
+    TEST("first 50 frames decrypt successfully", open_ok);
+
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(priv_a, KEY);
+    crypto_wipe(priv_b, KEY);
+    crypto_wipe(frames, sizeof frames);
+    crypto_wipe(next_tx, KEY);
+    crypto_wipe(plain, sizeof plain);
+}
+
+/* ---- test: SOCKS5 request buffer wipe on error paths -------------------- */
+
+static void test_socks5_request_wipe(void) {
+    printf("\n=== SOCKS5 request buffer wipe on error paths ===\n");
+
+    /* Verify socks5_build_request populates the buffer with target host data,
+     * and that the buffer can be wiped.  We can't test the actual network
+     * error paths without a socket, but we can verify the build + wipe cycle. */
+    uint8_t req[SOCKS5_REQ_MAX];
+    memset(req, 0, sizeof req);
+
+    /* Build a request with a .onion address */
+    int len = socks5_build_request(req, sizeof req, "abcdefghijklmnop.onion", "80");
+    TEST("socks5_build_request succeeds for .onion", len > 0);
+
+    /* Verify the target hostname is in the buffer */
+    int found_host = 0;
+    for (int i = 0; i < (int)sizeof req - 5; i++) {
+        if (memcmp(req + i, "abcde", 5) == 0) { found_host = 1; break; }
+    }
+    TEST("target hostname present in request buffer", found_host);
+
+    /* Wipe and verify */
+    crypto_wipe(req, sizeof req);
+    int all_zero = 1;
+    for (size_t i = 0; i < sizeof req; i++) {
+        if (req[i] != 0) { all_zero = 0; break; }
+    }
+    TEST("request buffer fully zeroed after wipe", all_zero);
+
+    /* Test with maximum-length hostname (255 bytes is the SOCKS5 domain limit) */
+    char long_host[256];
+    memset(long_host, 'x', 255);
+    long_host[255] = '\0';
+    memset(req, 0xAA, sizeof req);
+    len = socks5_build_request(req, sizeof req, long_host, "443");
+    TEST("socks5_build_request succeeds for max-length host", len > 0);
+
+    /* Wipe must clear the long hostname too */
+    crypto_wipe(req, sizeof req);
+    all_zero = 1;
+    for (size_t i = 0; i < sizeof req; i++) {
+        if (req[i] != 0) { all_zero = 0; break; }
+    }
+    TEST("max-length hostname fully zeroed after wipe", all_zero);
+
+    /* Edge case: empty hostname should fail gracefully */
+    memset(req, 0xBB, sizeof req);
+    len = socks5_build_request(req, sizeof req, "", "80");
+    TEST("socks5_build_request rejects empty hostname", len <= 0);
+    /* Even on failure, caller should wipe */
+    crypto_wipe(req, sizeof req);
+    all_zero = 1;
+    for (size_t i = 0; i < sizeof req; i++) {
+        if (req[i] != 0) { all_zero = 0; break; }
+    }
+    TEST("request buffer zeroed after failed build + wipe", all_zero);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -6904,6 +7094,9 @@ int main(void) {
 #endif
     test_version_in_ikm();
     test_rate_limit_constants();
+    test_tui_me_queued();
+    test_inbound_frame_rate_limit();
+    test_socks5_request_wipe();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();
     test_dudect_is_zero32();

@@ -49,8 +49,8 @@ Every release binary includes compile-time and runtime hardening. Nothing is opt
 | Atomic identity key save (temp file + rename) | yes | — | — |
 | Sequence number overflow rejection (UINT64_MAX) | yes | yes | yes |
 | Terminal restore on exit (`atexit` handler in verify.c) | yes | — | — |
+| Frame-level rate limiting before AEAD (50 frames/sec) | yes | yes | yes |
 | **Android-specific** | | | |
-| Frame-level rate limiting before AEAD (50 frames/sec) | — | — | yes |
 | Block screenshots / screen recording | — | — | `FLAG_SECURE` |
 | Block overlay windows (tapjacking) | — | — | `setHideOverlayWindows` |
 | Custom in-app keyboard (no IME logging) | — | — | yes |
