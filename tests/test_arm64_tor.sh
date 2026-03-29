@@ -21,6 +21,7 @@ REQUIRE_TOOLS=0
 if [ "${1:-}" = "--require-tools" ]; then
     REQUIRE_TOOLS=1
 fi
+. "$(dirname "$0")/test_helpers.sh"
 
 PASS=0; FAIL=0; SKIP=0
 pass() { PASS=$((PASS + 1)); printf '  \033[32mPASS\033[0m  %s\n' "$1"; }
@@ -50,10 +51,10 @@ echo "=== Test 1: Real Tor SOCKS5 loopback ==="
 
 if ss -tln | grep -q ':9050'; then
     # Start a peer listener on a random high port
-    PORT=19877
+    PORT=$(random_port)
     $BIN listen $PORT &
     LISTENER_PID=$!
-    sleep 1
+    wait_for_port "$PORT" 5
 
     # Connect through Tor's SOCKS5 to our own listener (loopback via Tor)
     # This will fail at the handshake (Tor can't resolve 127.0.0.1 through

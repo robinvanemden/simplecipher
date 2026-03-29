@@ -221,14 +221,12 @@ int main(void) {
     pthread_t  srv_tid;
     pthread_create(&srv_tid, NULL, server_thread, &srv);
 
-    /* Retry connect — on busy CI the proxy thread may be slow to accept */
-    socket_t client = INVALID_SOCK;
-    for (int _ca = 0; _ca < 20; _ca++) {
-        struct timespec ts = {0, 100000000};
-        nanosleep(&ts, NULL);
-        client = connect_socket_socks5("127.0.0.1", proxy_port, "127.0.0.1", target_port);
-        if (client != INVALID_SOCK) break;
-    }
+    /* Proxy listen() was called on the main thread before spawning the proxy,
+     * so the kernel is already accepting connections into the backlog.
+     * connect_socket_socks5 does TCP connect + SOCKS5 negotiation; the TCP
+     * part succeeds immediately (kernel backlog) and the SOCKS5 part proceeds
+     * once the proxy thread calls accept(). */
+    socket_t client = connect_socket_socks5("127.0.0.1", proxy_port, "127.0.0.1", target_port);
     TEST("SOCKS5 connect succeeded", client != INVALID_SOCK);
 
     if (client == INVALID_SOCK) {

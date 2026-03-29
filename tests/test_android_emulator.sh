@@ -18,6 +18,13 @@ FAIL=0
 pass() { PASS=$((PASS + 1)); printf '  \033[32mPASS\033[0m  %s\n' "$1"; }
 fail() { FAIL=$((FAIL + 1)); printf '  \033[31mFAIL\033[0m  %s\n' "$1"; }
 
+# Wait for emulator to be fully booted before running tests.
+adb wait-for-device
+for ((i = 0; i < 60; i++)); do
+    if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then break; fi
+    sleep 1
+done
+
 check_no_crash() {
     if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then
         fail "$1"
@@ -34,7 +41,7 @@ check_no_crash() {
 # which handles slow emulators where elements aren't rendered yet.
 tap_by_id() {
     local rid="$1"
-    local retries="${2:-1}"
+    local retries="${2:-3}"
     local i
     for ((i = 0; i < retries; i++)); do
         adb shell uiautomator dump /sdcard/ui.xml 2>/dev/null
@@ -54,7 +61,7 @@ tap_by_id() {
 
 # Wait for an activity to reach the foreground (up to $1 seconds, default 10).
 wait_for_activity() {
-    local timeout="${1:-10}"
+    local timeout="${1:-15}"
     local i
     for ((i = 0; i < timeout; i++)); do
         if adb shell dumpsys activity activities | grep -q "mResumedActivity.*$PKG"; then
@@ -77,6 +84,17 @@ scroll_and_tap() {
         if tap_by_id "$rid" 2; then
             return 0
         fi
+    done
+    return 1
+}
+
+# Wait for a UI element to appear (up to $2 seconds, default 10).
+wait_for_element() {
+    local rid="$1" timeout="${2:-10}" i
+    for ((i = 0; i < timeout; i++)); do
+        adb shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        if adb shell cat /sdcard/ui.xml 2>/dev/null | grep -q "resource-id=\"${rid}\""; then return 0; fi
+        sleep 1
     done
     return 1
 }
@@ -434,7 +452,7 @@ if [ -f "$PROXY_BIN" ] && [ -f "$PEER_BIN" ]; then
 
         # Tap Go — real SOCKS5 connect: app → proxy → DNS resolve → peer → handshake
         if tap_by_id "${PKG}:id/goButton" 3; then
-            sleep 10  # Give time for SOCKS5 → proxy → DNS → peer → handshake
+            sleep 15  # Give time for SOCKS5 → proxy → DNS → peer → handshake
 
             check_no_crash "App SOCKS5 connect through proxy: no crash"
 

@@ -41,11 +41,10 @@
 /* Random port in [20000, 60000) to avoid TIME_WAIT conflicts on bare-metal CI.
  * Probes the port with a quick bind to confirm it is available before returning. */
 static void random_port(char buf[8]) {
-    for (int attempt = 0; attempt < 20; attempt++) {
+    for (int attempt = 0; attempt < 50; attempt++) {
         uint8_t r[2];
         fill_random(r, 2);
         int port = 20000 + (((int)r[0] | ((int)r[1] << 8)) % 40000);
-        /* Probe: try to bind and immediately release */
         int s = socket(AF_INET, SOCK_STREAM, 0);
         if (s < 0) continue;
         int one = 1;
@@ -59,10 +58,24 @@ static void random_port(char buf[8]) {
             return;
         }
     }
-    /* Fallback: use a random port and hope for the best */
+    /* Last resort — extremely unlikely we couldn't find a free port in 50 tries */
     uint8_t r[2];
     fill_random(r, 2);
     snprintf(buf, 8, "%d", 20000 + (((int)r[0] | ((int)r[1] << 8)) % 40000));
+}
+
+/* Retry connect until the listener is ready, or timeout.
+ * Returns connected socket or INVALID_SOCK.  Polls every 50ms. */
+static socket_t connect_retry(const char *port_str, int timeout_ms) {
+    int elapsed = 0;
+    while (elapsed < timeout_ms) {
+        socket_t fd = connect_socket("127.0.0.1", port_str);
+        if (fd != INVALID_SOCK) return fd;
+        struct timespec ts = {0, 50000000}; /* 50ms */
+        nanosleep(&ts, nullptr);
+        elapsed += 50;
+    }
+    return INVALID_SOCK;
 }
 
 static int g_pass = 0;
@@ -214,14 +227,7 @@ static void *peer_thread(void *arg) {
 
     /* Connect or listen */
     if (ctx->is_initiator) {
-        /* Retry connect for up to 2s — on busy CI the listener thread
-         * may not reach accept() within a single short delay. */
-        for (int attempt = 0; attempt < 20; attempt++) {
-            struct timespec ts_delay = {0, 100000000}; /* 100ms */
-            nanosleep(&ts_delay, nullptr);
-            ctx->fd = connect_socket("127.0.0.1", ctx->port);
-            if (ctx->fd != INVALID_SOCK) break;
-        }
+        ctx->fd = connect_retry(ctx->port, 5000);
     } else {
         ctx->fd = listen_socket(ctx->port);
     }
@@ -1931,14 +1937,7 @@ static void test_socket_timeout(void) {
     pthread_t lt;
     pthread_create(&lt, nullptr, stalling_listener, &listener);
 
-    /* Retry connect — on busy CI the listener thread may be slow to accept */
-    socket_t client_fd = INVALID_SOCK;
-    for (int _ca = 0; _ca < 20; _ca++) {
-        struct timespec ts_delay = {0, 100000000};
-        nanosleep(&ts_delay, nullptr);
-        client_fd = connect_socket("127.0.0.1", port);
-        if (client_fd != INVALID_SOCK) break;
-    }
+    socket_t client_fd = connect_retry(port, 5000);
     TEST("client connected for timeout test", client_fd != INVALID_SOCK);
     if (client_fd == INVALID_SOCK) {
         pthread_join(lt, nullptr);
@@ -1966,12 +1965,7 @@ static void *bad_version_peer(void *arg) {
     peer_ctx *ctx = (peer_ctx *)arg;
     ctx->ok       = 0;
 
-    for (int _ca = 0; _ca < 20; _ca++) {
-        struct timespec ts_delay = {0, 100000000};
-        nanosleep(&ts_delay, nullptr);
-        ctx->fd = connect_socket("127.0.0.1", ctx->port);
-        if (ctx->fd != INVALID_SOCK) break;
-    }
+    ctx->fd = connect_retry(ctx->port, 5000);
     if (ctx->fd == INVALID_SOCK) return nullptr;
 
     set_sock_timeout(ctx->fd, 5);
@@ -1998,12 +1992,7 @@ static void *bad_commit_peer(void *arg) {
     peer_ctx *ctx = (peer_ctx *)arg;
     ctx->ok       = 0;
 
-    for (int _ca = 0; _ca < 20; _ca++) {
-        struct timespec ts_delay = {0, 100000000};
-        nanosleep(&ts_delay, nullptr);
-        ctx->fd = connect_socket("127.0.0.1", ctx->port);
-        if (ctx->fd != INVALID_SOCK) break;
-    }
+    ctx->fd = connect_retry(ctx->port, 5000);
     if (ctx->fd == INVALID_SOCK) return nullptr;
 
     set_sock_timeout(ctx->fd, 5);
@@ -2156,14 +2145,7 @@ static void test_handshake_failure_paths(void) {
         pthread_t lt;
         pthread_create(&lt, nullptr, honest_listener, &listener);
 
-        /* Retry connect — on busy CI the listener may be slow to accept */
-        socket_t fd = INVALID_SOCK;
-        for (int _ca = 0; _ca < 20; _ca++) {
-            struct timespec ts_delay = {0, 100000000};
-            nanosleep(&ts_delay, nullptr);
-            fd = connect_socket("127.0.0.1", p3);
-            if (fd != INVALID_SOCK) break;
-        }
+        socket_t fd = connect_retry(p3, 5000);
         if (fd != INVALID_SOCK) {
             set_sock_timeout(fd, 5);
             uint8_t out1[1 + KEY], in1[1 + KEY];
@@ -2229,14 +2211,7 @@ static void *partial_frame_sender(void *arg) {
     peer_ctx *ctx = (peer_ctx *)arg;
     ctx->ok       = 0;
 
-    /* Retry connect for up to 2 seconds — on busy CI runners the listener
-     * thread may not reach accept() within the initial 50ms delay. */
-    for (int attempt = 0; attempt < 20; attempt++) {
-        struct timespec ts_delay = {0, 100000000}; /* 100ms */
-        nanosleep(&ts_delay, nullptr);
-        ctx->fd = connect_socket("127.0.0.1", ctx->port);
-        if (ctx->fd != INVALID_SOCK) break;
-    }
+    ctx->fd = connect_retry(ctx->port, 5000);
     if (ctx->fd == INVALID_SOCK) return nullptr;
 
     /* Send only half a frame, then close */
@@ -4293,12 +4268,7 @@ static void *fp_peer_thread(void *arg) {
     ctx->fp_mismatch = 0;
 
     if (ctx->is_initiator) {
-        for (int _ca = 0; _ca < 20; _ca++) {
-            struct timespec ts_delay = {0, 100000000};
-            nanosleep(&ts_delay, nullptr);
-            ctx->fd = connect_socket("127.0.0.1", ctx->port);
-            if (ctx->fd != INVALID_SOCK) break;
-        }
+        ctx->fd = connect_retry(ctx->port, 5000);
     } else {
         ctx->fd = listen_socket(ctx->port);
     }
@@ -5837,12 +5807,7 @@ static void *fast_peer_thread(void *arg) {
     uint8_t   commit_self[KEY], commit_peer[KEY];
     ctx->ok = 0;
 
-    for (int _ca = 0; _ca < 20; _ca++) {
-        struct timespec ts_delay = {0, 100000000};
-        nanosleep(&ts_delay, nullptr);
-        ctx->fd = connect_socket("127.0.0.1", ctx->port);
-        if (ctx->fd != INVALID_SOCK) break;
-    }
+    ctx->fd = connect_retry(ctx->port, 5000);
     if (ctx->fd == INVALID_SOCK) return nullptr;
     set_sock_timeout(ctx->fd, 10);
 

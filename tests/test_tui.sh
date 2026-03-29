@@ -14,9 +14,10 @@
 #
 # Usage: bash tests/test_tui.sh [path/to/simplecipher]
 set -uo pipefail
+. "$(dirname "$0")/test_helpers.sh"
 
 BIN="${1:-./simplecipher}"
-PORT=18765
+PORT=$(random_port)
 SESSION_L="sc_tui_listen"
 SESSION_C="sc_tui_connect"
 PASS=0
@@ -61,7 +62,7 @@ cleanup
 
 # --- Step 1: Start listener ---
 tmux new-session -d -s "$SESSION_L" -x 80 -y 24 "$BIN --tui listen $PORT"
-sleep 1
+wait_for_port "$PORT" 5
 
 SCREEN_L="$(capture "$SESSION_L")"
 check "listener shows title" "echo '$SCREEN_L' | grep -q 'SimpleCipher'"

@@ -9,6 +9,7 @@
 # Usage: bash tests/test_cli_flags.sh [path-to-simplecipher]
 
 set -euo pipefail
+. "$(dirname "$0")/test_helpers.sh"
 
 BIN="${1:-./simplecipher}"
 PASS=0
@@ -136,13 +137,13 @@ fi
 echo ""
 echo "--- End-to-end fingerprint trust test ---"
 
-PORT=$((20000 + RANDOM % 40000))
+PORT=$(random_port)
 
 # Start listener in background, capture fingerprint from output
 LISTEN_OUT=$(mktemp)
 "$BIN" listen "$PORT" >"$LISTEN_OUT" 2>&1 &
 LISTEN_PID=$!
-sleep 1
+wait_for_port "$PORT" 5
 
 # Extract listener's fingerprint
 LISTENER_FP=$(grep -oP 'fingerprint: \K[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}' "$LISTEN_OUT" || true)
@@ -182,7 +183,7 @@ echo "--- --peer-fingerprint on listen mode ---"
 
 timeout 3 "$BIN" --peer-fingerprint A3F2-91BC-D4E5-F678 listen "$PORT" 2>/dev/null &
 LISTEN_PID=$!
-sleep 1
+wait_for_port "$PORT" 5
 if kill -0 "$LISTEN_PID" 2>/dev/null; then
     pass "--peer-fingerprint accepted in listen mode"
     kill "$LISTEN_PID" 2>/dev/null || true
