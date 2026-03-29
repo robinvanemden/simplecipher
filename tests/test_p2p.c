@@ -24,9 +24,11 @@
 #include "tui.h"
 #include "cli.h"
 #include "verify.h"
+#include "nb_io.h"
 
 #include <pthread.h>
 #include <assert.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <math.h>
 #include <sys/stat.h>
@@ -7065,6 +7067,367 @@ static void test_pcs_staged_ratchet_state(void) {
     crypto_wipe(bob_priv, KEY);
 }
 
+/* ---- test: nb_io_accumulate byte-by-byte -------------------------------- */
+
+static void test_nb_io_accumulate_byte_by_byte(void) {
+    printf("\n=== nb_io_accumulate byte-by-byte ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Build a valid wire message from alice */
+    uint8_t frame[FRAME_SZ], next_tx[KEY];
+    const char *msg = "byte-by-byte test";
+    int brc = frame_build(&alice, (const uint8_t *)msg, (uint16_t)strlen(msg),
+                          frame, next_tx);
+    TEST("accumulate: frame_build succeeds", brc == 0);
+
+    uint8_t wire[WIRE_MAX];
+    size_t wire_len = frame_wire_build(wire, frame);
+    TEST("accumulate: wire_len > 0", wire_len > 0);
+
+    /* Create socketpair, set reader non-blocking */
+    int sv[2];
+    int sp_rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    TEST("accumulate: socketpair created", sp_rc == 0);
+    int flags = fcntl(sv[0], F_GETFL, 0);
+    fcntl(sv[0], F_SETFL, flags | O_NONBLOCK);
+
+    nb_io_t io;
+    nb_io_init(&io);
+
+    /* Feed one byte at a time from sv[1], accumulate from sv[0] */
+    int all_incomplete = 1;
+    int final_frame = 0;
+    for (size_t i = 0; i < wire_len; i++) {
+        ssize_t w = write(sv[1], wire + i, 1);
+        (void)w;
+        usleep(1000); /* let data propagate */
+        int acc = nb_io_accumulate(&io, sv[0]);
+        if (i < wire_len - 1) {
+            if (acc != NB_RECV_INCOMPLETE) all_incomplete = 0;
+        } else {
+            final_frame = (acc == NB_RECV_FRAME);
+        }
+    }
+    TEST("accumulate: all intermediate reads return INCOMPLETE", all_incomplete);
+    TEST("accumulate: last byte returns FRAME", final_frame);
+
+    /* Verify the accumulated frame can be decrypted */
+    uint8_t plain[MAX_MSG + 1];
+    uint16_t plen = 0;
+    int fo_rc = frame_open(&bob, io.in_wire + WIRE_HDR, plain, &plen);
+    TEST("accumulate: frame_open succeeds", fo_rc == 0);
+    plain[plen] = '\0';
+    TEST("accumulate: decrypted message matches",
+         plen == (uint16_t)strlen(msg) && strcmp((char *)plain, msg) == 0);
+
+    /* Reset and verify state is clean */
+    nb_io_reset_recv(&io);
+    TEST("accumulate: in_have reset to 0", io.in_have == 0);
+    TEST("accumulate: in_need reset to WIRE_HDR", io.in_need == WIRE_HDR);
+    TEST("accumulate: in_start_ms reset to 0", io.in_start_ms == 0);
+
+    nb_io_wipe(&io);
+    close(sv[0]);
+    close(sv[1]);
+    crypto_wipe(frame, sizeof frame);
+    crypto_wipe(next_tx, KEY);
+    crypto_wipe(wire, sizeof wire);
+    crypto_wipe(plain, sizeof plain);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test: nb_io_drain and complete ------------------------------------- */
+
+static void test_nb_io_drain_and_complete(void) {
+    printf("\n=== nb_io_drain and complete ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Create socketpair, set both non-blocking, sender with tiny buffer */
+    int sv[2];
+    int sp_rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    TEST("drain: socketpair created", sp_rc == 0);
+    int flags0 = fcntl(sv[0], F_GETFL, 0);
+    fcntl(sv[0], F_SETFL, flags0 | O_NONBLOCK);
+    int flags1 = fcntl(sv[1], F_GETFL, 0);
+    fcntl(sv[1], F_SETFL, flags1 | O_NONBLOCK);
+    int sndbuf = 128;
+    setsockopt(sv[1], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof sndbuf);
+
+    /* Save alice's tx_seq before send */
+    uint64_t orig_tx_seq = alice.tx_seq;
+
+    nb_io_t io;
+    nb_io_init(&io);
+
+    const char *msg = "drain test message";
+    int ss_rc = nb_io_start_send(&io, &alice, sv[1],
+                                 (const uint8_t *)msg, (uint16_t)strlen(msg), msg);
+    TEST("drain: start_send succeeds", ss_rc == 0);
+    TEST("drain: out_active is 1", io.out_active == 1);
+    TEST("drain: out_len > 0", io.out_len > 0);
+
+    /* Drain the send, reading from the other end to relieve backpressure */
+    uint8_t recv_buf[WIRE_MAX];
+    size_t recv_total = 0;
+    int drain_complete = 0;
+    for (int iter = 0; iter < 1000 && !drain_complete; iter++) {
+        /* Read from sv[0] to relieve backpressure */
+        uint8_t tmp[256];
+        ssize_t rn = read(sv[0], tmp, sizeof tmp);
+        if (rn > 0 && recv_total + (size_t)rn <= sizeof recv_buf) {
+            memcpy(recv_buf + recv_total, tmp, (size_t)rn);
+            recv_total += (size_t)rn;
+        }
+        if (io.out_off >= io.out_len) {
+            drain_complete = 1;
+            break;
+        }
+        int dr = nb_io_drain(&io, sv[1]);
+        if (dr == NB_SEND_COMPLETE) {
+            drain_complete = 1;
+            break;
+        }
+        usleep(1000);
+    }
+    /* Read any remaining bytes */
+    for (int iter = 0; iter < 50; iter++) {
+        uint8_t tmp[256];
+        ssize_t rn = read(sv[0], tmp, sizeof tmp);
+        if (rn <= 0) break;
+        if (recv_total + (size_t)rn <= sizeof recv_buf) {
+            memcpy(recv_buf + recv_total, tmp, (size_t)rn);
+            recv_total += (size_t)rn;
+        }
+    }
+    TEST("drain: send completed", drain_complete || io.out_off >= io.out_len);
+    TEST("drain: received enough bytes", recv_total >= io.out_len);
+
+    /* Read out_text before complete_send wipes it */
+    TEST("drain: out_text matches message",
+         strcmp(io.out_text, msg) == 0);
+
+    /* Complete the send — commits tx chain */
+    nb_io_complete_send(&io, &alice);
+    TEST("drain: out_active cleared", io.out_active == 0);
+    TEST("drain: tx_seq advanced", alice.tx_seq == orig_tx_seq + 1);
+
+    /* Verify the received bytes can be decrypted by bob */
+    uint8_t plain[MAX_MSG + 1];
+    uint16_t plen = 0;
+    /* The frame is at recv_buf + WIRE_HDR (skip pad_len byte) */
+    int fo_rc = frame_open(&bob, recv_buf + WIRE_HDR, plain, &plen);
+    TEST("drain: frame_open succeeds", fo_rc == 0);
+    plain[plen] = '\0';
+    TEST("drain: decrypted message matches",
+         plen == (uint16_t)strlen(msg) && strcmp((char *)plain, msg) == 0);
+
+    nb_io_wipe(&io);
+    close(sv[0]);
+    close(sv[1]);
+    crypto_wipe(recv_buf, sizeof recv_buf);
+    crypto_wipe(plain, sizeof plain);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test: nb_io deadline checks ---------------------------------------- */
+
+static void test_nb_io_deadline_checks(void) {
+    printf("\n=== nb_io deadline checks ===\n");
+
+    nb_io_t io;
+    nb_io_init(&io);
+
+    /* Fresh io: both deadline checks return 0 */
+    TEST("deadline: fresh io recv not expired", nb_io_recv_deadline_expired(&io) == 0);
+    TEST("deadline: fresh io send not expired", nb_io_send_deadline_expired(&io) == 0);
+
+    /* Simulate stale inbound: partial data received 31 seconds ago */
+    uint64_t now = monotonic_ms();
+    io.in_have = 1;
+    io.in_start_ms = now - 31000;
+    TEST("deadline: stale recv is expired", nb_io_recv_deadline_expired(&io) == 1);
+
+    /* Simulate stale outbound: send started 31 seconds ago */
+    io.in_have = 0; /* reset recv */
+    io.out_active = 1;
+    io.out_start_ms = now - 31000;
+    TEST("deadline: stale send is expired", nb_io_send_deadline_expired(&io) == 1);
+
+    /* Both with fresh timestamps */
+    io.in_have = 1;
+    io.in_start_ms = now;
+    io.out_active = 1;
+    io.out_start_ms = now;
+    TEST("deadline: fresh recv not expired", nb_io_recv_deadline_expired(&io) == 0);
+    TEST("deadline: fresh send not expired", nb_io_send_deadline_expired(&io) == 0);
+
+    nb_io_wipe(&io);
+}
+
+/* ---- test: nb_io_start_send cover frame --------------------------------- */
+
+static void test_nb_io_start_send_cover(void) {
+    printf("\n=== nb_io_start_send cover frame ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    int sv[2];
+    int sp_rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    TEST("cover: socketpair created", sp_rc == 0);
+    int flags = fcntl(sv[1], F_GETFL, 0);
+    fcntl(sv[1], F_SETFL, flags | O_NONBLOCK);
+
+    nb_io_t io;
+    nb_io_init(&io);
+
+    /* Send cover frame: NULL payload, NULL msg_text */
+    int ss_rc = nb_io_start_send(&io, &alice, sv[1], NULL, 0, NULL);
+    TEST("cover: start_send succeeds", ss_rc == 0);
+    TEST("cover: out_text is empty", io.out_text[0] == '\0');
+    TEST("cover: out_active is 1", io.out_active == 1);
+    TEST("cover: out_len in valid range",
+         io.out_len >= WIRE_HDR + FRAME_SZ && io.out_len <= WIRE_MAX);
+
+    /* Read the wire data from the other end */
+    usleep(1000);
+    uint8_t recv_buf[WIRE_MAX];
+    size_t recv_total = 0;
+    for (int iter = 0; iter < 100; iter++) {
+        ssize_t rn = read(sv[0], recv_buf + recv_total,
+                          sizeof recv_buf - recv_total);
+        if (rn > 0) recv_total += (size_t)rn;
+        if (recv_total >= io.out_len) break;
+        usleep(1000);
+    }
+    TEST("cover: received all wire bytes", recv_total >= io.out_len);
+
+    /* Complete the send */
+    nb_io_complete_send(&io, &alice);
+
+    /* Decrypt and verify it's a cover frame (plen == 0) */
+    uint8_t plain[MAX_MSG + 1];
+    uint16_t plen = 0;
+    int fo_rc = frame_open(&bob, recv_buf + WIRE_HDR, plain, &plen);
+    TEST("cover: frame_open succeeds", fo_rc == 0);
+    TEST("cover: payload length is 0 (cover frame)", plen == 0);
+
+    nb_io_wipe(&io);
+    close(sv[0]);
+    close(sv[1]);
+    crypto_wipe(recv_buf, sizeof recv_buf);
+    crypto_wipe(plain, sizeof plain);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test: cooked-mode multiline parsing -------------------------------- */
+
+static void test_cooked_multiline_parse(void) {
+    printf("\n=== cooked-mode multiline parsing ===\n");
+
+    /* Test the same memchr-based line extraction algorithm used in
+     * cli_chat_loop_cooked for piped/redirected input. */
+
+    /* Helper variables matching the cooked-mode pattern */
+    char lines[8][MAX_MSG + 1];
+    int line_count;
+
+    /* --- Test 1: "hello\nworld\npartial" --- */
+    {
+        char rdbuf[] = "hello\nworld\npartial";
+        size_t rdbuf_len = strlen(rdbuf);
+        line_count = 0;
+
+        char *start = rdbuf;
+        for (;;) {
+            char *nl = memchr(start, '\n', rdbuf_len - (size_t)(start - rdbuf));
+            if (!nl) break;
+            size_t n = (size_t)(nl - start);
+            if (n > 0 && start[n - 1] == '\r') n--;
+            if (n == 0) { start = nl + 1; continue; }
+            memcpy(lines[line_count], start, n);
+            lines[line_count][n] = '\0';
+            line_count++;
+            start = nl + 1;
+        }
+        size_t remaining = rdbuf_len - (size_t)(start - rdbuf);
+
+        TEST("multiline1: extracted 2 lines", line_count == 2);
+        TEST("multiline1: first line is 'hello'",
+             strcmp(lines[0], "hello") == 0);
+        TEST("multiline1: second line is 'world'",
+             strcmp(lines[1], "world") == 0);
+        TEST("multiline1: remainder is 'partial'",
+             remaining == 7 && memcmp(start, "partial", 7) == 0);
+    }
+
+    /* --- Test 2: "dos\r\nline\r\n" (CRLF) --- */
+    {
+        char rdbuf[] = "dos\r\nline\r\n";
+        size_t rdbuf_len = strlen(rdbuf);
+        line_count = 0;
+
+        char *start = rdbuf;
+        for (;;) {
+            char *nl = memchr(start, '\n', rdbuf_len - (size_t)(start - rdbuf));
+            if (!nl) break;
+            size_t n = (size_t)(nl - start);
+            if (n > 0 && start[n - 1] == '\r') n--;
+            if (n == 0) { start = nl + 1; continue; }
+            memcpy(lines[line_count], start, n);
+            lines[line_count][n] = '\0';
+            line_count++;
+            start = nl + 1;
+        }
+
+        TEST("multiline2: extracted 2 lines", line_count == 2);
+        TEST("multiline2: first line is 'dos'",
+             strcmp(lines[0], "dos") == 0);
+        TEST("multiline2: second line is 'line'",
+             strcmp(lines[1], "line") == 0);
+    }
+
+    /* --- Test 3: "\n\nhello\n\n" (skip empty lines) --- */
+    {
+        char rdbuf[] = "\n\nhello\n\n";
+        size_t rdbuf_len = strlen(rdbuf);
+        line_count = 0;
+
+        char *start = rdbuf;
+        for (;;) {
+            char *nl = memchr(start, '\n', rdbuf_len - (size_t)(start - rdbuf));
+            if (!nl) break;
+            size_t n = (size_t)(nl - start);
+            if (n > 0 && start[n - 1] == '\r') n--;
+            if (n == 0) { start = nl + 1; continue; }
+            memcpy(lines[line_count], start, n);
+            lines[line_count][n] = '\0';
+            line_count++;
+            start = nl + 1;
+        }
+
+        TEST("multiline3: extracted 1 line", line_count == 1);
+        TEST("multiline3: line is 'hello'",
+             strcmp(lines[0], "hello") == 0);
+    }
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -7189,6 +7552,11 @@ int main(void) {
     test_inbound_frame_rate_limit();
     test_socks5_request_wipe();
     test_pcs_staged_ratchet_state();
+    test_nb_io_accumulate_byte_by_byte();
+    test_nb_io_drain_and_complete();
+    test_nb_io_deadline_checks();
+    test_nb_io_start_send_cover();
+    test_cooked_multiline_parse();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();
     test_dudect_is_zero32();
