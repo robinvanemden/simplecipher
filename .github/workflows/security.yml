@@ -28,7 +28,7 @@ jobs:
           mkdir -p build/fuzz
           cd build/fuzz
           CC=clang-19 cmake -DFUZZ=ON ../..
-          make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5
+          make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5 fuzz_fingerprint fuzz_identity_load
 
       - name: Smoke-fuzz frame_open (30s)
         run: build/fuzz/fuzz_frame_open tests/corpus/frame_open -max_total_time=30 -print_final_stats=1
@@ -41,6 +41,12 @@ jobs:
 
       - name: Smoke-fuzz socks5_build_request (30s)
         run: build/fuzz/fuzz_socks5 -max_total_time=30 -print_final_stats=1
+
+      - name: Smoke-fuzz fingerprint parsing (30s)
+        run: build/fuzz/fuzz_fingerprint -max_total_time=30 -print_final_stats=1
+
+      - name: Smoke-fuzz identity_load (30s)
+        run: build/fuzz/fuzz_identity_load -max_total_time=30 -print_final_stats=1
 
   test-asan-ubsan:
     runs-on: ubuntu-24.04
