@@ -40,7 +40,7 @@ static void tui_emergency_restore(int sig) {
     (void)sig;
     /* Best-effort terminal restore — these are all async-signal-safe. */
     static const char reset_seq[] = "\033[?25h\033[0 q\033[0m\033[?1049l";
-    ssize_t wr;
+    ssize_t           wr;
     wr = write(STDOUT_FILENO, reset_seq, sizeof reset_seq - 1);
     (void)wr; /* best-effort; nothing useful to do on failure */
     tcsetattr(STDIN_FILENO, TCSANOW, &tui_orig_termios);

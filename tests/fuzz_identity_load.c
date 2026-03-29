@@ -28,16 +28,17 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size < 1) return 0;
 
     size_t pass_len = data[0];
-    data++; size--;
+    data++;
+    size--;
     if (pass_len > size) pass_len = size;
 
     const uint8_t *pass_data = data;
     const uint8_t *file_data = data + pass_len;
-    size_t file_sz = size - pass_len;
+    size_t         file_sz   = size - pass_len;
 
     /* Write file content to a temporary file */
     char tmp[] = "/tmp/fuzz_id_XXXXXX";
-    int fd = mkstemp(tmp);
+    int  fd    = mkstemp(tmp);
     if (fd < 0) return 0;
 
     if (file_sz > 0) {

@@ -267,7 +267,7 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
 
     /* Extract parent directory from path. */
     {
-        const char *slash = strrchr(path, '\\');
+        const char *slash  = strrchr(path, '\\');
         const char *fslash = strrchr(path, '/');
         if (fslash && (!slash || fslash > slash)) slash = fslash;
         if (slash) {
@@ -408,7 +408,10 @@ int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY], const c
     int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) return -1;
     FILE *f = fdopen(fd, "rb");
-    if (!f) { close(fd); return -1; }
+    if (!f) {
+        close(fd);
+        return -1;
+    }
 #else
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
