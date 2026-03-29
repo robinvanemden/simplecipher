@@ -669,27 +669,21 @@ jobs:
           rm -f ~/.ssh/arm64_key
 
   test-macos:
-    strategy:
-      matrix:
-        include:
-          - os: macos-13
-            arch: x86_64
-          - os: macos-14
-            arch: aarch64
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
-      - name: Build and test
+      - name: Build and test (arm64, native)
         run: |
           echo "=== macOS $(uname -sr) $(uname -m) ==="
+          MACOS_SECURITY='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing'
+          MACOS_CFLAGS='-Os -std=c2x -Isrc -Ilib -flto -ffunction-sections -fdata-sections'
           make clean
           make -j$(sysctl -n hw.ncpu) CC=cc \
-            SECURITY_CFLAGS='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing' \
-            CFLAGS='-Os -std=c23 -Isrc -Ilib -flto -ffunction-sections -fdata-sections' \
+            SECURITY_CFLAGS="$MACOS_SECURITY" CFLAGS="$MACOS_CFLAGS" \
             simplecipher tests/test_p2p tests/test_socks5_proxy
           echo '=== P2P tests ==='
           ./tests/test_p2p
@@ -703,5 +697,18 @@ jobs:
           sleep 1
           kill $PID 2>/dev/null || true
           echo 'Smoke test passed'
+
+      - name: Build and verify (x86_64, cross-compile)
+        run: |
+          MACOS_SECURITY='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing'
+          MACOS_CFLAGS='-Os -std=c2x -Isrc -Ilib -flto -ffunction-sections -fdata-sections -target x86_64-apple-macos12'
+          make clean
+          make -j$(sysctl -n hw.ncpu) CC=cc \
+            SECURITY_CFLAGS="$MACOS_SECURITY" CFLAGS="$MACOS_CFLAGS" \
+            LDFLAGS='-flto -Wl,-dead_strip -Wl,-x -target x86_64-apple-macos12' \
+            simplecipher
+          echo '=== Verify x86_64 binary ==='
+          file simplecipher | grep -q x86_64
+          echo 'x86_64 cross-compile verified'
 
   # BSD testing uses bare-metal Vultr servers via SSH (test-freebsd, test-openbsd above).

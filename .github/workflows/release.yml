@@ -237,44 +237,48 @@ jobs:
           path: android-release/
 
   build-macos:
-    strategy:
-      matrix:
-        include:
-          - os: macos-13
-            arch: x86_64
-          - os: macos-14
-            arch: aarch64
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
-      - name: Build release binary
+      - name: Build and test (arm64, native)
         run: |
+          MACOS_SECURITY='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing'
+          MACOS_CFLAGS='-Os -std=c2x -Isrc -Ilib -flto -ffunction-sections -fdata-sections'
           make -j$(sysctl -n hw.ncpu) CC=cc \
-            SECURITY_CFLAGS='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing' \
-            CFLAGS='-Os -std=c23 -Isrc -Ilib -flto -ffunction-sections -fdata-sections' \
-            simplecipher
-
-      - name: Build and run tests
-        run: |
-          make -j$(sysctl -n hw.ncpu) CC=cc \
-            SECURITY_CFLAGS='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing' \
-            CFLAGS='-Os -std=c23 -Isrc -Ilib -flto -ffunction-sections -fdata-sections' \
-            tests/test_p2p tests/test_socks5_proxy
+            SECURITY_CFLAGS="$MACOS_SECURITY" CFLAGS="$MACOS_CFLAGS" \
+            simplecipher tests/test_p2p tests/test_socks5_proxy
           ./tests/test_p2p
           ./tests/test_socks5_proxy
+          bash tests/test_macos.sh ./simplecipher
+          cp simplecipher simplecipher-macos-aarch64
 
-      - name: Run binary tests
-        run: bash tests/test_macos.sh ./simplecipher
+      - name: Build (x86_64, cross-compile)
+        run: |
+          MACOS_SECURITY='-DCIPHER_HARDEN -DNDEBUG -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing'
+          MACOS_CFLAGS='-Os -std=c2x -Isrc -Ilib -flto -ffunction-sections -fdata-sections -target x86_64-apple-macos12'
+          make clean
+          make -j$(sysctl -n hw.ncpu) CC=cc \
+            SECURITY_CFLAGS="$MACOS_SECURITY" CFLAGS="$MACOS_CFLAGS" \
+            LDFLAGS='-flto -Wl,-dead_strip -Wl,-x -target x86_64-apple-macos12' \
+            simplecipher
+          file simplecipher | grep -q x86_64
+          cp simplecipher simplecipher-macos-x86_64
 
-      - name: Upload macOS binary
+      - name: Upload macOS aarch64 binary
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: simplecipher-macos-${{ matrix.arch }}
-          path: simplecipher
+          name: simplecipher-macos-aarch64
+          path: simplecipher-macos-aarch64
+
+      - name: Upload macOS x86_64 binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: simplecipher-macos-x86_64
+          path: simplecipher-macos-x86_64
 
   test-linux:
     needs: build
@@ -666,8 +670,8 @@ jobs:
           cp linux-aarch64/simplecipher release/simplecipher-linux-aarch64
           cp win-x86_64/simplecipher.exe release/simplecipher-win-x86_64.exe
           cp win-aarch64/simplecipher.exe release/simplecipher-win-aarch64.exe
-          cp macos-x86_64/simplecipher release/simplecipher-macos-x86_64
-          cp macos-aarch64/simplecipher release/simplecipher-macos-aarch64
+          cp macos-x86_64/simplecipher-macos-x86_64 release/simplecipher-macos-x86_64
+          cp macos-aarch64/simplecipher-macos-aarch64 release/simplecipher-macos-aarch64
           cp android-apks/simplecipher-minimal.apk release/simplecipher-minimal.apk
           cp android-apks/simplecipher-full.apk release/simplecipher-full.apk
           cd release
