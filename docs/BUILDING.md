@@ -46,10 +46,10 @@ See [HARDENING.md](HARDENING.md) for the complete list of security compiler and 
 ## Tests
 
 ```bash
-# Run P2P tests only (970 tests)
+# Run P2P tests only (1011 tests)
 make test
 
-# Run all tests: P2P + SOCKS5 + CLI flags (996 total: 970 + 10 + 16)
+# Run all tests: P2P + SOCKS5 + CLI flags (1037 total: 1011 + 10 + 16)
 make test-all
 
 # Run the full local test suite (P2P + build + binary analysis)
@@ -115,7 +115,7 @@ Configuration files: `.clang-format` (C style rules), `.clang-tidy` (static anal
 ├── cmake/toolchains/             # musl + llvm-mingw toolchain files
 ├── android/                      # Android app (JNI bridge + Java UI)
 ├── tests/
-│   ├── test_p2p.c                # 970-test P2P integration suite
+│   ├── test_p2p.c                # 1011-test P2P integration suite
 │   ├── test_socks5_proxy.c       # 10-test SOCKS5 proxy suite
 │   ├── test_constant_time.c      # dudect timing side-channel verification
 │   ├── test_timecop.c            # Valgrind-based constant-time verification
