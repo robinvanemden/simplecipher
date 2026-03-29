@@ -60,8 +60,7 @@
 
 /* nullptr is C23.  Compilers in -std=c2x mode (Apple Clang, older Clang/GCC)
  * may not support it.  Fall back to NULL on pre-C23 compilers. */
-#if !defined(__cplusplus) && !defined(nullptr) && \
-    (!defined(__STDC_VERSION__) || __STDC_VERSION__ < 202311L)
+#if !defined(__cplusplus) && !defined(nullptr) && (!defined(__STDC_VERSION__) || __STDC_VERSION__ < 202311L)
 #    define nullptr NULL
 #endif
 
