@@ -16,6 +16,7 @@
 #define SIMPLECIPHER_NETWORK_H
 
 #include "platform.h"
+#include "protocol.h"
 
 /* Set a receive/send timeout of 'secs' seconds on the socket.
  * Used during the handshake to disconnect a stalled peer automatically.
@@ -96,6 +97,40 @@ void print_local_ips(const char *port);
  * Returns the number of addresses found.  Each line is "ip_address".
  * buf_sz is the total buffer size; output is null-terminated. */
 int get_local_ips(char *buf, size_t buf_sz);
+
+/* ---- Non-blocking frame I/O (POSIX chat loops) ------------------------- */
+
+/* State for incremental, non-blocking frame read/write.
+ * Used by the POSIX chat loops after the socket is set non-blocking.
+ * Windows uses its own event-driven state machine. */
+typedef struct {
+    /* Inbound: accumulate [pad_len(1)][frame(512)][random_pad(0-255)] */
+    uint8_t  in_wire[WIRE_MAX];
+    size_t   in_have;             /* bytes accumulated so far           */
+    size_t   in_need;             /* bytes needed for current phase     */
+    uint64_t in_start_ms;         /* monotonic timestamp of first byte  */
+
+    /* Outbound: drain a pre-built wire message */
+    uint8_t  out_wire[WIRE_MAX];
+    size_t   out_len;             /* total wire message length           */
+    size_t   out_off;             /* bytes sent so far                   */
+    int      out_active;          /* 1 if a send is in flight            */
+    uint64_t out_start_ms;        /* monotonic timestamp of send start   */
+    uint8_t  out_next_tx[KEY];    /* next tx chain key (committed on completion) */
+    char     out_text[MAX_MSG+1]; /* message text for display on completion */
+} nb_io_t;
+
+/* Initialize / wipe non-blocking I/O state. */
+void nb_io_init(nb_io_t *io);
+void nb_io_wipe(nb_io_t *io);
+
+/* Non-blocking recv: read available bytes from fd into buf.
+ * Returns bytes read (>0), 0 if EAGAIN (no data), -1 on error/disconnect. */
+int nb_try_recv(socket_t fd, void *buf, size_t n);
+
+/* Non-blocking send: write available bytes from buf to fd.
+ * Returns bytes sent (>0), 0 if EAGAIN (buffer full), -1 on error. */
+int nb_try_send(socket_t fd, const void *buf, size_t n);
 
 /* ---- SOCKS5 helpers (pure, testable) ------------------------------------ */
 

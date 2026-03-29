@@ -288,6 +288,52 @@ size_t frame_wire_build(uint8_t *wire, const uint8_t *frame) {
     return 0;
 }
 
+/* ---- Non-blocking frame I/O helpers ------------------------------------- */
+
+void nb_io_init(nb_io_t *io) {
+    memset(io, 0, sizeof *io);
+    io->in_need = WIRE_HDR; /* first phase: read the pad_len byte */
+}
+
+void nb_io_wipe(nb_io_t *io) {
+    crypto_wipe(io, sizeof *io);
+}
+
+int nb_try_recv(socket_t fd, void *buf, size_t n) {
+#if defined(_WIN32) || defined(_WIN64)
+    int r = recv(fd, (char *)buf, (int)n, 0);
+    if (r > 0) return r;
+    if (r == 0) return -1; /* peer closed */
+    int err = WSAGetLastError();
+    if (err == WSAEWOULDBLOCK) return 0;
+    return -1;
+#else
+    ssize_t r;
+    do { r = recv(fd, buf, n, 0); } while (r < 0 && errno == EINTR && g_running);
+    if (r > 0) return (int)r;
+    if (r == 0) return -1; /* peer closed */
+    if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
+    return -1;
+#endif
+}
+
+int nb_try_send(socket_t fd, const void *buf, size_t n) {
+#if defined(_WIN32) || defined(_WIN64)
+    int r = send(fd, (const char *)buf, (int)n, 0);
+    if (r > 0) return r;
+    if (WSAGetLastError() == WSAEWOULDBLOCK) return 0;
+    return -1;
+#else
+    ssize_t r;
+    do {
+        r = send(fd, buf, n, MSG_NOSIGNAL);
+    } while (r < 0 && errno == EINTR && g_running);
+    if (r > 0) return (int)r;
+    if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
+    return -1;
+#endif
+}
+
 /* Print non-loopback IP addresses so the user can tell their peer where
  * to connect.  Skips link-local (169.254.x.x, fe80::) and loopback. */
 void print_local_ips(const char *port) {

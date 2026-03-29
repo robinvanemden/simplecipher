@@ -107,6 +107,13 @@ static void tui_listen_idle(void *ctx) {
 /* Enter phase-2 sandbox and start the chat event loop.
  * Returns 0 on success, EXIT_SANDBOX on sandbox failure. */
 static int start_chat_phase(socket_t fd, session_t *sess, int cover, int tui) {
+#if !defined(_WIN32) && !defined(_WIN64)
+    /* Set socket non-blocking before the sandbox locks out fcntl.
+     * POSIX chat loops use poll() + incremental recv/send so that
+     * Ctrl+C (handled as a raw byte, not SIGINT) stays responsive. */
+    int flags = fcntl((int)fd, F_GETFL, 0);
+    if (flags >= 0) fcntl((int)fd, F_SETFL, flags | O_NONBLOCK);
+#endif
     if (sandbox_phase2((int)fd) != 0) {
         fprintf(stderr, "sandbox phase 2 failed (--require-sandbox)\n");
         return EXIT_SANDBOX;
