@@ -179,8 +179,29 @@ jobs:
           # Clone/update, build, test
           $SSH "
             set -e
+
+            # Kill stale processes from cancelled runs
+            pkill -u \$(whoami) -f 'simplecipher|test_p2p|test_socks5' 2>/dev/null || true
+            sleep 1
+
+            # Clean stale test artifacts
+            rm -f /tmp/test_identity* /tmp/test_id_*
+
+            # Remove git lock files left by cancelled runs
+            rm -f simplecipher/.git/index.lock
+            rm -f simplecipher/.git/refs/remotes/origin/*.lock
+            rm -f simplecipher/.git/shallow.lock
+
+            # Fetch with fallback to full re-clone
             if [ -d simplecipher ]; then
-              cd simplecipher && git fetch origin && git reset --hard origin/master
+              cd simplecipher
+              if ! git fetch --force origin 2>/dev/null; then
+                cd .. && rm -rf simplecipher
+                git clone https://github.com/${{ github.repository }}.git simplecipher
+                cd simplecipher
+              else
+                git reset --hard origin/master
+              fi
             else
               git clone https://github.com/${{ github.repository }}.git simplecipher
               cd simplecipher
@@ -190,8 +211,6 @@ jobs:
             git checkout -- .
             echo '=== FreeBSD' \$(uname -sr) '==='
             rm -f src/*.o lib/*.o simplecipher tests/test_p2p tests/test_socks5_proxy
-            rm -f /tmp/test_identity* /tmp/test_id_*
-            rm -f /tmp/test_identity* /tmp/test_id_*
             gmake -j1 CC=cc simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
@@ -238,8 +257,29 @@ jobs:
           # The constexpr compat shim in platform.h handles this.
           $SSH "
             set -e
+
+            # Kill stale processes from cancelled runs
+            pkill -u \$(whoami) -f 'simplecipher|test_p2p|test_socks5' 2>/dev/null || true
+            sleep 1
+
+            # Clean stale test artifacts
+            rm -f /tmp/test_identity* /tmp/test_id_*
+
+            # Remove git lock files left by cancelled runs
+            rm -f simplecipher/.git/index.lock
+            rm -f simplecipher/.git/refs/remotes/origin/*.lock
+            rm -f simplecipher/.git/shallow.lock
+
+            # Fetch with fallback to full re-clone
             if [ -d simplecipher ]; then
-              cd simplecipher && git fetch origin && git reset --hard origin/master
+              cd simplecipher
+              if ! git fetch --force origin 2>/dev/null; then
+                cd .. && rm -rf simplecipher
+                git clone https://github.com/${{ github.repository }}.git simplecipher
+                cd simplecipher
+              else
+                git reset --hard origin/master
+              fi
             else
               git clone https://github.com/${{ github.repository }}.git simplecipher
               cd simplecipher
@@ -249,7 +289,6 @@ jobs:
             git checkout -- .
             echo '=== OpenBSD' \$(uname -sr) '==='
             rm -f src/*.o lib/*.o simplecipher tests/test_p2p tests/test_socks5_proxy
-            rm -f /tmp/test_identity* /tmp/test_id_*
             gmake -j1 CC=cc simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
@@ -288,8 +327,29 @@ jobs:
           SSH="ssh -i ~/.ssh/arm64_key ci@$HOST"
           $SSH "
             set -e
+
+            # Kill stale processes from cancelled runs
+            pkill -u \$(whoami) -f 'simplecipher|test_p2p|test_socks5' 2>/dev/null || true
+            sleep 1
+
+            # Clean stale test artifacts
+            rm -f /tmp/test_identity* /tmp/test_id_*
+
+            # Remove git lock files left by cancelled runs
+            rm -f simplecipher/.git/index.lock
+            rm -f simplecipher/.git/refs/remotes/origin/*.lock
+            rm -f simplecipher/.git/shallow.lock
+
+            # Fetch with fallback to full re-clone
             if [ -d simplecipher ]; then
-              cd simplecipher && git fetch origin && git reset --hard origin/master
+              cd simplecipher
+              if ! git fetch --force origin 2>/dev/null; then
+                cd .. && rm -rf simplecipher
+                git clone https://github.com/${{ github.repository }}.git simplecipher
+                cd simplecipher
+              else
+                git reset --hard origin/master
+              fi
             else
               git clone https://github.com/${{ github.repository }}.git simplecipher
               cd simplecipher
@@ -299,7 +359,6 @@ jobs:
             git checkout -- .
             echo '=== Linux ARM64' \$(uname -srm) '==='
             rm -f src/*.o lib/*.o simplecipher tests/test_p2p tests/test_socks5_proxy
-            rm -f /tmp/test_identity* /tmp/test_id_*
             make -j1 CC=gcc simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
