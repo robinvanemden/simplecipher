@@ -399,12 +399,19 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
 }
 
 int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY], const char *pass, size_t pass_len) {
+#if defined(_WIN32) || defined(_WIN64)
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
-#if !defined(_WIN32) && !defined(_WIN64)
+#else
+    /* O_NOFOLLOW prevents opening a symlink-planted identity file.
+     * identity_save already uses O_NOFOLLOW; this closes the asymmetry. */
+    int fd = open(path, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return -1;
+    FILE *f = fdopen(fd, "rb");
+    if (!f) { close(fd); return -1; }
     {
         struct stat st;
-        if (fstat(fileno(f), &st) == 0 && (st.st_mode & 0077) != 0)
+        if (fstat(fd, &st) == 0 && (st.st_mode & 0077) != 0)
             fprintf(stderr, "warning: %s has permissive permissions — consider chmod 600\n", path);
     }
 #endif

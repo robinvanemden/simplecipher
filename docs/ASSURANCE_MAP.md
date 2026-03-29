@@ -82,6 +82,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 | `validate_port` | `fuzz_validate_port.c` | Integer parsing bugs |
 | `socks5_build_request` | `fuzz_socks5.c` | [SOCKS5](GLOSSARY.md#socks5) protocol builder bugs |
 | `parse_fingerprint` | `fuzz_fingerprint.c` | Fingerprint parser bugs, round-trip consistency |
+| `identity_load` | `fuzz_identity_load.c` | Truncated/corrupt identity files, KDF edge cases |
 
 ## Formal verification
 

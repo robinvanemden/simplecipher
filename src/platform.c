@@ -313,16 +313,22 @@ static int install_seccomp_phase1(void) {
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll, 0, 1), /* SYS_select excluded: POSIX uses poll */
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
-        /* ioctl: allow all EXCEPT TIOCSTI (0x5412), which injects bytes
-         * into the terminal input queue — an attacker with code execution
-         * could plant shell commands that run after this process exits.
-         * TIOCSTI is disabled by default since Linux 6.2 (requires
-         * CAP_SYS_ADMIN), but older kernels are still vulnerable. */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 4),
+        /* ioctl: whitelist only the terminal requests we actually need.
+         * TCGETS  (0x5401) — tcgetattr()
+         * TCSETS  (0x5402) — tcsetattr(TCSANOW)
+         * TCSETSW (0x5403) — tcsetattr(TCSADRAIN)
+         * TCSETSF (0x5404) — tcsetattr(TCSAFLUSH)
+         * TIOCGWINSZ (0x5413) — ioctl(fd, TIOCGWINSZ, &ws)
+         * Everything else (TIOCSTI, TIOCLINUX, FIONBIO, …) is killed. */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 8),
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[1])),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5412 /* TIOCSTI */, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5401 /* TCGETS */,    4, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5402 /* TCSETS */,    3, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5403 /* TCSETSW */,   2, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5404 /* TCSETSF */,   1, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5413 /* TIOCGWINSZ */, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
 
         /* Entropy and timing */
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getrandom, 0, 1),
@@ -468,12 +474,16 @@ static int install_seccomp_phase2(void) {
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* ioctl: allow all except TIOCSTI (see phase 1 comment) */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 4),
+        /* ioctl: whitelist only needed terminal requests (see phase 1) */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ioctl, 0, 8),
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[1])),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5412 /* TIOCSTI */, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5401 /* TCGETS */,    4, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5402 /* TCSETS */,    3, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5403 /* TCSETSW */,   2, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5404 /* TCSETSF */,   1, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5413 /* TIOCGWINSZ */, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mmap, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_munmap, 0, 1),
