@@ -186,6 +186,7 @@ jobs:
               cd simplecipher
             fi
             git checkout ${{ github.sha }}
+            git clean -fdx
             echo '=== FreeBSD' \$(uname -sr) '==='
             gmake clean
             gmake -j1 CC=cc simplecipher tests/test_p2p tests/test_socks5_proxy
@@ -241,6 +242,7 @@ jobs:
               cd simplecipher
             fi
             git checkout ${{ github.sha }}
+            git clean -fdx
             echo '=== OpenBSD' \$(uname -sr) '==='
             gmake clean
             gmake -j1 CC=cc simplecipher tests/test_p2p tests/test_socks5_proxy
@@ -288,6 +290,7 @@ jobs:
               cd simplecipher
             fi
             git checkout ${{ github.sha }}
+            git clean -fdx
             echo '=== Linux ARM64' \$(uname -srm) '==='
             make clean
             make -j1 CC=gcc simplecipher tests/test_p2p tests/test_socks5_proxy
