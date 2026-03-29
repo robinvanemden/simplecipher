@@ -12,11 +12,7 @@
  */
 
 #include "nb_io.h"
-/* nb_io.h already pulls in protocol.h (FRAME_TIMEOUT_S, FRAME_SZ, session_t).
- * We need frame_wire_build() from network.c, but network.h re-declares
- * nb_io_t and friends (Task 3 will remove them).  Forward-declare only
- * what we need to avoid the conflicting-types error. */
-size_t frame_wire_build(uint8_t *wire, const uint8_t *frame);
+#include "network.h"
 
 #include <string.h>
 

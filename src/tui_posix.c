@@ -10,6 +10,7 @@
  */
 
 #include "tui.h"
+#include "nb_io.h"
 #include <termios.h>
 #include <sys/ioctl.h>
 

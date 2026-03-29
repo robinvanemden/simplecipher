@@ -25,6 +25,7 @@
  */
 
 #include "cli.h"
+#include "nb_io.h"
 
 #ifndef _WIN32
 
