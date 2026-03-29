@@ -5,6 +5,11 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-p2p:
@@ -20,7 +25,10 @@ jobs:
           cd build/native
           cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-g -O0" ../..
           make -j$(nproc) test_p2p
-          ./test_p2p
+          ./test_p2p 2>&1 | tee /tmp/test_p2p.log
+          RESULT=$(grep 'Total:' /tmp/test_p2p.log || echo 'Total: unknown')
+          echo "### P2P Tests (Debug)" >> $GITHUB_STEP_SUMMARY
+          echo "$RESULT" >> $GITHUB_STEP_SUMMARY
 
       - name: Build and run with CIPHER_HARDEN
         run: |
@@ -29,7 +37,10 @@ jobs:
             tests/test_p2p.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
             src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
-          build/native/test_p2p_harden
+          build/native/test_p2p_harden 2>&1 | tee /tmp/test_harden.log
+          RESULT=$(grep 'Total:' /tmp/test_harden.log || echo 'Total: unknown')
+          echo "### P2P Tests (Hardened)" >> $GITHUB_STEP_SUMMARY
+          echo "$RESULT" >> $GITHUB_STEP_SUMMARY
 
       - name: Build and run SOCKS5 proxy loopback test
         run: |
@@ -38,7 +49,10 @@ jobs:
             tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
             src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
             src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
-          build/native/test_socks5_proxy
+          build/native/test_socks5_proxy 2>&1 | tee /tmp/test_socks5.log
+          RESULT=$(grep 'Total:' /tmp/test_socks5.log || echo 'Total: unknown')
+          echo "### SOCKS5 Tests" >> $GITHUB_STEP_SUMMARY
+          echo "$RESULT" >> $GITHUB_STEP_SUMMARY
 
   test-tui:
     runs-on: ubuntu-24.04

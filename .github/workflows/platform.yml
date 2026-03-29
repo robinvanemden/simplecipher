@@ -5,136 +5,18 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Cache toolchains
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: |
-            /opt/x-tools
-            /opt/llvm-mingw
-          key: toolchains-v3-musl-x86_64-aarch64-llvm-20260311
-
-      - name: Setup musl cross-compilers (with checksum verification)
-        run: |
-          # Hardcoded SHA256 digests — update when upgrading toolchains.
-          declare -A EXPECTED_SHA=(
-            [x86_64-unknown-linux-musl]="47a4db19648a82d2597c7df75f886530a55056df01e8775dd4440c3cfdce9f36"
-            [aarch64-unknown-linux-musl]="bcb60ab89918911001f7a7501f4f6caec6fdface129f44c99b692f97d7b54235"
-          )
-          sudo mkdir -p /opt/x-tools
-          for TRIPLE in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
-            if [ ! -d /opt/x-tools/$TRIPLE ]; then
-              ARCHIVE="/tmp/$TRIPLE.tar.xz"
-              curl -fsSL -o "$ARCHIVE" \
-                "https://github.com/robinvanemden/toolchains/releases/download/v1/$TRIPLE.tar.xz"
-              ACTUAL=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
-              if [ "$ACTUAL" != "${EXPECTED_SHA[$TRIPLE]}" ]; then
-                echo "::error::Checksum mismatch for $TRIPLE (got $ACTUAL)"
-                exit 1
-              fi
-              sudo tar -xJf "$ARCHIVE" -C /opt/x-tools/
-              rm -f "$ARCHIVE"
-            fi
-            # Re-verify after cache restore: detect poisoned cache by checking
-            # that the GCC binary exists and is a real ELF executable.
-            GCC="/opt/x-tools/$TRIPLE/bin/$TRIPLE-gcc"
-            if [ ! -x "$GCC" ] || ! file "$GCC" | grep -q "ELF"; then
-              echo "::error::Toolchain $TRIPLE appears corrupted (missing or non-ELF gcc)"
-              exit 1
-            fi
-            echo "/opt/x-tools/$TRIPLE/$TRIPLE/bin" >> "$GITHUB_PATH"
-          done
-
-      - name: Setup llvm-mingw (with checksum verification)
-        run: |
-          EXPECTED="7c091479d08b13d72aa75acce0ba85cadbc7e066f340afea42849eaf5a5a6cad"
-          if [ ! -d /opt/llvm-mingw ]; then
-            ARCHIVE="/tmp/llvm-mingw.tar.xz"
-            curl -fsSL -o "$ARCHIVE" \
-              "https://github.com/mstorsjo/llvm-mingw/releases/download/20260311/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64.tar.xz"
-            ACTUAL=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
-            if [ "$ACTUAL" != "$EXPECTED" ]; then
-              echo "::error::Checksum mismatch for llvm-mingw (got $ACTUAL)"
-              exit 1
-            fi
-            sudo tar -xJf "$ARCHIVE" -C /opt/
-            sudo mv /opt/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64 /opt/llvm-mingw
-            rm -f "$ARCHIVE"
-          fi
-          # Re-verify after cache restore: detect poisoned cache.
-          if [ ! -d /opt/llvm-mingw/bin ] || ! ls /opt/llvm-mingw/bin/*-clang >/dev/null 2>&1; then
-            echo "::error::llvm-mingw appears corrupted (missing bin/ or clang binaries)"
-            exit 1
-          fi
-
-      - name: Patch llvm-mingw toolchain path for CI
-        run: |
-          sed -i 's|/opt/llvm-mingw-[^ )]*|/opt/llvm-mingw|' cmake/toolchains/win-x86_64.cmake cmake/toolchains/win-aarch64.cmake
-
-      - name: Build tests (CMake configure, C23 requirement)
-        run: bash tests/test_build.sh
-
-      - name: Build Linux x86_64 target
-        run: |
-          cmake --preset linux-x86_64
-          cmake --build --preset linux-x86_64
-
-      - name: Build Linux aarch64 target
-        run: |
-          cmake --preset linux-aarch64
-          cmake --build --preset linux-aarch64
-
-      - name: Build Windows x86_64 target
-        run: |
-          cmake --preset win-x86_64
-          cmake --build --preset win-x86_64
-
-      - name: Build Windows aarch64 target
-        run: |
-          cmake --preset win-aarch64
-          cmake --build --preset win-aarch64
-
-      - name: Upload Linux x86_64 binary
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: simplecipher-linux-x86_64
-          path: build/linux_x86_64/simplecipher
-
-      - name: Upload Linux aarch64 binary
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: simplecipher-linux-aarch64
-          path: build/linux_aarch64/simplecipher
-
-      - name: Upload Windows x86_64 binary
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: simplecipher-win-x86_64
-          path: build/win_x86_64/simplecipher.exe
-
-      - name: Upload Windows aarch64 binary
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: simplecipher-win-aarch64
-          path: build/win_aarch64/simplecipher.exe
-
-      - name: Upload test scripts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: test-assets
-          path: tests/
+  cross-compile:
+    uses: ./.github/workflows/reusable-build.yml
 
   test-linux:
-    needs: build
+    needs: cross-compile
     strategy:
       matrix:
         os: [ubuntu-24.04, ubuntu-22.04]
@@ -155,10 +37,12 @@ jobs:
       - name: Run tests
         run: |
           chmod +x simplecipher tests/test_linux.sh
-          bash tests/test_linux.sh ./simplecipher
+          bash tests/test_linux.sh ./simplecipher 2>&1 | tee /tmp/test_linux.log
+          echo "### Linux Binary Tests" >> $GITHUB_STEP_SUMMARY
+          grep 'Results:' /tmp/test_linux.log >> $GITHUB_STEP_SUMMARY || true
 
   test-linux-aarch64:
-    needs: build
+    needs: cross-compile
     strategy:
       matrix:
         os: [ubuntu-24.04-arm, ubuntu-22.04-arm]
@@ -182,7 +66,7 @@ jobs:
           bash tests/test_linux.sh ./simplecipher
 
   test-windows:
-    needs: build
+    needs: cross-compile
     strategy:
       matrix:
         os: [windows-2025, windows-2022]
@@ -206,7 +90,7 @@ jobs:
           tests/test_windows.ps1 -Binary simplecipher.exe
 
   test-windows-aarch64:
-    needs: build
+    needs: cross-compile
     runs-on: windows-11-arm
 
     steps:
@@ -241,11 +125,13 @@ jobs:
           make -j$(sysctl -n hw.ncpu) CC=cc \
             simplecipher tests/test_p2p tests/test_socks5_proxy
           echo '=== P2P tests ==='
-          ./tests/test_p2p
+          ./tests/test_p2p 2>&1 | tee /tmp/test_p2p.log
           echo '=== SOCKS5 proxy tests ==='
-          ./tests/test_socks5_proxy
+          ./tests/test_socks5_proxy 2>&1 | tee /tmp/test_socks5.log
           echo '=== Binary tests ==='
-          bash tests/test_macos.sh ./simplecipher
+          bash tests/test_macos.sh ./simplecipher 2>&1 | tee /tmp/test_macos.log
+          echo "### macOS arm64 Tests" >> $GITHUB_STEP_SUMMARY
+          grep 'Total:\|Results:' /tmp/test_p2p.log /tmp/test_socks5.log /tmp/test_macos.log >> $GITHUB_STEP_SUMMARY || true
           echo '=== Smoke test ==='
           ./simplecipher listen 19799 &
           PID=$!
