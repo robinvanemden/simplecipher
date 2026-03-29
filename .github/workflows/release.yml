@@ -460,11 +460,7 @@ jobs:
           $SSH "
             set -e
 
-            # Kill stale test/listen processes from cancelled runs (exclude our shell)
-            pkill -u \$(whoami) -f './tests/test_p2p|./tests/test_socks5|./simplecipher listen' 2>/dev/null || true
-            sleep 1
-
-            # Clean stale test artifacts
+            # Clean stale test artifacts from cancelled runs
             rm -f /tmp/test_identity* /tmp/test_id_*
 
             # Remove git lock files left by cancelled runs
@@ -520,11 +516,7 @@ jobs:
           $SSH "
             set -e
 
-            # Kill stale test/listen processes from cancelled runs (exclude our shell)
-            pkill -u \$(whoami) -f './tests/test_p2p|./tests/test_socks5|./simplecipher listen' 2>/dev/null || true
-            sleep 1
-
-            # Clean stale test artifacts
+            # Clean stale test artifacts from cancelled runs
             rm -f /tmp/test_identity* /tmp/test_id_*
 
             # Remove git lock files left by cancelled runs
@@ -580,11 +572,7 @@ jobs:
           $SSH "
             set -e
 
-            # Kill stale test/listen processes from cancelled runs (exclude our shell)
-            pkill -u \$(whoami) -f './tests/test_p2p|./tests/test_socks5|./simplecipher listen' 2>/dev/null || true
-            sleep 1
-
-            # Clean stale test artifacts
+            # Clean stale test artifacts from cancelled runs
             rm -f /tmp/test_identity* /tmp/test_id_*
 
             # Remove git lock files left by cancelled runs
