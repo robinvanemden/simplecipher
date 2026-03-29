@@ -23,18 +23,18 @@
 typedef struct {
     /* Inbound: accumulate [pad_len(1)][frame(512)][random_pad(0-255)] */
     uint8_t  in_wire[WIRE_MAX];
-    size_t   in_have;             /* bytes accumulated so far           */
-    size_t   in_need;             /* bytes needed for current phase     */
-    uint64_t in_start_ms;         /* monotonic timestamp of first byte  */
+    size_t   in_have;     /* bytes accumulated so far           */
+    size_t   in_need;     /* bytes needed for current phase     */
+    uint64_t in_start_ms; /* monotonic timestamp of first byte  */
 
     /* Outbound: drain a pre-built wire message */
     uint8_t  out_wire[WIRE_MAX];
-    size_t   out_len;             /* total wire message length           */
-    size_t   out_off;             /* bytes sent so far                   */
-    int      out_active;          /* 1 if a send is in flight            */
-    uint64_t out_start_ms;        /* monotonic timestamp of send start   */
-    uint8_t  out_next_tx[KEY];    /* next tx chain key (committed on completion) */
-    char     out_text[MAX_MSG+1]; /* message text for display on completion */
+    size_t   out_len;               /* total wire message length           */
+    size_t   out_off;               /* bytes sent so far                   */
+    int      out_active;            /* 1 if a send is in flight            */
+    uint64_t out_start_ms;          /* monotonic timestamp of send start   */
+    uint8_t  out_next_tx[KEY];      /* next tx chain key (committed on completion) */
+    char     out_text[MAX_MSG + 1]; /* message text for display on completion */
 } nb_io_t;
 
 /* ---- Lifecycle --------------------------------------------------------- */
@@ -56,8 +56,8 @@ int nb_try_send(socket_t fd, const void *buf, size_t n);
 
 /* Result codes for nb_io_accumulate. */
 enum {
-    NB_RECV_INCOMPLETE =  0, /* need more bytes — poll again        */
-    NB_RECV_FRAME      =  1, /* complete frame in io->in_wire       */
+    NB_RECV_INCOMPLETE = 0,  /* need more bytes — poll again        */
+    NB_RECV_FRAME      = 1,  /* complete frame in io->in_wire       */
     NB_RECV_DISCONNECT = -1, /* peer closed or I/O error            */
 };
 
@@ -73,8 +73,8 @@ void nb_io_reset_recv(nb_io_t *io);
 
 /* Result codes for nb_io_drain. */
 enum {
-    NB_SEND_INCOMPLETE =  0, /* partial send — poll POLLOUT again   */
-    NB_SEND_COMPLETE   =  1, /* all bytes sent                      */
+    NB_SEND_INCOMPLETE = 0,  /* partial send — poll POLLOUT again   */
+    NB_SEND_COMPLETE   = 1,  /* all bytes sent                      */
     NB_SEND_ERROR      = -1, /* I/O error                           */
 };
 
@@ -92,8 +92,7 @@ int nb_io_drain(nb_io_t *io, socket_t fd);
  * Returns 0 on success, -1 on error (out_active reset, buffers wiped).
  * On return 0, the send may have completed immediately — caller must
  * check io->out_off >= io->out_len and call nb_io_complete_send if true. */
-[[nodiscard]] int nb_io_start_send(nb_io_t *io, session_t *sess, socket_t fd,
-                                   const uint8_t *payload, uint16_t len,
+[[nodiscard]] int nb_io_start_send(nb_io_t *io, session_t *sess, socket_t fd, const uint8_t *payload, uint16_t len,
                                    const char *msg_text);
 
 /* Commit tx chain state after a completed send.
