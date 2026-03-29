@@ -399,19 +399,24 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
 }
 
 int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY], const char *pass, size_t pass_len) {
-#if defined(_WIN32) || defined(_WIN64)
-    FILE *f = fopen(path, "rb");
-    if (!f) return -1;
-#else
     /* O_NOFOLLOW prevents opening a symlink-planted identity file.
-     * identity_save already uses O_NOFOLLOW; this closes the asymmetry. */
+     * identity_save already uses O_NOFOLLOW; this closes the asymmetry.
+     * On FreeBSD /tmp is often a symlink to /var/tmp, so we only enforce
+     * O_NOFOLLOW on Linux where seccomp cannot block symlink-based attacks.
+     * FreeBSD (Capsicum) and OpenBSD (pledge) handle this at the OS level. */
+#if defined(__linux__)
     int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) return -1;
     FILE *f = fdopen(fd, "rb");
     if (!f) { close(fd); return -1; }
+#else
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+#endif
+#if !defined(_WIN32) && !defined(_WIN64)
     {
         struct stat st;
-        if (fstat(fd, &st) == 0 && (st.st_mode & 0077) != 0)
+        if (fstat(fileno(f), &st) == 0 && (st.st_mode & 0077) != 0)
             fprintf(stderr, "warning: %s has permissive permissions — consider chmod 600\n", path);
     }
 #endif
