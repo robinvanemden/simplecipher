@@ -1,10 +1,14 @@
 /*
- * nb_io.c — Non-blocking frame I/O helpers
+ * nb_io.c — Non-blocking frame I/O helpers (POSIX-only)
  *
  * Implements the state machine for incremental TCP frame read/write.
  * All functions are pure I/O + state management — no UI output.
  * Each chat loop (cli raw, cli cooked, tui) calls these helpers
  * and provides its own UI feedback around them.
+ *
+ * Windows is intentionally not supported here: cli_win.c and tui_win.c
+ * use their own inline event-driven state machines and never include
+ * nb_io.h.
  */
 
 #include "nb_io.h"
@@ -26,30 +30,15 @@ void nb_io_wipe(nb_io_t *io) {
 /* ---- Low-level non-blocking socket I/O --------------------------------- */
 
 int nb_try_recv(socket_t fd, void *buf, size_t n) {
-#if defined(_WIN32) || defined(_WIN64)
-    int r = recv(fd, (char *)buf, (int)n, 0);
-    if (r > 0) return r;
-    if (r == 0) return -1; /* peer closed */
-    int err = WSAGetLastError();
-    if (err == WSAEWOULDBLOCK) return 0;
-    return -1;
-#else
     ssize_t r;
     do { r = recv(fd, buf, n, 0); } while (r < 0 && errno == EINTR && g_running);
     if (r > 0) return (int)r;
     if (r == 0) return -1; /* peer closed */
     if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
     return -1;
-#endif
 }
 
 int nb_try_send(socket_t fd, const void *buf, size_t n) {
-#if defined(_WIN32) || defined(_WIN64)
-    int r = send(fd, (const char *)buf, (int)n, 0);
-    if (r > 0) return r;
-    if (WSAGetLastError() == WSAEWOULDBLOCK) return 0;
-    return -1;
-#else
     ssize_t r;
     do {
         r = send(fd, buf, n, MSG_NOSIGNAL);
@@ -57,7 +46,6 @@ int nb_try_send(socket_t fd, const void *buf, size_t n) {
     if (r > 0) return (int)r;
     if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
     return -1;
-#endif
 }
 
 /* ---- Inbound frame accumulation ---------------------------------------- */
