@@ -24,6 +24,7 @@ SECURITY_CFLAGS = -DCIPHER_HARDEN -DNDEBUG \
 CFLAGS  ?= -Os $(STD_FLAG) -Wall -Wextra -Wformat=2 -Wconversion -Wimplicit-fallthrough \
            $(call cc_ok,-Wbidi-chars=any) \
            -Werror=format-security -Werror=incompatible-pointer-types -Werror=int-conversion \
+           -Werror=implicit -Werror=return-type -Werror=unused-result \
            -Isrc -Ilib \
            -flto -ffunction-sections -fdata-sections -fmerge-all-constants
 

@@ -34,7 +34,7 @@ void fill_random(uint8_t *b, size_t n) {
         ULONG chunk = n > (ULONG)-1 ? (ULONG)-1 : (ULONG)n;
         if (BCryptGenRandom(nullptr, b, chunk, BCRYPT_USE_SYSTEM_PREFERRED_RNG)) {
             fprintf(stderr, "rng failed\n");
-            ExitProcess(1);
+            ExitProcess(6); /* EXIT_INTERNAL — RNG failure is unrecoverable */
         }
         b += chunk;
         n -= chunk;
@@ -70,7 +70,7 @@ void fill_random(uint8_t *b, size_t n) {
         if (got < 0) {
             if (errno == EINTR) continue;
             perror("getrandom");
-            _exit(1);
+            _exit(6); /* EXIT_INTERNAL — RNG failure is unrecoverable */
         }
         b += got;
         n -= (size_t)got;
@@ -82,7 +82,7 @@ void fill_random(uint8_t *b, size_t n) {
         size_t chunk = n > 256 ? 256 : n;
         if (getentropy(b, chunk) != 0) {
             perror("getentropy");
-            _exit(1);
+            _exit(6); /* EXIT_INTERNAL — RNG failure is unrecoverable */
         }
         b += chunk;
         n -= chunk;
@@ -160,6 +160,9 @@ void harden(void) {
             (void)fn(/*ProcessStrictHandleCheckPolicy*/ 3, &sh, sizeof sh);
         }
     }
+    /* Terminate on heap corruption instead of allowing exploitation. */
+    HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
+
     /* Lock process memory to prevent key material from being paged to the
      * swap file.  Equivalent of POSIX mlockall(MCL_CURRENT | MCL_FUTURE).
      * Increase working set first to allow locking. */
@@ -307,10 +310,7 @@ static int install_seccomp_phase1(void) {
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_poll, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 #            endif
-#            ifdef SYS_select
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_select, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#            endif
+        /* SYS_select intentionally excluded: POSIX path uses poll/ppoll only */
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
@@ -330,8 +330,7 @@ static int install_seccomp_phase1(void) {
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_nanosleep, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        /* SYS_nanosleep intentionally excluded: not called after sandbox */
 #            ifdef SYS_gettimeofday
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_gettimeofday, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
@@ -374,10 +373,7 @@ static int install_seccomp_phase1(void) {
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_prlimit64, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#            ifdef SYS_setrlimit
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_setrlimit, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-#            endif
+        /* SYS_setrlimit intentionally excluded: harden() runs before sandbox */
 
         /* glibc/musl internals */
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_futex, 0, 1),

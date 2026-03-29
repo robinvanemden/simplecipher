@@ -151,6 +151,8 @@ int main(int argc, char *argv[]) {
         sigaction(SIGHUP, &sa, nullptr);  /* terminal closed / SSH dropped */
         sigaction(SIGQUIT, &sa, nullptr); /* Ctrl+\ -- suppress core dump with keys */
         sigaction(SIGALRM, &sa, nullptr); /* clean shutdown on stray SIGALRM */
+        sigaction(SIGUSR1, &sa, nullptr); /* prevent kill-without-cleanup via USR1/2 */
+        sigaction(SIGUSR2, &sa, nullptr);
         sa.sa_handler = SIG_IGN;
         sigaction(SIGPIPE, &sa, nullptr); /* handle dropped peers via write errors */
     }

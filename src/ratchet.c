@@ -14,44 +14,17 @@
 
 static const char *const DOMAIN_RATCHET = "cipher ratchet v2";
 
-/* Internal: perform one DH ratchet step.
+/* DH ratchet KDF construction (used by ratchet_prepare, ratchet_send fallback,
+ * and ratchet_receive — each inline this logic with staged temporaries for
+ * transactional state updates):
  *
- * Mixes a fresh X25519 shared secret into the root key and derives a
- * new chain key.  Used by both ratchet_send (new sending chain) and
- * ratchet_receive (new receiving chain).
- *
- * KDF construction:
  *   dh_secret  = X25519(our_priv, their_pub)         [32 bytes, fixed]
  *   ikm        = root_key || dh_secret                [64 bytes, fixed]
  *   new_root   = domain_hash("cipher ratchet v2", ikm)
  *   new_chain  = expand(new_root, "chain")
  *
- * Both inputs to the concatenation are exactly 32 bytes, so the boundary
- * is unambiguous and no length prefix is needed.
- *
  * The label "cipher ratchet v2" is a KDF domain label (not a protocol
- * version), domain-separated from the handshake labels
- * ("cipher x25519 sas root v1", "cipher commit v3"). */
-/* Returns 0 on success, -1 if DH produced all-zero output (malicious peer). */
-static int ratchet_step(uint8_t root[KEY], uint8_t chain_out[KEY], const uint8_t our_priv[KEY],
-                        const uint8_t their_pub[KEY]) {
-    uint8_t dh[KEY], ikm[KEY * 2];
-
-    crypto_x25519(dh, our_priv, their_pub);
-    if (is_zero32(dh)) {
-        crypto_wipe(dh, sizeof dh);
-        return -1;
-    }
-
-    memcpy(ikm, root, KEY);
-    memcpy(ikm + KEY, dh, KEY);
-    domain_hash(root, DOMAIN_RATCHET, ikm, sizeof ikm);
-    expand(chain_out, root, "chain");
-
-    crypto_wipe(dh, sizeof dh);
-    crypto_wipe(ikm, sizeof ikm);
-    return 0;
-}
+ * version), domain-separated from the handshake labels. */
 
 void ratchet_init(session_t *s, const uint8_t self_priv[KEY], const uint8_t self_pub[KEY],
                   const uint8_t peer_pub[KEY]) {

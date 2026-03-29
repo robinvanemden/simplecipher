@@ -291,6 +291,27 @@ public class MainActivity extends Activity {
   }
 
   @Override
+  protected void onPause() {
+    /* Clear sensitive metadata widgets when the activity is no longer in the
+     * foreground — prevents fingerprint/QR/host from being visible in
+     * multi-window mode or captured by accessibility services. */
+    super.onPause();
+    if (fpSelfText != null) fpSelfText.setText("");
+    if (fpManualInput != null) fpManualInput.setText("");
+    if (hostInput != null) hostInput.setText("");
+    if (portInput != null) portInput.setText("");
+    if (socks5Input != null) socks5Input.setText("");
+    if (qrCodeImage != null) qrCodeImage.setImageBitmap(null);
+  }
+
+  @Override
+  protected void onSaveInstanceState(android.os.Bundle outState) {
+    /* Never persist sensitive state — prevent the default View state save
+     * from serializing host, port, fingerprint, etc. to a Bundle. */
+    super.onSaveInstanceState(new android.os.Bundle());
+  }
+
+  @Override
   protected void onStop() {
     if (inAppKeyboard != null) inAppKeyboard.setVisibility(View.GONE);
     /* Clear any pending clipboard auto-clear callbacks and clear clipboard now */

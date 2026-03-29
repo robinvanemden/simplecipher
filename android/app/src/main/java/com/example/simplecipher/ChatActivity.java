@@ -531,6 +531,7 @@ public class ChatActivity extends Activity implements NativeCallback {
      * actively looking at the screen. */
     sessionLive = false;
     pendingSendMsg = null;
+    uiHandler.removeCallbacksAndMessages(null); /* flush stale callbacks */
     nativeStop();
     if (statusText != null) statusText.setText("");
     if (sasInput != null) sasInput.setText("");
@@ -545,6 +546,14 @@ public class ChatActivity extends Activity implements NativeCallback {
     /* Clean disconnect when the user presses the back button. */
     nativeStop();
     super.onBackPressed();
+  }
+
+  @Override
+  protected void onSaveInstanceState(android.os.Bundle outState) {
+    /* Never persist sensitive state — prevent the default View state save
+     * from serializing chat messages, SAS codes, etc. to a Bundle that
+     * Android could write to disk if the process is killed. */
+    super.onSaveInstanceState(new android.os.Bundle());
   }
 
   @Override
