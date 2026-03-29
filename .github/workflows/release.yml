@@ -52,7 +52,7 @@ jobs:
           path: |
             /opt/x-tools
             /opt/llvm-mingw
-          key: toolchains-v3-musl-x86_64-aarch64-llvm-20260311
+          key: toolchains-v4-47a4db19-bcb60ab8-7c091479
 
       - name: Setup musl cross-compilers (with checksum verification)
         run: |
