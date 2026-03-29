@@ -4,6 +4,10 @@ on:
   push:
     tags: ['v*']
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   test-p2p:
     runs-on: ubuntu-24.04

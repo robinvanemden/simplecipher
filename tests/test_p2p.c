@@ -6068,13 +6068,15 @@ static void test_identity_save_load_roundtrip(void) {
     uint8_t bad_priv[KEY], bad_pub[KEY];
     TEST("wrong passphrase rejected", identity_load(path, bad_priv, bad_pub, "wrong", 5) != 0);
 
-    /* Corrupt file */
+    /* Corrupt file — fflush ensures the write reaches disk before
+     * identity_load reads it back (avoids flaky failures on BSDs). */
     {
         FILE *f = fopen(path, "r+b");
         if (f) {
             fseek(f, 40, SEEK_SET);
             uint8_t garbage = 0xFF;
             fwrite(&garbage, 1, 1, f);
+            fflush(f);
             fclose(f);
         }
         TEST("corrupt file rejected", identity_load(path, bad_priv, bad_pub, pass, strlen(pass)) != 0);

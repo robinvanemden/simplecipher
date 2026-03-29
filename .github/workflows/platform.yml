@@ -133,9 +133,11 @@ jobs:
           echo "### macOS arm64 Tests" >> $GITHUB_STEP_SUMMARY
           grep 'Total:\|Results:' /tmp/test_p2p.log /tmp/test_socks5.log /tmp/test_macos.log >> $GITHUB_STEP_SUMMARY || true
           echo '=== Smoke test ==='
-          ./simplecipher listen 19799 &
+          . tests/test_helpers.sh
+          PORT=$(random_port)
+          ./simplecipher listen $PORT &
           PID=$!
-          sleep 1
+          wait_for_port $PORT 5
           kill $PID 2>/dev/null || true
           echo 'Smoke test passed'
 
@@ -186,15 +188,16 @@ jobs:
             git checkout ${{ github.sha }}
             echo '=== FreeBSD' \$(uname -sr) '==='
             gmake clean
-            gmake -j1 CC=cc CFLAGS='-Os -std=c23 -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' simplecipher tests/test_p2p tests/test_socks5_proxy
+            gmake -j1 CC=cc simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
             echo '=== SOCKS5 proxy test ==='
             ./tests/test_socks5_proxy
             echo '=== Smoke test ==='
-            ./simplecipher listen 19799 &
+            PORT=\$((20000 + \$RANDOM % 40000))
+            ./simplecipher listen \$PORT &
             PID=\$!
-            sleep 1
+            for i in \$(seq 1 50); do ss -tln 2>/dev/null | grep -q ':\$PORT ' && break; sleep 0.1; done
             kill \$PID 2>/dev/null || true
             echo 'Smoke test passed'
           "
@@ -240,15 +243,16 @@ jobs:
             git checkout ${{ github.sha }}
             echo '=== OpenBSD' \$(uname -sr) '==='
             gmake clean
-            gmake -j1 CC=cc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' simplecipher tests/test_p2p tests/test_socks5_proxy
+            gmake -j1 CC=cc simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
             echo '=== SOCKS5 proxy test ==='
             ./tests/test_socks5_proxy
             echo '=== Smoke test ==='
-            ./simplecipher listen 19799 &
+            PORT=\$((20000 + \$RANDOM % 40000))
+            ./simplecipher listen \$PORT &
             PID=\$!
-            sleep 1
+            for i in \$(seq 1 50); do ss -tln 2>/dev/null | grep -q ':\$PORT ' && break; sleep 0.1; done
             kill \$PID 2>/dev/null || true
             echo 'Smoke test passed'
           "
@@ -286,7 +290,7 @@ jobs:
             git checkout ${{ github.sha }}
             echo '=== Linux ARM64' \$(uname -srm) '==='
             make clean
-            make -j1 CC=gcc CFLAGS='-Os -std=c2x -Isrc -Ilib -DCIPHER_HARDEN -DNDEBUG -pthread' LDFLAGS='-s' simplecipher tests/test_p2p tests/test_socks5_proxy
+            make -j1 CC=gcc simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
             echo '=== SOCKS5 proxy test ==='
