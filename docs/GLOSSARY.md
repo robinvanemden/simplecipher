@@ -140,13 +140,13 @@ Pseudo-Random Function. A deterministic function whose output is indistinguishab
 
 A mechanism that injects fresh randomness into the key hierarchy. When the conversation direction switches (one side was receiving, now they send), a fresh [X25519](#x25519) keypair is generated, a new shared secret is computed with the peer's latest public key, and a new sending chain is derived from it. In SimpleCipher, this computation is pre-staged eagerly (at session init and after each receive) so that sends have no timing asymmetry. This provides [post-compromise security](#post-compromise-security-pcs). *See [PROTOCOL.md](PROTOCOL.md#4-encrypted-messaging-with-forward-secrecy-and-post-compromise-security)*
 
-### Safety code
-
-See [SAS (Short Authentication String)](#sas-short-authentication-string).
-
 ### Ratchet (symmetric/chain)
 
 A one-way key advancement mechanism. Each message derives a fresh encryption [key](#key) from the current chain key, then the chain steps forward and the old key is wiped. This provides per-message [forward secrecy](#forward-secrecy): compromising one message key reveals nothing about any other. *See [PROTOCOL.md](PROTOCOL.md#4-encrypted-messaging-with-forward-secrecy-and-post-compromise-security)*
+
+### Safety code
+
+See [SAS (Short Authentication String)](#sas-short-authentication-string).
 
 ### SAS (Short Authentication String)
 
