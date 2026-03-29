@@ -35,6 +35,13 @@
 #        define _POSIX_C_SOURCE 200809L
 #    endif
 #endif
+/* On macOS with strict -std=c2x, _POSIX_C_SOURCE hides Darwin extensions
+ * (O_NOFOLLOW, getentropy, etc.).  _DARWIN_C_SOURCE re-exposes them. */
+#if defined(__APPLE__)
+#    ifndef _DARWIN_C_SOURCE
+#        define _DARWIN_C_SOURCE
+#    endif
+#endif
 /* On FreeBSD, _POSIX_C_SOURCE hides BSD extensions like getentropy().
  * __BSD_VISIBLE re-exposes them without removing POSIX declarations. */
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
@@ -50,6 +57,19 @@
  * expressions) and static const for uint8_t.  No shim needed — the
  * headers below use enum/const directly for portability across all
  * compilers including Clang 16. */
+
+/* nullptr is C23.  GCC 13+ and Clang 16+ in C2x mode accept it, but Apple
+ * Clang (Xcode 15/16) does not recognise nullptr in -std=c2x.  Fall back
+ * to the preprocessor NULL which every C compiler supports. */
+#if !defined(__cplusplus) && !defined(nullptr)
+#    if defined(__has_feature)
+#        if !__has_feature(c_nullptr)
+#            define nullptr NULL
+#        endif
+#    elif defined(__STDC_VERSION__) && __STDC_VERSION__ < 202311L
+#        define nullptr NULL
+#    endif
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,8 +97,8 @@
 #    include <poll.h>
 #    include <netinet/tcp.h> /* TCP_NODELAY */
 #    include <ifaddrs.h>     /* getifaddrs — list local IP addresses */
-#    ifdef __linux__
-#        include <sys/random.h> /* getrandom(2) */
+#    if defined(__linux__) || defined(__APPLE__)
+#        include <sys/random.h> /* getrandom(2) / getentropy(3) */
 #    endif
 #    ifdef CIPHER_HARDEN
 #        include <sys/mman.h>
