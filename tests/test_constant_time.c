@@ -86,6 +86,7 @@
 static uint8_t   ct_fixed_input[512]; /* fixed-class input */
 static uint8_t   ct_key[32];          /* auxiliary secret (chain key, PRK, etc.) */
 static uint8_t   ct_key2[32];         /* second auxiliary (peer pub, etc.) */
+static uint8_t   ct_nonce[32];        /* commitment nonce */
 static session_t ct_session;          /* session for frame_build/frame_open */
 static int       ct_test_id = 0;
 
@@ -139,7 +140,7 @@ uint8_t do_one_computation(uint8_t *data) {
          * the commitment matched or at which byte it diverged. */
         uint8_t commit[32];
         memcpy(commit, ct_key, 32);
-        volatile int result = verify_commit(commit, data);
+        volatile int result = verify_commit(commit, data, ct_nonce);
         ret                 = (uint8_t)result;
         break;
     }
@@ -321,7 +322,8 @@ int main(void) {
     {
         uint8_t pub[32];
         fill_random(pub, 32);
-        make_commit(ct_key, pub);
+        fill_random(ct_nonce, 32);
+        make_commit(ct_key, pub, ct_nonce);
         memcpy(ct_fixed_input, pub, 32);
         crypto_wipe(pub, 32);
     }
