@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Auto-format C source files before commit.
+# Install: git config core.hooksPath .githooks
+
+CLANG_FMT=""
+for cmd in clang-format clang-format-19 clang-format-18 clang-format-17; do
+    if command -v "$cmd" >/dev/null 2>&1; then CLANG_FMT="$cmd"; break; fi
+done
+
+if [ -z "$CLANG_FMT" ]; then
+    echo "Warning: clang-format not found, skipping format check"
+    exit 0
+fi
+
+# Format only staged C files
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR -- 'src/*.c' 'src/*.h')
+if [ -n "$STAGED" ]; then
+    echo "$STAGED" | xargs "$CLANG_FMT" -i
+    echo "$STAGED" | xargs git add
+fi
