@@ -179,10 +179,8 @@ int ratchet_send(session_t *s, uint8_t ratchet_pub[KEY]) {
     return 1;
 }
 
-/* Does not call ratchet_step() because it needs staged temporaries
- * (staged_root, staged_rx) to avoid mutating session state until
- * all validation passes.  ratchet_step writes directly to its
- * output parameters, which would corrupt the session on DH failure. */
+/* Inlines the DH ratchet KDF with staged temporaries to avoid mutating
+ * session state until all validation passes (transactional update). */
 int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
     /* Stage all outputs in temporaries -- commit only if DH succeeds.
      * Prevents a malicious low-order ratchet key from poisoning
