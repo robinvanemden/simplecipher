@@ -282,6 +282,7 @@ jobs:
   test-linux:
     needs: build
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-24.04, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
@@ -306,6 +307,7 @@ jobs:
   test-linux-aarch64:
     needs: build
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-24.04-arm, ubuntu-22.04-arm]
     runs-on: ${{ matrix.os }}
@@ -330,6 +332,7 @@ jobs:
   test-windows:
     needs: build
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-2025, windows-2022]
     runs-on: ${{ matrix.os }}
