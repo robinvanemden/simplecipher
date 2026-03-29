@@ -51,15 +51,20 @@ Consumers (main.c, test_p2p.c, jni_bridge.c) include headers and link object fil
 - `src/` contains all protocol logic — each module has a header and implementation
 - `lib/monocypher.c/h` is vendored upstream — never modify
 - All binaries must be fully static, zero runtime dependencies (macOS: only libSystem.B.dylib)
-- C23 standard, size-optimized (`-Os -flto`). OpenBSD 7.7 uses `-std=c2x` (Clang 16); `constexpr` compat shim in `platform.h`.
+- C23 standard, size-optimized (`-Os -flto`). Makefile auto-detects compiler capabilities via `cc_ok()` — falls back to `-std=c2x` on Apple Clang and older compilers. `constexpr`/`nullptr` compat shims in `platform.h`.
 - Crypto: X25519, XChaCha20-Poly1305, BLAKE2b (all via Monocypher)
 - Every key/secret must be wiped with `crypto_wipe()` after use
 - `keygen` subcommand creates a passphrase-protected persistent identity key file; `--identity` loads it at runtime (prompts for passphrase)
 - `--peer-fingerprint` works for both listen and connect (64-bit BLAKE2b hash of peer's public key)
 - `--trust-fingerprint` (requires `--peer-fingerprint`): skips SAS when fingerprint matches — enables fully non-interactive mutual verification via pre-shared paper fingerprints
 - Fingerprints are stable when using `keygen` + `--identity`; ephemeral (change every session) without them
-- CI builds and tests natively on 10 runners (Linux/Windows/macOS x86_64/aarch64)
-- Release: push a `v*` tag — CI builds, tests, publishes GitHub release
+- CI: 5 separate workflows for fast, clear feedback:
+  - `build.yml` — cross-compile Linux/Windows/macOS/Android
+  - `test.yml` — protocol tests (P2P, SOCKS5, TUI, CLI flags)
+  - `security.yml` — ASan/UBSan/MSan, fuzz, static analysis
+  - `platform.yml` — binary validation on Linux, Windows, macOS, FreeBSD, OpenBSD, ARM64
+  - `android.yml` — emulator smoke test
+- Release: push a `v*` tag — `release.yml` builds, tests, signs (Sigstore), publishes GitHub release
 
 ## Tests
 
