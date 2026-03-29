@@ -192,11 +192,12 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                 break;
             }
             if (acc == NB_RECV_FRAME) {
-                /* Rate-limit before expensive AEAD + X25519 work. */
                 uint64_t now_rl = monotonic_ms();
                 if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
-                else if (++rx_count > 50) {
-                    nb_io_reset_recv(&io);    /* drop silently — peer is flooding */
+                else { ++rx_count; }
+
+                if (rx_count > 50) {
+                    nb_io_reset_recv(&io);
                 } else {
                     plen = 0;
                     int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);
@@ -288,6 +289,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                                          (const uint8_t *)line, (uint16_t)line_len,
                                          line) < 0) {
                         crypto_wipe(line, sizeof line);
+                        g_running = 0; /* exit outer while loop */
                         break;
                     }
                     crypto_wipe(line, sizeof line);

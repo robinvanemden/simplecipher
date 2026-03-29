@@ -200,11 +200,16 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                 break;
             }
             if (acc == NB_RECV_FRAME) {
-                /* Rate-limit before expensive AEAD + X25519 work. */
+                /* Rate-limit before expensive AEAD + X25519 work.
+                 * Window reset: start a new 1-second window and process
+                 * the frame (it is the first in the new window).
+                 * Over limit: drop silently. */
                 uint64_t now_rl = monotonic_ms();
                 if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
-                else if (++rx_count > 50) {
-                    nb_io_reset_recv(&io);    /* drop silently — peer is flooding */
+                else { ++rx_count; }
+
+                if (rx_count > 50) {
+                    nb_io_reset_recv(&io);
                 } else {
                     plen = 0;
                     int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);
@@ -341,6 +346,8 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                 if (nb_io_start_send(&io, sess, fd,
                                      (const uint8_t *)line, (uint16_t)line_len,
                                      line) < 0) {
+                    crypto_wipe(line, sizeof line);
+                    line_len = 0;
                     const char *msg = "[send error]\n";
                     ssize_t     r;
                     do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
@@ -467,11 +474,12 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 break;
             }
             if (acc == NB_RECV_FRAME) {
-                /* Rate-limit before expensive AEAD + X25519 work. */
                 uint64_t now_rl = monotonic_ms();
                 if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
-                else if (++rx_count > 50) {
-                    nb_io_reset_recv(&io);    /* drop silently — peer is flooding */
+                else { ++rx_count; }
+
+                if (rx_count > 50) {
+                    nb_io_reset_recv(&io);
                 } else {
                     plen = 0;
                     int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);

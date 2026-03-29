@@ -87,7 +87,11 @@ int nb_io_drain(nb_io_t *io, socket_t fd);
  * Sets io->out_active, tries an immediate nb_try_send.
  * msg_text is copied into io->out_text for display on completion
  * (pass NULL or "" for cover frames with no display).
- * Returns 0 on success (send started or completed), -1 on frame_build error. */
+ * msg_text must be null-terminated if non-NULL.
+ *
+ * Returns 0 on success, -1 on error (out_active reset, buffers wiped).
+ * On return 0, the send may have completed immediately — caller must
+ * check io->out_off >= io->out_len and call nb_io_complete_send if true. */
 [[nodiscard]] int nb_io_start_send(nb_io_t *io, session_t *sess, socket_t fd,
                                    const uint8_t *payload, uint16_t len,
                                    const char *msg_text);

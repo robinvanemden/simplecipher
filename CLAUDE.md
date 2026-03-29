@@ -38,7 +38,7 @@ src/
 ├── tui_posix.c         POSIX TUI event loop (poll + raw termios)
 ├── tui_win.c           Windows TUI event loop (WaitForMultipleObjects)
 ├── cli.h/c             shared CLI (secure_chat_print)
-├── cli_posix.c         POSIX CLI event loop (poll + cooked stdin)
+├── cli_posix.c         POSIX CLI event loop (raw termios + cooked fallback)
 └── cli_win.c           Windows CLI event loop + console helpers
 lib/
 ├── monocypher.c        vendored crypto (do not modify)

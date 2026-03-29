@@ -5,10 +5,6 @@
  * All functions are pure I/O + state management — no UI output.
  * Each chat loop (cli raw, cli cooked, tui) calls these helpers
  * and provides its own UI feedback around them.
- *
- * NOTE: nb_io_init, nb_io_wipe, nb_try_recv, nb_try_send are currently
- * defined in network.c (Task 3 will migrate them here).  This file
- * provides only the higher-level state machine helpers that are new.
  */
 
 #include "nb_io.h"
@@ -121,8 +117,7 @@ int nb_io_start_send(nb_io_t *io, session_t *sess, socket_t fd,
     io->out_start_ms = monotonic_ms();
 
     if (msg_text && msg_text[0]) {
-        size_t tlen = strlen(msg_text);
-        if (tlen > MAX_MSG) tlen = MAX_MSG;
+        size_t tlen = strnlen(msg_text, MAX_MSG);
         memcpy(io->out_text, msg_text, tlen);
         io->out_text[tlen] = '\0';
     } else {
