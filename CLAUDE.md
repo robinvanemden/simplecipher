@@ -33,6 +33,7 @@ src/
 ├── ratchet.h/c         DH ratchet (post-compromise security)
 ├── protocol.h/c        sessions, frames, handshake helpers
 ├── network.h/c         TCP connect, listen, send, receive
+├── nb_io.h/c           non-blocking frame I/O state machine (POSIX chat loops)
 ├── tui.h/c             shared TUI (ring buffer, drawing, SAS screen)
 ├── tui_posix.c         POSIX TUI event loop (poll + raw termios)
 ├── tui_win.c           Windows TUI event loop (WaitForMultipleObjects)
@@ -68,6 +69,6 @@ Consumers (main.c, test_p2p.c, jni_bridge.c) include headers and link object fil
 
 ## Tests
 
-`tests/test_p2p.c` — 926 tests, `tests/test_socks5_proxy.c` — 10 SOCKS5 proxy tests, `tests/test_cli_flags.sh` — 16 CLI flag integration tests (952 total) covering crypto, DH ratchet, TCP loopback handshake, bidirectional messaging, tamper detection, replay rejection, forward secrecy, post-compromise security (including staged ratchet state lifecycle), KDF known-answer vectors, constant-time verification, dudect timing smoke tests (ct_compare, is_zero32), SOCKS5 request building and buffer wipe verification, peer fingerprint verification, identity key save/load, --peer-fingerprint, --trust-fingerprint, --identity, and keygen CLI flags, cover traffic, TUI_ME_QUEUED display, inbound frame rate limiting (50/sec), transactional ratchet receive, MAC failure tolerance. Must pass before any release.
+`tests/test_p2p.c` — 970 tests, `tests/test_socks5_proxy.c` — 10 SOCKS5 proxy tests, `tests/test_cli_flags.sh` — 16 CLI flag integration tests (996 total) covering crypto, DH ratchet, TCP loopback handshake, bidirectional messaging, tamper detection, replay rejection, forward secrecy, post-compromise security (including staged ratchet state lifecycle), KDF known-answer vectors, constant-time verification, dudect timing smoke tests (ct_compare, is_zero32), SOCKS5 request building and buffer wipe verification, peer fingerprint verification, identity key save/load, --peer-fingerprint, --trust-fingerprint, --identity, and keygen CLI flags, cover traffic, TUI_ME_QUEUED display, inbound frame rate limiting (50/sec), non-blocking I/O (byte-by-byte accumulation, partial send drain, deadline checks, cover frame send), cooked-mode multi-line pipe parsing, transactional ratchet receive, MAC failure tolerance. Must pass before any release.
 
 Run with: `make test` (P2P tests only) and `make test-all` (all tests: P2P + SOCKS5 + CLI flags)
