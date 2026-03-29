@@ -86,8 +86,8 @@ tests/test_p2p: tests/test_p2p.c $(LIB_OBJ)
 tests/test_socks5_proxy: tests/test_socks5_proxy.c $(LIB_OBJ)
 	$(CC) $(ALL_CFLAGS) -pthread -o $@ $^ -lm
 
-test-all: test test-socks5
-	bash tests/test_cli_flags.sh
+test-all: test test-socks5 simplecipher
+	bash tests/test_cli_flags.sh ./simplecipher
 
 clean:
 	rm -f $(OBJ) simplecipher tests/test_p2p tests/test_socks5_proxy

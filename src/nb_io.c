@@ -131,7 +131,14 @@ int nb_io_start_send(nb_io_t *io, session_t *sess, socket_t fd,
 
     /* Try to send immediately — often completes in one call. */
     int s = nb_try_send(fd, io->out_wire, io->out_len);
-    if (s < 0) return -1;
+    if (s < 0) {
+        /* Reset state so out_active doesn't block future sends. */
+        io->out_active = 0;
+        crypto_wipe(io->out_wire, sizeof io->out_wire);
+        crypto_wipe(io->out_next_tx, sizeof io->out_next_tx);
+        crypto_wipe(io->out_text, sizeof io->out_text);
+        return -1;
+    }
     if (s > 0) io->out_off += (size_t)s;
     return 0;
 }

@@ -63,6 +63,9 @@
 #include "network.h"
 #include "tui.h"
 #include "cli.h"
+#if !defined(_WIN32) && !defined(_WIN64)
+#    include <fcntl.h> /* F_GETFL, F_SETFL, O_NONBLOCK — set before sandbox */
+#endif
 
 enum {
     STATUS_MSG_BUF = 80,   /* buffer for TUI status messages        */
