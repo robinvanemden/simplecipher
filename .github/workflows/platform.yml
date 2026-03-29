@@ -187,8 +187,9 @@ jobs:
             fi
             git checkout ${{ github.sha }}
             git clean -fdx
+            git checkout -- .
             echo '=== FreeBSD' \$(uname -sr) '==='
-            gmake clean
+            rm -f src/*.o lib/*.o simplecipher tests/test_p2p tests/test_socks5_proxy
             gmake -j1 CC=cc simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
@@ -243,8 +244,9 @@ jobs:
             fi
             git checkout ${{ github.sha }}
             git clean -fdx
+            git checkout -- .
             echo '=== OpenBSD' \$(uname -sr) '==='
-            gmake clean
+            rm -f src/*.o lib/*.o simplecipher tests/test_p2p tests/test_socks5_proxy
             gmake -j1 CC=cc simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
@@ -291,8 +293,9 @@ jobs:
             fi
             git checkout ${{ github.sha }}
             git clean -fdx
+            git checkout -- .
             echo '=== Linux ARM64' \$(uname -srm) '==='
-            make clean
+            rm -f src/*.o lib/*.o simplecipher tests/test_p2p tests/test_socks5_proxy
             make -j1 CC=gcc simplecipher tests/test_p2p tests/test_socks5_proxy
             ulimit -l unlimited 2>/dev/null || true
             ./tests/test_p2p
