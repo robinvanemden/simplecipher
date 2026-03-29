@@ -263,8 +263,6 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                     cli_redraw_input(line, line_len);
                 }
                 nb_io_complete_send(&io, sess);
-                if (cover)
-                    next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
             }
         }
 
@@ -377,21 +375,25 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
         /* ---- Cover traffic: single send point for all outgoing frames.
          * Queued real messages replace the cover payload so every frame
          * follows the same timing distribution — defeating analysis.
-         * Skipped if an async send is already in flight. */
-        if (cover && g_running && !io.out_active && monotonic_ms() >= next_cover) {
-            const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
-            uint16_t       tx_len  = pending_len;
-            if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
-                secure_chat_print("system", "cover traffic error -- session ended");
-                break;
-            }
-            if (io.out_off >= io.out_len) {
-                if (pending_len > 0) {
-                    crypto_wipe(pending_msg, sizeof pending_msg);
-                    pending_len = 0;
+         * next_cover is always advanced when the tick fires, even if a
+         * send is in flight.  This prevents TCP backpressure from
+         * creating detectable (short, long) inter-arrival pairs. */
+        if (cover && g_running && monotonic_ms() >= next_cover) {
+            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+            if (!io.out_active) {
+                const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+                uint16_t       tx_len  = pending_len;
+                if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
+                    secure_chat_print("system", "cover traffic error -- session ended");
+                    break;
                 }
-                nb_io_complete_send(&io, sess);
-                next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+                if (io.out_off >= io.out_len) {
+                    if (pending_len > 0) {
+                        crypto_wipe(pending_msg, sizeof pending_msg);
+                        pending_len = 0;
+                    }
+                    nb_io_complete_send(&io, sess);
+                }
             }
         }
     }
@@ -519,8 +521,6 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
                 if (io.out_text[0])
                     secure_chat_print(" me", io.out_text);
                 nb_io_complete_send(&io, sess);
-                if (cover)
-                    next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
             }
         }
 
@@ -597,22 +597,23 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
 
         /* ---- Cover traffic: single send point for all outgoing frames.
          * Queued real messages replace the cover payload so every frame
-         * follows the same timing distribution — defeating analysis.
-         * Skipped if an async send is already in flight. */
-        if (cover && g_running && !io.out_active && monotonic_ms() >= next_cover) {
-            const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
-            uint16_t       tx_len  = pending_len;
-            if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
-                secure_chat_print("system", "cover traffic error -- session ended");
-                break;
-            }
-            if (io.out_off >= io.out_len) {
-                if (pending_len > 0) {
-                    crypto_wipe(pending_msg, sizeof pending_msg);
-                    pending_len = 0;
+         * follows the same timing distribution — defeating analysis. */
+        if (cover && g_running && monotonic_ms() >= next_cover) {
+            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+            if (!io.out_active) {
+                const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+                uint16_t       tx_len  = pending_len;
+                if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
+                    secure_chat_print("system", "cover traffic error -- session ended");
+                    break;
                 }
-                nb_io_complete_send(&io, sess);
-                next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+                if (io.out_off >= io.out_len) {
+                    if (pending_len > 0) {
+                        crypto_wipe(pending_msg, sizeof pending_msg);
+                        pending_len = 0;
+                    }
+                    nb_io_complete_send(&io, sess);
+                }
             }
         }
     }

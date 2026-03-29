@@ -245,8 +245,6 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                     tui_draw_input(line, line_len);
                 }
                 nb_io_complete_send(&io, sess);
-                if (cover)
-                    next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
             }
         }
 
@@ -311,21 +309,23 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
         }
 
         /* ---- Cover traffic ---- */
-        if (cover && g_running && !io.out_active && monotonic_ms() >= next_cover) {
-            const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
-            uint16_t       tx_len  = pending_len;
-            if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
-                tui_msg_add(TUI_SYSTEM, "cover traffic error -- session ended");
-                tui_draw_screen(status, line, line_len);
-                break;
-            }
-            if (io.out_off >= io.out_len) {
-                if (pending_len > 0) {
-                    crypto_wipe(pending_msg, sizeof pending_msg);
-                    pending_len = 0;
+        if (cover && g_running && monotonic_ms() >= next_cover) {
+            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+            if (!io.out_active) {
+                const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+                uint16_t       tx_len  = pending_len;
+                if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
+                    tui_msg_add(TUI_SYSTEM, "cover traffic error -- session ended");
+                    tui_draw_screen(status, line, line_len);
+                    break;
                 }
-                nb_io_complete_send(&io, sess);
-                next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+                if (io.out_off >= io.out_len) {
+                    if (pending_len > 0) {
+                        crypto_wipe(pending_msg, sizeof pending_msg);
+                        pending_len = 0;
+                    }
+                    nb_io_complete_send(&io, sess);
+                }
             }
         }
     }
