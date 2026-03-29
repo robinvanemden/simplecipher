@@ -170,47 +170,38 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
         }
 
         /* Deadline checks. */
-        if (io.in_have > 0 &&
-            (monotonic_ms() - io.in_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
+        if (nb_io_recv_deadline_expired(&io)) {
             tui_msg_add(TUI_SYSTEM, "[peer stalled mid-frame: disconnecting]");
             status = "Peer stalled  |  Ctrl+C to exit";
             tui_draw_screen(status, line, line_len);
             break;
         }
-        if (io.out_active &&
-            (monotonic_ms() - io.out_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
+        if (nb_io_send_deadline_expired(&io)) {
             tui_msg_add(TUI_SYSTEM, "[send timeout]");
             tui_draw_screen(status, line, line_len);
             break;
         }
 
-        /* ----- Incoming bytes from peer (non-blocking) ----- */
+        /* ----- Incoming bytes from peer (non-blocking accumulation) ----- */
         if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
-            int r = nb_try_recv(fd, io.in_wire + io.in_have,
-                                io.in_need - io.in_have);
-            if (r < 0) {
+            int acc = nb_io_accumulate(&io, fd);
+            if (acc == NB_RECV_DISCONNECT) {
                 tui_msg_add(TUI_SYSTEM, "[peer disconnected]");
                 status = "Peer disconnected  |  Ctrl+C to exit";
                 tui_draw_screen(status, line, line_len);
                 break;
             }
-            if (r > 0) {
-                if (io.in_have == 0) io.in_start_ms = monotonic_ms();
-                io.in_have += (size_t)r;
-                if (io.in_have >= io.in_need && io.in_need == WIRE_HDR)
-                    io.in_need = WIRE_HDR + FRAME_SZ + (size_t)io.in_wire[0];
-                if (io.in_have >= io.in_need && io.in_need > WIRE_HDR) {
-                    uint64_t now_rl = monotonic_ms();
-                    if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
-                    else if (++rx_count > 50) {
-                        crypto_wipe(io.in_wire, sizeof io.in_wire);
-                        io.in_have = 0; io.in_need = WIRE_HDR; io.in_start_ms = 0;
-                        goto tui_after_recv;
-                    }
+            if (acc == NB_RECV_FRAME) {
+                /* Rate-limit before expensive AEAD + X25519 work. */
+                uint64_t now_rl = monotonic_ms();
+                if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
+                else if (++rx_count > 50) {
+                    nb_io_reset_recv(&io);    /* drop silently — peer is flooding */
+                } else {
                     plen = 0;
                     int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);
-                    crypto_wipe(io.in_wire, sizeof io.in_wire);
-                    io.in_have = 0; io.in_need = WIRE_HDR; io.in_start_ms = 0;
+                    nb_io_reset_recv(&io);
+
                     if (fo_rc != 0) {
                         crypto_wipe(plain, sizeof plain);
                         if (fo_rc == -2 || ++auth_fails >= MAX_AUTH_FAILURES) {
@@ -219,36 +210,30 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                             tui_draw_screen(status, line, line_len);
                             break;
                         }
-                        goto tui_after_recv;
+                    } else {
+                        auth_fails = 0;
+                        if (plen > 0) {
+                            plain[plen] = '\0';
+                            sanitize_peer_text(plain, plen);
+                            tui_msg_add(TUI_PEER, (char *)plain);
+                            tui_draw_messages();
+                            tui_draw_input(line, line_len);
+                        }
+                        crypto_wipe(plain, sizeof plain);
                     }
-                    auth_fails = 0;
-                    if (plen > 0) {
-                        plain[plen] = '\0';
-                        sanitize_peer_text(plain, plen);
-                        tui_msg_add(TUI_PEER, (char *)plain);
-                        tui_draw_messages();
-                        tui_draw_input(line, line_len);
-                    }
-                    crypto_wipe(plain, sizeof plain);
                 }
             }
         }
-tui_after_recv:
 
-        /* ----- Outbound send completion ----- */
+        /* ----- Outbound send completion (non-blocking drain) ----- */
         if (io.out_active && (fds[0].revents & POLLOUT)) {
-            int s = nb_try_send(fd, io.out_wire + io.out_off,
-                                io.out_len - io.out_off);
-            if (s < 0) {
+            int dr = nb_io_drain(&io, fd);
+            if (dr == NB_SEND_ERROR) {
                 tui_msg_add(TUI_SYSTEM, "[send error]");
                 tui_draw_screen(status, line, line_len);
                 break;
             }
-            if (s > 0) io.out_off += (size_t)s;
-            if (io.out_off == io.out_len) {
-                memcpy(sess->tx, io.out_next_tx, KEY);
-                sess->tx_seq++;
-                io.out_active = 0;
+            if (dr == NB_SEND_COMPLETE) {
                 if (pending_len > 0) {
                     crypto_wipe(pending_msg, sizeof pending_msg);
                     pending_len = 0;
@@ -258,9 +243,7 @@ tui_after_recv:
                     tui_draw_messages();
                     tui_draw_input(line, line_len);
                 }
-                crypto_wipe(io.out_wire, sizeof io.out_wire);
-                crypto_wipe(io.out_next_tx, sizeof io.out_next_tx);
-                crypto_wipe(io.out_text, sizeof io.out_text);
+                nb_io_complete_send(&io, sess);
                 if (cover)
                     next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
             }
@@ -301,36 +284,17 @@ tui_after_recv:
 
                     if (io.out_active) continue; /* send in progress */
 
-                    {
-                        uint8_t out_frame[FRAME_SZ];
-                        if (frame_build(sess, (const uint8_t *)line, (uint16_t)line_len,
-                                        out_frame, io.out_next_tx) != 0) {
-                            crypto_wipe(out_frame, sizeof out_frame);
-                            crypto_wipe(line, sizeof line);
-                            break;
-                        }
-                        io.out_len = frame_wire_build(io.out_wire, out_frame);
-                        crypto_wipe(out_frame, sizeof out_frame);
+                    if (nb_io_start_send(&io, sess, fd,
+                                         (const uint8_t *)line, (uint16_t)line_len,
+                                         line) < 0) {
+                        crypto_wipe(line, sizeof line);
+                        break;
                     }
-                    memcpy(io.out_text, line, line_len);
-                    io.out_text[line_len] = '\0';
                     crypto_wipe(line, sizeof line);
-                    line_len        = 0;
-                    io.out_off      = 0;
-                    io.out_active   = 1;
-                    io.out_start_ms = monotonic_ms();
-
-                    int s = nb_try_send(fd, io.out_wire, io.out_len);
-                    if (s < 0) break;
-                    if (s > 0) io.out_off += (size_t)s;
-                    if (io.out_off == io.out_len) {
-                        memcpy(sess->tx, io.out_next_tx, KEY);
-                        sess->tx_seq++;
-                        io.out_active = 0;
+                    line_len = 0;
+                    if (io.out_off >= io.out_len) {
                         tui_msg_add(TUI_ME, io.out_text);
-                        crypto_wipe(io.out_wire, sizeof io.out_wire);
-                        crypto_wipe(io.out_next_tx, sizeof io.out_next_tx);
-                        crypto_wipe(io.out_text, sizeof io.out_text);
+                        nb_io_complete_send(&io, sess);
                     }
                     tui_draw_messages();
                     continue;
@@ -348,37 +312,17 @@ tui_after_recv:
         if (cover && g_running && !io.out_active && monotonic_ms() >= next_cover) {
             const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
             uint16_t       tx_len  = pending_len;
-            uint8_t        out_frame[FRAME_SZ];
-            if (frame_build(sess, payload, tx_len, out_frame, io.out_next_tx) != 0) {
-                crypto_wipe(out_frame, sizeof out_frame);
+            if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
                 tui_msg_add(TUI_SYSTEM, "cover traffic error -- session ended");
                 tui_draw_screen(status, line, line_len);
                 break;
             }
-            io.out_len = frame_wire_build(io.out_wire, out_frame);
-            crypto_wipe(out_frame, sizeof out_frame);
-            io.out_off      = 0;
-            io.out_active   = 1;
-            io.out_start_ms = monotonic_ms();
-            io.out_text[0]  = '\0';
-
-            int s = nb_try_send(fd, io.out_wire, io.out_len);
-            if (s < 0) {
-                tui_msg_add(TUI_SYSTEM, "cover traffic error -- session ended");
-                tui_draw_screen(status, line, line_len);
-                break;
-            }
-            if (s > 0) io.out_off += (size_t)s;
-            if (io.out_off == io.out_len) {
-                memcpy(sess->tx, io.out_next_tx, KEY);
-                sess->tx_seq++;
-                io.out_active = 0;
+            if (io.out_off >= io.out_len) {
                 if (pending_len > 0) {
                     crypto_wipe(pending_msg, sizeof pending_msg);
                     pending_len = 0;
                 }
-                crypto_wipe(io.out_wire, sizeof io.out_wire);
-                crypto_wipe(io.out_next_tx, sizeof io.out_next_tx);
+                nb_io_complete_send(&io, sess);
                 next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
             }
         }
