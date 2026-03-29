@@ -36,7 +36,7 @@ jobs:
           gcc -std=c2x -DCIPHER_HARDEN -pthread -Isrc -Ilib -O2 \
             -o build/native/test_p2p_harden \
             tests/test_p2p.c src/platform.c src/crypto.c src/protocol.c \
-            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/ratchet.c src/network.c src/nb_io.c src/tui.c src/tui_posix.c \
             src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
           build/native/test_p2p_harden 2>&1 | tee /tmp/test_harden.log
           RESULT=$(grep 'Total:' /tmp/test_harden.log || echo 'Total: unknown')
@@ -48,7 +48,7 @@ jobs:
           gcc -std=c2x -DCIPHER_HARDEN -DNDEBUG -pthread -Isrc -Ilib -O2 \
             -o build/native/test_socks5_proxy \
             tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
-            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/ratchet.c src/network.c src/nb_io.c src/tui.c src/tui_posix.c \
             src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
           build/native/test_socks5_proxy 2>&1 | tee /tmp/test_socks5.log
           RESULT=$(grep 'Total:' /tmp/test_socks5.log || echo 'Total: unknown')

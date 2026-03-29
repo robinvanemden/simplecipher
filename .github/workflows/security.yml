@@ -119,7 +119,7 @@ jobs:
         run: |
           clang-tidy-19 -p build/analysis \
             src/main.c src/platform.c src/crypto.c src/protocol.c \
-            src/network.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c \
+            src/network.c src/nb_io.c src/tui.c src/tui_posix.c src/cli.c src/cli_posix.c \
             src/args.c src/verify.c
 
       - name: Check C code formatting (clang-format)

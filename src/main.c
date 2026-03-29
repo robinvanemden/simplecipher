@@ -79,7 +79,7 @@ static void sanitize_for_display(char *dst, const char *src, size_t dst_sz) {
     if (dst_sz == 0) return;
     size_t i;
     for (i = 0; i < dst_sz - 1 && src[i] != '\0'; i++)
-        dst[i] = (src[i] >= 0x20 && src[i] <= 0x7E) ? src[i] : '.';
+        dst[i] = (char)((src[i] >= 0x20 && src[i] <= 0x7E) ? src[i] : '.');
     dst[i] = '\0';
 }
 

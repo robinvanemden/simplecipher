@@ -7454,13 +7454,16 @@ static void test_nb_io_start_send_cover(void) {
     TEST("cover: out_len in valid range",
          io.out_len >= WIRE_HDR + FRAME_SZ && io.out_len <= WIRE_MAX);
 
-    /* Read the wire data from the other end */
+    /* Read the wire data from the other end.
+     * Buffer is WIRE_MAX+1 to avoid FORTIFY_SOURCE false positive
+     * when the compiler cannot prove recv_total > 0 at this point. */
     usleep(1000);
-    uint8_t recv_buf[WIRE_MAX];
+    uint8_t recv_buf[WIRE_MAX + 1];
     size_t recv_total = 0;
     for (int iter = 0; iter < 100; iter++) {
-        ssize_t rn = read(sv[0], recv_buf + recv_total,
-                          sizeof recv_buf - recv_total);
+        size_t remain = io.out_len - recv_total;
+        if (remain > sizeof recv_buf - recv_total) remain = sizeof recv_buf - recv_total;
+        ssize_t rn = read(sv[0], recv_buf + recv_total, remain);
         if (rn > 0) recv_total += (size_t)rn;
         if (recv_total >= io.out_len) break;
         usleep(1000);

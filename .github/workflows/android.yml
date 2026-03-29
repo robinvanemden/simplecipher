@@ -52,14 +52,14 @@ jobs:
           $CC -std=c23 -Os -Isrc -Ilib -DNDEBUG -DCIPHER_HARDEN -static \
             -o tests/test_socks5_proxy_android \
             tests/test_socks5_proxy.c src/platform.c src/crypto.c src/protocol.c \
-            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/ratchet.c src/network.c src/nb_io.c src/tui.c src/tui_posix.c \
             src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
           $CC -Os -static -o tests/mini_socks5_daemon_android \
             tests/mini_socks5_daemon.c
           $CC -std=c23 -Os -Isrc -Ilib -DNDEBUG -DCIPHER_HARDEN -static \
             -o tests/simplecipher_android \
             src/main.c src/platform.c src/crypto.c src/protocol.c \
-            src/ratchet.c src/network.c src/tui.c src/tui_posix.c \
+            src/ratchet.c src/network.c src/nb_io.c src/tui.c src/tui_posix.c \
             src/cli.c src/cli_posix.c src/args.c src/verify.c lib/monocypher.c -lm
 
       - name: Upload build artifacts
