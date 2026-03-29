@@ -310,8 +310,7 @@ static int install_seccomp_phase1(void) {
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_poll, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 #            endif
-        /* SYS_select intentionally excluded: POSIX path uses poll/ppoll only */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll, 0, 1),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ppoll, 0, 1), /* SYS_select excluded: POSIX uses poll */
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
         /* ioctl: allow all EXCEPT TIOCSTI (0x5412), which injects bytes
@@ -330,7 +329,7 @@ static int install_seccomp_phase1(void) {
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clock_gettime, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* SYS_nanosleep intentionally excluded: not called after sandbox */
+        /* SYS_nanosleep excluded: not called after sandbox */
 #            ifdef SYS_gettimeofday
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_gettimeofday, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),

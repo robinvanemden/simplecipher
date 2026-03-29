@@ -301,7 +301,7 @@ public class MainActivity extends Activity {
     if (hostInput != null) hostInput.setText("");
     if (portInput != null) portInput.setText("");
     if (socks5Input != null) socks5Input.setText("");
-    if (qrCodeImage != null) qrCodeImage.setImageBitmap(null);
+    if (fpQrImage != null) fpQrImage.setImageBitmap(null);
   }
 
   @Override
