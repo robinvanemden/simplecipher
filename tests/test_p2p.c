@@ -7428,6 +7428,341 @@ static void test_cooked_multiline_parse(void) {
     }
 }
 
+/* ---- test: nb_io disconnect detection ----------------------------------- */
+
+static void test_nb_io_disconnect(void) {
+    printf("\n=== nb_io disconnect detection ===\n");
+
+    int sv[2];
+    int sp_rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    TEST("disconnect: socketpair created", sp_rc == 0);
+    int flags = fcntl(sv[0], F_GETFL, 0);
+    fcntl(sv[0], F_SETFL, flags | O_NONBLOCK);
+
+    nb_io_t io;
+    nb_io_init(&io);
+
+    /* Close the write end — next accumulate should detect disconnect */
+    close(sv[1]);
+    usleep(1000);
+
+    int acc = nb_io_accumulate(&io, sv[0]);
+    TEST("disconnect: accumulate returns NB_RECV_DISCONNECT", acc == NB_RECV_DISCONNECT);
+
+    nb_io_wipe(&io);
+    close(sv[0]);
+}
+
+/* ---- test: nb_io_start_send error cleanup ------------------------------- */
+
+static void test_nb_io_start_send_error_cleanup(void) {
+    printf("\n=== nb_io_start_send error cleanup ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    int sv[2];
+    int sp_rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    TEST("send_err: socketpair created", sp_rc == 0);
+
+    /* Close both ends, then try to send on the invalid fd.
+     * send() on a closed fd returns -1 with EBADF. */
+    close(sv[0]);
+    close(sv[1]);
+
+    nb_io_t io;
+    nb_io_init(&io);
+
+    const char *msg = "should fail";
+    int ss_rc = nb_io_start_send(&io, &alice, sv[0],
+                                 (const uint8_t *)msg, (uint16_t)strlen(msg), msg);
+    TEST("send_err: start_send returns -1", ss_rc == -1);
+    TEST("send_err: out_active cleared to 0", io.out_active == 0);
+
+    /* Verify buffers are wiped */
+    uint8_t zero_key[KEY];
+    memset(zero_key, 0, KEY);
+    TEST("send_err: out_next_tx is zeroed",
+         memcmp(io.out_next_tx, zero_key, KEY) == 0);
+    TEST("send_err: out_text is zeroed", io.out_text[0] == '\0');
+
+    uint8_t zero_wire[WIRE_MAX];
+    memset(zero_wire, 0, WIRE_MAX);
+    TEST("send_err: out_wire is zeroed",
+         memcmp(io.out_wire, zero_wire, WIRE_MAX) == 0);
+
+    nb_io_wipe(&io);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test: nb_io multi-frame accumulation ------------------------------- */
+
+static void test_nb_io_multi_frame(void) {
+    printf("\n=== nb_io multi-frame accumulation ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    const char *msgs[3] = {"first message", "second payload here", "third and final"};
+
+    /* Build 3 wire frames from alice */
+    uint8_t wire_all[3][WIRE_MAX];
+    size_t wire_lens[3];
+    for (int i = 0; i < 3; i++) {
+        uint8_t frame[FRAME_SZ], next_tx[KEY];
+        int brc = frame_build(&alice, (const uint8_t *)msgs[i],
+                              (uint16_t)strlen(msgs[i]), frame, next_tx);
+        TEST("multi: frame_build succeeds", brc == 0);
+        wire_lens[i] = frame_wire_build(wire_all[i], frame);
+        /* Commit the tx chain so the next frame uses the updated key */
+        memcpy(alice.tx, next_tx, KEY);
+        alice.tx_seq++;
+        crypto_wipe(frame, sizeof frame);
+        crypto_wipe(next_tx, KEY);
+    }
+
+    /* Create socketpair, set reader non-blocking */
+    int sv[2];
+    int sp_rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    TEST("multi: socketpair created", sp_rc == 0);
+    int flags = fcntl(sv[0], F_GETFL, 0);
+    fcntl(sv[0], F_SETFL, flags | O_NONBLOCK);
+
+    /* Write all 3 wire frames into sv[1] */
+    for (int i = 0; i < 3; i++) {
+        ssize_t w = write(sv[1], wire_all[i], wire_lens[i]);
+        TEST("multi: write full wire frame", (size_t)w == wire_lens[i]);
+    }
+
+    nb_io_t io;
+    nb_io_init(&io);
+
+    /* Accumulate and verify each frame in order */
+    for (int i = 0; i < 3; i++) {
+        int got_frame = 0;
+        for (int iter = 0; iter < 200 && !got_frame; iter++) {
+            int acc = nb_io_accumulate(&io, sv[0]);
+            if (acc == NB_RECV_FRAME) got_frame = 1;
+            else usleep(500);
+        }
+        TEST("multi: got frame", got_frame);
+
+        uint8_t plain[MAX_MSG + 1];
+        uint16_t plen = 0;
+        int fo_rc = frame_open(&bob, io.in_wire + WIRE_HDR, plain, &plen);
+        TEST("multi: frame_open succeeds", fo_rc == 0);
+        plain[plen] = '\0';
+        TEST("multi: payload matches",
+             plen == (uint16_t)strlen(msgs[i]) &&
+             strcmp((char *)plain, msgs[i]) == 0);
+
+        nb_io_reset_recv(&io);
+        crypto_wipe(plain, sizeof plain);
+    }
+
+    nb_io_wipe(&io);
+    close(sv[0]);
+    close(sv[1]);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test: nb_io_drain incomplete --------------------------------------- */
+
+static void test_nb_io_drain_incomplete(void) {
+    printf("\n=== nb_io_drain incomplete ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    /* Create socketpair with tiny send buffer to force partial sends */
+    int sv[2];
+    int sp_rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    TEST("drain_inc: socketpair created", sp_rc == 0);
+    int flags1 = fcntl(sv[1], F_GETFL, 0);
+    fcntl(sv[1], F_SETFL, flags1 | O_NONBLOCK);
+    int sndbuf = 128;
+    setsockopt(sv[1], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof sndbuf);
+
+    nb_io_t io;
+    nb_io_init(&io);
+
+    const char *msg = "drain incomplete test message payload";
+    int ss_rc = nb_io_start_send(&io, &alice, sv[1],
+                                 (const uint8_t *)msg, (uint16_t)strlen(msg), msg);
+    TEST("drain_inc: start_send succeeds", ss_rc == 0);
+
+    /* Track whether we saw at least one INCOMPLETE before COMPLETE */
+    int incomplete_count = 0;
+    int complete = 0;
+    for (int iter = 0; iter < 2000 && !complete; iter++) {
+        /* Read from sv[0] to relieve backpressure */
+        uint8_t tmp[64];
+        ssize_t rn = read(sv[0], tmp, sizeof tmp);
+        (void)rn;
+
+        if (io.out_off >= io.out_len) {
+            complete = 1;
+            break;
+        }
+        int dr = nb_io_drain(&io, sv[1]);
+        if (dr == NB_SEND_COMPLETE) {
+            complete = 1;
+        } else if (dr == NB_SEND_INCOMPLETE) {
+            incomplete_count++;
+        }
+        usleep(200);
+    }
+    TEST("drain_inc: send eventually completes", complete);
+    /* With a 128-byte buffer and ~513+ byte wire frame, we should see partials.
+     * If the kernel doubled the buffer, we might not — so this is informational. */
+    printf("  INFO: saw %d INCOMPLETE results before completion\n", incomplete_count);
+
+    nb_io_complete_send(&io, &alice);
+    nb_io_wipe(&io);
+    close(sv[0]);
+    close(sv[1]);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
+/* ---- test: nb_io_wipe zeroes -------------------------------------------- */
+
+static void test_nb_io_wipe_zeroes(void) {
+    printf("\n=== nb_io_wipe zeroes ===\n");
+
+    nb_io_t io;
+    /* Fill the entire struct with non-zero data */
+    memset(&io, 0xAA, sizeof io);
+
+    nb_io_wipe(&io);
+
+    /* Verify the entire struct is zeroed */
+    uint8_t zero_buf[sizeof(nb_io_t)];
+    memset(zero_buf, 0, sizeof zero_buf);
+    TEST("wipe_zeroes: entire struct is zeroed after nb_io_wipe",
+         memcmp(&io, zero_buf, sizeof(nb_io_t)) == 0);
+}
+
+/* ---- test: nb_io cover then real interleave ----------------------------- */
+
+static void test_nb_io_cover_then_real(void) {
+    printf("\n=== nb_io cover then real interleave ===\n");
+
+    session_t alice, bob;
+    uint8_t alice_priv[KEY], bob_priv[KEY];
+    make_session_pair(&alice, &bob, alice_priv, bob_priv);
+
+    int sv[2];
+    int sp_rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    TEST("ctr: socketpair created", sp_rc == 0);
+    int flags0 = fcntl(sv[0], F_GETFL, 0);
+    fcntl(sv[0], F_SETFL, flags0 | O_NONBLOCK);
+    int flags1 = fcntl(sv[1], F_GETFL, 0);
+    fcntl(sv[1], F_SETFL, flags1 | O_NONBLOCK);
+
+    nb_io_t io_send, io_recv;
+    nb_io_init(&io_send);
+    nb_io_init(&io_recv);
+
+    /* --- Step 1: Send a cover frame (NULL payload) --- */
+    int rc = nb_io_start_send(&io_send, &alice, sv[1], NULL, 0, NULL);
+    TEST("ctr: cover1 start_send succeeds", rc == 0);
+    /* Drain until complete */
+    for (int i = 0; i < 500 && io_send.out_off < io_send.out_len; i++) {
+        nb_io_drain(&io_send, sv[1]);
+        usleep(200);
+    }
+    nb_io_complete_send(&io_send, &alice);
+
+    /* Receive and verify cover frame */
+    usleep(1000);
+    int got = 0;
+    for (int i = 0; i < 200 && !got; i++) {
+        int acc = nb_io_accumulate(&io_recv, sv[0]);
+        if (acc == NB_RECV_FRAME) got = 1;
+        else usleep(500);
+    }
+    TEST("ctr: cover1 received", got);
+    uint8_t plain[MAX_MSG + 1];
+    uint16_t plen = 0;
+    int fo = frame_open(&bob, io_recv.in_wire + WIRE_HDR, plain, &plen);
+    TEST("ctr: cover1 frame_open succeeds", fo == 0);
+    TEST("ctr: cover1 plen == 0", plen == 0);
+    nb_io_reset_recv(&io_recv);
+
+    /* --- Step 2: Send a real message --- */
+    const char *msg = "real message after cover";
+    rc = nb_io_start_send(&io_send, &alice, sv[1],
+                          (const uint8_t *)msg, (uint16_t)strlen(msg), msg);
+    TEST("ctr: real start_send succeeds", rc == 0);
+    for (int i = 0; i < 500 && io_send.out_off < io_send.out_len; i++) {
+        nb_io_drain(&io_send, sv[1]);
+        usleep(200);
+    }
+    nb_io_complete_send(&io_send, &alice);
+
+    /* Receive and verify real message */
+    usleep(1000);
+    got = 0;
+    for (int i = 0; i < 200 && !got; i++) {
+        int acc = nb_io_accumulate(&io_recv, sv[0]);
+        if (acc == NB_RECV_FRAME) got = 1;
+        else usleep(500);
+    }
+    TEST("ctr: real message received", got);
+    plen = 0;
+    fo = frame_open(&bob, io_recv.in_wire + WIRE_HDR, plain, &plen);
+    TEST("ctr: real frame_open succeeds", fo == 0);
+    plain[plen] = '\0';
+    TEST("ctr: real payload matches",
+         plen == (uint16_t)strlen(msg) && strcmp((char *)plain, msg) == 0);
+    nb_io_reset_recv(&io_recv);
+
+    /* --- Step 3: Send another cover frame --- */
+    rc = nb_io_start_send(&io_send, &alice, sv[1], NULL, 0, NULL);
+    TEST("ctr: cover2 start_send succeeds", rc == 0);
+    for (int i = 0; i < 500 && io_send.out_off < io_send.out_len; i++) {
+        nb_io_drain(&io_send, sv[1]);
+        usleep(200);
+    }
+    nb_io_complete_send(&io_send, &alice);
+
+    /* Receive and verify second cover frame */
+    usleep(1000);
+    got = 0;
+    for (int i = 0; i < 200 && !got; i++) {
+        int acc = nb_io_accumulate(&io_recv, sv[0]);
+        if (acc == NB_RECV_FRAME) got = 1;
+        else usleep(500);
+    }
+    TEST("ctr: cover2 received", got);
+    plen = 0;
+    fo = frame_open(&bob, io_recv.in_wire + WIRE_HDR, plain, &plen);
+    TEST("ctr: cover2 frame_open succeeds", fo == 0);
+    TEST("ctr: cover2 plen == 0", plen == 0);
+
+    nb_io_wipe(&io_send);
+    nb_io_wipe(&io_recv);
+    close(sv[0]);
+    close(sv[1]);
+    crypto_wipe(plain, sizeof plain);
+    session_wipe(&alice);
+    session_wipe(&bob);
+    crypto_wipe(alice_priv, KEY);
+    crypto_wipe(bob_priv, KEY);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(void) {
@@ -7556,6 +7891,12 @@ int main(void) {
     test_nb_io_drain_and_complete();
     test_nb_io_deadline_checks();
     test_nb_io_start_send_cover();
+    test_nb_io_disconnect();
+    test_nb_io_start_send_error_cleanup();
+    test_nb_io_multi_frame();
+    test_nb_io_drain_incomplete();
+    test_nb_io_wipe_zeroes();
+    test_nb_io_cover_then_real();
     test_cooked_multiline_parse();
 #if defined(__x86_64__) || defined(__i386__)
     test_dudect_ct_compare();
