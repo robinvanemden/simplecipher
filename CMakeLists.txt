@@ -100,6 +100,7 @@ set(CORE_SRC
     src/protocol.c
     src/ratchet.c
     src/network.c
+    src/nb_io.c
     src/tui.c
     src/cli.c
     src/args.c

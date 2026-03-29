@@ -35,7 +35,7 @@ LIBS    ?= -lm
 
 # Core sources (platform-independent + small inline #ifdefs)
 CORE_SRC = src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c \
-           src/tui.c src/cli.c src/args.c src/verify.c lib/monocypher.c
+           src/nb_io.c src/tui.c src/cli.c src/args.c src/verify.c lib/monocypher.c
 
 # Platform-specific event loops, hardening, and linker flags
 UNAME := $(shell uname -s)
