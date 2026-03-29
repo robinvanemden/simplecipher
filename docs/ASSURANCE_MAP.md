@@ -52,9 +52,9 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 
 | Claim | Code | Test |
 |-------|------|------|
-| Static binary, zero deps | `CMakeLists.txt` static linking flags | `ci.yml:test-linux` (runs on bare runner) |
+| Static binary, zero deps | `CMakeLists.txt` static linking flags | `platform.yml:test-linux` (runs on bare runner) |
 | ASLR + DEP (Windows) | `CMakeLists.txt:81` `--dynamicbase --nxcompat --high-entropy-va` | `test_windows.ps1:87` (PE header check) |
-| Full RELRO (Linux) | `CMakeLists.txt` `-Wl,-z,relro,-z,now` | `ci.yml:test-linux` (readelf check) |
+| Full RELRO (Linux) | `CMakeLists.txt` `-Wl,-z,relro,-z,now` | `platform.yml:test-linux` (readelf check) |
 | Stack canary | `-fstack-protector-strong` | `test_android.sh` (readelf `__stack_chk_fail`) |
 | FORTIFY_SOURCE | `-D_FORTIFY_SOURCE=3` | `test_android.sh` (`_chk` functions in .so) |
 | Seccomp sandbox phase 1 (Linux) | `platform.c:sandbox_phase1()` — after TCP connection, before handshake. Blocks socket/connect/bind/listen/accept. | `test_p2p.c:test_harden_codepath` — forks child, enters sandbox, verifies `socket()` triggers SIGSYS kill. Source-level check (`test_linux.sh`). |

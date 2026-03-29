@@ -286,6 +286,13 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
     uint16_t max = (flags & FLAG_RATCHET) ? MAX_MSG_RATCHET : MAX_MSG;
     if (len > max) goto cleanup;
 
+    /* Reject before mutating any session state — a sequence counter at
+     * UINT64_MAX means we cannot safely increment without wrapping. */
+    if (s->rx_seq == UINT64_MAX) {
+        rc = -1;
+        goto cleanup;
+    }
+
     /* All validation passed — now safe to commit state changes.
      *
      * If a ratchet key was present, ratchet_receive derives a fresh rx
@@ -299,10 +306,6 @@ void session_wipe(session_t *s) { crypto_wipe(s, sizeof *s); }
         }
     } else {
         memcpy(s->rx, next_rx, KEY);
-    }
-    if (s->rx_seq == UINT64_MAX) {
-        rc = -1;
-        goto cleanup;
     }
     s->rx_seq++;
     s->need_send_ratchet = 1;

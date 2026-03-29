@@ -33,6 +33,19 @@ static void tui_sigwinch(int sig) {
     tui_resize_flag = 1;
 }
 
+/* Emergency handler for SIGTERM / SIGSEGV / SIGABRT: restore the terminal
+ * so the user's shell is not left in raw mode with a hidden cursor.
+ * Only async-signal-safe functions (write, tcsetattr, _exit) are used. */
+static void tui_emergency_restore(int sig) {
+    (void)sig;
+    /* Best-effort terminal restore — these are all async-signal-safe. */
+    static const char reset_seq[] = "\033[?25h\033[0 q\033[0m\033[?1049l";
+    ssize_t wr = write(STDOUT_FILENO, reset_seq, sizeof reset_seq - 1);
+    (void)wr; /* best-effort; nothing useful to do on failure */
+    tcsetattr(STDIN_FILENO, TCSANOW, &tui_orig_termios);
+    _exit(128 + sig);
+}
+
 /* Restore the terminal to its original cooked mode.
  * Also re-enables the cursor and resets text colours so the user's shell
  * is not left with invisible text or dim colours after exit. */
@@ -75,6 +88,14 @@ void tui_init_term(void) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGWINCH, &sa, nullptr);
+
+    /* Restore the terminal on fatal signals so the user's shell is usable.
+     * SA_RESETHAND prevents infinite loops (e.g. SIGSEGV inside handler). */
+    sa.sa_handler = tui_emergency_restore;
+    sa.sa_flags   = (int)SA_RESETHAND;
+    sigaction(SIGTERM, &sa, nullptr);
+    sigaction(SIGSEGV, &sa, nullptr);
+    sigaction(SIGABRT, &sa, nullptr);
 
     printf("\033[?1049h"); /* enter alternate screen buffer — chat never
                            * touches the user's previous scrollback, and

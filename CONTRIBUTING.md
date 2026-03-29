@@ -34,7 +34,7 @@ These are non-negotiable. Violating any of them will block your PR.
 4. **Register new source files everywhere.** New `.c` files must be added to:
    - `Makefile`
    - `CMakeLists.txt`
-   - All manual compile commands in `.github/workflows/ci.yml` and `release.yml`
+   - All manual compile commands in `.github/workflows/build.yml` and `release.yml`
 
 5. **Android has a separate source list.** The JNI build at `android/app/src/main/c/CMakeLists.txt` maintains its own file list. Only add files there if the JNI bridge actually uses them.
 

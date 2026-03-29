@@ -378,11 +378,8 @@ int get_local_ips(char *buf, size_t buf_sz) {
             inet_ntop(AF_INET, &s4->sin_addr, ip, sizeof ip);
             int w = snprintf(buf + off, buf_sz - off, "%s%s", n ? "\n" : "", ip);
             if (w > 0) {
-                /* snprintf returns the would-have-written length even when
-                 * truncated.  Clamp off to the buffer boundary so the next
-                 * iteration does not write past the end of buf. */
                 off += (size_t)w;
-                if (off >= buf_sz) off = buf_sz - 1;
+                if (off >= buf_sz) { off = buf_sz - 1; n++; break; }
             }
             n++;
         }
@@ -401,7 +398,7 @@ int get_local_ips(char *buf, size_t buf_sz) {
         int w = snprintf(buf + off, buf_sz - off, "%s%s", n ? "\n" : "", ip);
         if (w > 0) {
             off += (size_t)w;
-            if (off >= buf_sz) off = buf_sz - 1;
+            if (off >= buf_sz) { off = buf_sz - 1; n++; break; }
         }
         n++;
     }

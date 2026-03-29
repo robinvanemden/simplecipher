@@ -314,6 +314,9 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
     }
 
     chmod(path, 0600);
+    crypto_wipe(mac, sizeof mac);
+    crypto_wipe(salt, sizeof salt);
+    crypto_wipe(nonce, sizeof nonce);
     return 0;
 #else
     /* Build temp path in the same directory for atomic rename.
@@ -388,6 +391,9 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
 
     chmod(path, 0600);
     crypto_wipe(ct, sizeof ct);
+    crypto_wipe(mac, sizeof mac);
+    crypto_wipe(salt, sizeof salt);
+    crypto_wipe(nonce, sizeof nonce);
     return 0;
 #endif
 }

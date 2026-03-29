@@ -1,6 +1,6 @@
 # SimpleCipher
 
-[![CI](https://github.com/robinvanemden/simplecipher/actions/workflows/ci.yml/badge.svg)](https://github.com/robinvanemden/simplecipher/actions/workflows/ci.yml)
+[![Tests](https://github.com/robinvanemden/simplecipher/actions/workflows/test.yml/badge.svg)](https://github.com/robinvanemden/simplecipher/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Private chat between two people. No server. No account. Nothing stored to disk.
@@ -454,7 +454,7 @@ Nothing bad happens. A fingerprint is not a password. It is more like a phone nu
 
 ## Choosing your platform
 
-SimpleCipher runs on Linux, Windows, and Android. The encryption is identical everywhere — the same C code, the same protocol. What differs is how well the operating system protects your keys while they're in memory.
+SimpleCipher runs on Linux, Windows, macOS, FreeBSD, OpenBSD, and Android. The encryption is identical everywhere — the same C code, the same protocol. What differs is how well the operating system protects your keys while they're in memory.
 
 ### Quick comparison
 
