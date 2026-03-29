@@ -194,10 +194,10 @@ jobs:
             echo '=== SOCKS5 proxy test ==='
             ./tests/test_socks5_proxy
             echo '=== Smoke test ==='
-            PORT=\$((20000 + \$RANDOM % 40000))
+            PORT=\$(jot -r 1 20000 60000)
             ./simplecipher listen \$PORT &
             PID=\$!
-            for i in \$(seq 1 50); do ss -tln 2>/dev/null | grep -q ':\$PORT ' && break; sleep 0.1; done
+            for i in \$(seq 1 50); do sockstat -l -p \$PORT 2>/dev/null | grep -q LISTEN && break; sleep 0.1; done
             kill \$PID 2>/dev/null || true
             echo 'Smoke test passed'
           "
@@ -249,10 +249,10 @@ jobs:
             echo '=== SOCKS5 proxy test ==='
             ./tests/test_socks5_proxy
             echo '=== Smoke test ==='
-            PORT=\$((20000 + \$RANDOM % 40000))
+            PORT=\$(jot -r 1 20000 60000)
             ./simplecipher listen \$PORT &
             PID=\$!
-            for i in \$(seq 1 50); do ss -tln 2>/dev/null | grep -q ':\$PORT ' && break; sleep 0.1; done
+            for i in \$(seq 1 50); do netstat -an 2>/dev/null | grep -q \"\\.\$PORT .*LISTEN\" && break; sleep 0.1; done
             kill \$PID 2>/dev/null || true
             echo 'Smoke test passed'
           "
