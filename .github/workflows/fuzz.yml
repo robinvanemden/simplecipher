@@ -6,10 +6,9 @@ on:
   workflow_dispatch:       # Allow manual trigger
 
 jobs:
-  long-fuzz:
+  build-fuzz:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -23,11 +22,50 @@ jobs:
           CC=clang-19 cmake -DFUZZ=ON ../..
           make -j$(nproc) fuzz_frame_open fuzz_sanitize fuzz_validate_port fuzz_socks5 fuzz_fingerprint fuzz_identity_load
 
+      - name: Upload fuzz binaries + corpus
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-binaries
+          path: |
+            build/fuzz/fuzz_*
+            tests/corpus/
+          retention-days: 1
+
+  fuzz-frame-open:
+    needs: build-fuzz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: fuzz-binaries
+
       - name: Fuzz frame_open (10 min)
         run: |
+          chmod +x build/fuzz/fuzz_frame_open
           mkdir -p fuzz_out/frame_open
           build/fuzz/fuzz_frame_open fuzz_out/frame_open tests/corpus/frame_open \
             -max_total_time=600 -print_final_stats=1
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: crashes-frame-open
+          path: fuzz_out/*/crash-*
+          retention-days: 30
+
+  fuzz-other:
+    needs: build-fuzz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: fuzz-binaries
+
+      - name: Fix permissions
+        run: chmod +x build/fuzz/fuzz_*
 
       - name: Fuzz sanitize_peer_text (5 min)
         run: |
@@ -59,11 +97,11 @@ jobs:
           build/fuzz/fuzz_identity_load fuzz_out/identity_load \
             -max_total_time=120 -print_final_stats=1
 
-      - name: Upload crash artifacts (if any)
+      - name: Upload crashes
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: fuzz-crashes
+          name: crashes-other
           path: |
             fuzz_out/*/crash-*
             fuzz_out/*/leak-*
