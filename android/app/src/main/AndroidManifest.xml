@@ -36,6 +36,6 @@
             android:resizeableActivity="false"
             android:excludeFromRecents="true"
             android:noHistory="true"
-            android:taskAffinity="com.example.simplecipher.chat" />
+            android:taskAffinity="" />
     </application>
 </manifest>
