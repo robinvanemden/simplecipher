@@ -288,7 +288,7 @@ void tui_chat_loop(socket_t fd, session_t *sess, int cover) {
                             in_have           = 0;
                             in_need           = WIRE_HDR;
                             in_frame_start_ms = 0;
-                            continue;
+                            break; /* one frame per event — yield to UI/cover */
                         }
                         continue;
                     }
