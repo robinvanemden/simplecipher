@@ -236,7 +236,7 @@ Adv<sup>FS</sup><sub>A</sub> &le; (n - i) &middot; Adv<sup>PRF</sup><sub>B</sub>
 
 which is negl(&lambda;) for polynomial n.
 
-**Key erasure.** The implementation overwrites `s->tx` (or `s->rx`) with the `next_chain` value after a successful send (or receive). The old chain key exists only in stack variables that are explicitly wiped via `crypto_wipe`. Message keys `mk` are similarly wiped after each `crypto_aead_lock` / `crypto_aead_unlock` call.
+**Key erasure.** The implementation overwrites `s->tx` (or `s->rx`) with the `next_chain` value after a successful send (or receive). On the send side, `frame_build` computes the next chain key into a staging buffer (`nb_io_t::out_next_tx`), and the old `s->tx` survives until `nb_io_complete_send` commits the new value after the TCP send fully drains. During a multi-iteration non-blocking send, the old chain key persists in `s->tx` for the drain duration (bounded by `FRAME_TIMEOUT_S` = 30 seconds). On the receive side, `s->rx` is overwritten immediately in `frame_open`. Message keys `mk` are wiped after each `crypto_aead_lock` / `crypto_aead_unlock` call. The `frame_build` stack copy of the old chain (`encrypt_chain`) is always wiped before `frame_build` returns.
 
 ### 5.2 DH ratchet (post-compromise security)
 
@@ -386,6 +386,8 @@ Inter-frame intervals are drawn from a **clamped exponential distribution** (mea
 - Rapid-fire messages (faster than the tick rate) queue and serialize, introducing observable delivery delay if message rate exceeds ~2 msg/sec average
 - The exponential distribution approximates natural traffic but is not a perfect model of any specific application's traffic pattern; a sufficiently sophisticated classifier may still identify the stream
 - **Protocol fingerprinting is not defeated.** The fixed 512-byte inner frame (`FRAME_SZ`) and cleartext `pad_len` byte (uniform random 0-255) create a recognizable wire signature: total sizes between 513-768 bytes with a fixed inner structure. A DPI system that looks beyond timing — at frame sizes, pad_len distribution, or the constant inner frame offset — can identify SimpleCipher traffic regardless of cover traffic timing
+
+- **TCP backpressure extends inter-frame intervals.** When a non-blocking send does not complete immediately (kernel send buffer full), the next cover tick is deferred until the drain completes. The observable inter-frame gap on the wire is then `[exponential sample] + [TCP drain time]`, which can exceed the clamped maximum of 1500 ms. This reveals network congestion state but not message content — both real and cover frames experience the same TCP conditions
 
 Cover traffic provides strong timing-analysis resistance for interactive chat but does not eliminate all metadata leakage. It mitigates *when* you type, not *that* you are using SimpleCipher.
 

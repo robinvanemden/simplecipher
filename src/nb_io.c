@@ -30,6 +30,7 @@ void nb_io_wipe(nb_io_t *io) {
 /* ---- Low-level non-blocking socket I/O --------------------------------- */
 
 int nb_try_recv(socket_t fd, void *buf, size_t n) {
+    if (n == 0) return 0; /* nothing to read — treat as EAGAIN */
     ssize_t r;
     do { r = recv(fd, buf, n, 0); } while (r < 0 && errno == EINTR && g_running);
     if (r > 0) return (int)r;
@@ -39,6 +40,7 @@ int nb_try_recv(socket_t fd, void *buf, size_t n) {
 }
 
 int nb_try_send(socket_t fd, const void *buf, size_t n) {
+    if (n == 0) return 0; /* nothing to send — treat as EAGAIN */
     ssize_t r;
     do {
         r = send(fd, buf, n, MSG_NOSIGNAL);
@@ -51,6 +53,10 @@ int nb_try_send(socket_t fd, const void *buf, size_t n) {
 /* ---- Inbound frame accumulation ---------------------------------------- */
 
 int nb_io_accumulate(nb_io_t *io, socket_t fd) {
+    /* Precondition: caller must nb_io_reset_recv after NB_RECV_FRAME. */
+    if (io->in_have >= io->in_need && io->in_need > WIRE_HDR)
+        return NB_RECV_FRAME; /* already complete — caller forgot reset */
+
     int r = nb_try_recv(fd, io->in_wire + io->in_have,
                         io->in_need - io->in_have);
     if (r < 0) return NB_RECV_DISCONNECT;
@@ -80,6 +86,10 @@ void nb_io_reset_recv(nb_io_t *io) {
 /* ---- Outbound frame drain ---------------------------------------------- */
 
 int nb_io_drain(nb_io_t *io, socket_t fd) {
+    /* Precondition: only call when out_active is true. */
+    if (io->out_off >= io->out_len)
+        return NB_SEND_COMPLETE; /* already done */
+
     int s = nb_try_send(fd, io->out_wire + io->out_off,
                         io->out_len - io->out_off);
     if (s < 0) return NB_SEND_ERROR;
@@ -95,6 +105,7 @@ int nb_io_start_send(nb_io_t *io, session_t *sess, socket_t fd,
     uint8_t out_frame[FRAME_SZ];
     if (frame_build(sess, payload, len, out_frame, io->out_next_tx) != 0) {
         crypto_wipe(out_frame, sizeof out_frame);
+        crypto_wipe(io->out_next_tx, sizeof io->out_next_tx);
         return -1;
     }
     io->out_len = frame_wire_build(io->out_wire, out_frame);
@@ -127,6 +138,7 @@ int nb_io_start_send(nb_io_t *io, session_t *sess, socket_t fd,
 }
 
 void nb_io_complete_send(nb_io_t *io, session_t *sess) {
+    if (!io->out_active) return; /* no-op if already completed */
     memcpy(sess->tx, io->out_next_tx, KEY);
     sess->tx_seq++;
     io->out_active = 0;

@@ -69,7 +69,9 @@ simplecipher: $(OBJ)
 %.o: %.c
 	$(CC) $(ALL_CFLAGS) -c -o $@ $<
 
-# Suppress -Wconversion for vendored Monocypher (upstream code, do not modify)
+# Vendored Monocypher: -Wno-conversion (upstream code, do not modify).
+# -fno-lto is security-critical: keeps crypto_wipe() opaque to LTO so the
+# linker cannot see through the volatile writes and eliminate wipe calls.
 lib/monocypher.o: lib/monocypher.c
 	$(CC) $(ALL_CFLAGS) -Wno-conversion -fno-lto -c -o $@ $<
 
