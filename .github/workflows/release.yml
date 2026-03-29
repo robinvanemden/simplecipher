@@ -441,6 +441,9 @@ jobs:
   test-freebsd:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    concurrency:
+      group: bare-metal-freebsd
+      cancel-in-progress: false
     steps:
       - name: Run tests on FreeBSD (bare-metal via SSH)
         env:
@@ -498,6 +501,9 @@ jobs:
   test-openbsd:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    concurrency:
+      group: bare-metal-openbsd
+      cancel-in-progress: false
     steps:
       - name: Run tests on OpenBSD 7.7 (bare-metal via SSH)
         env:
@@ -555,6 +561,9 @@ jobs:
   test-arm64:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    concurrency:
+      group: bare-metal-arm64
+      cancel-in-progress: false
     steps:
       - name: Run tests on Linux ARM64 (bare-metal via SSH)
         env:
