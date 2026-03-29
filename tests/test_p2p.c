@@ -6349,8 +6349,9 @@ static void test_identity_save_atomic(void) {
     uint8_t priv[KEY], pub[KEY];
     gen_keypair(priv, pub);
     const char *pass = "atomic test passphrase";
-    const char *path = "/tmp/test_identity_atomic.key";
-    char        tmp_path[PATH_MAX];
+    char        path[PATH_MAX];
+    snprintf(path, sizeof path, "/tmp/test_identity_atomic_%d.key", (int)getpid());
+    char tmp_path[PATH_MAX];
     snprintf(tmp_path, sizeof tmp_path, "%s.tmp", path);
 
     /* Clean up any leftover files */
