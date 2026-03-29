@@ -170,5 +170,5 @@ Skip all of this on first reading — the protocol is complete without it.
 
 - **PROTOCOL.md** — formal protocol specification with glossary
 - **HARDENING.md** — platform-specific security measures
-- **tests/test_p2p.c** — 1011 test assertions covering every code path
+- **tests/test_p2p.c** — 1018 test assertions covering every code path
 - **[Monocypher](GLOSSARY.md#monocypher) documentation** — https://monocypher.org/ (the underlying crypto library)

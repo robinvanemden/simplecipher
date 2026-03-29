@@ -44,7 +44,7 @@ These are non-negotiable. Violating any of them will block your PR.
 
 | Suite | File | Tests |
 |---|---|---|
-| Core C tests | `tests/test_p2p.c` | 1011 |
+| Core C tests | `tests/test_p2p.c` | 1018 |
 | SOCKS5 proxy | `tests/test_socks5_proxy.c` | 10 |
 | CLI flags | `tests/test_cli_flags.sh` | 16 |
 

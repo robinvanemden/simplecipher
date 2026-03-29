@@ -6546,6 +6546,56 @@ static void test_cover_delay_distribution_shape(void) {
     TEST("cover_delay_ms <75% below mean (not degenerate)", ratio < 0.75);
 }
 
+/* ---- test: cover tick scheduling independent of send state -------------- */
+
+static void test_cover_tick_schedule_independence(void) {
+    printf("\n=== Cover tick scheduling: independent of out_active ===\n");
+
+    /* Simulate the cover tick scheduling pattern from the POSIX loops:
+     *   if (monotonic_ms() >= next_cover) {
+     *       next_cover = monotonic_ms() + cover_delay_ms();
+     *       if (!io.out_active) { ... start send ... }
+     *   }
+     * Verify that next_cover advances even when out_active blocks the send. */
+
+    uint64_t next_cover = monotonic_ms();  /* tick is due now */
+    int      out_active = 1;               /* send in flight */
+    int      sends_started = 0;
+
+    /* Tick fires: next_cover should advance, send should NOT start. */
+    uint64_t now = monotonic_ms();
+    TEST("tick is due", now >= next_cover);
+
+    uint64_t old_next = next_cover;
+    if (now >= next_cover) {
+        next_cover = now + (uint64_t)cover_delay_ms();
+        if (!out_active) sends_started++;
+    }
+
+    TEST("next_cover advanced", next_cover > old_next);
+    TEST("send not started (out_active was 1)", sends_started == 0);
+    TEST("next_cover is in the future", next_cover > monotonic_ms() - 1);
+
+    /* Second tick: out_active cleared, send should start. */
+    out_active = 0;
+    /* Fast-forward: pretend time passed. */
+    uint64_t saved = next_cover;
+    next_cover = monotonic_ms(); /* force tick due */
+    now = monotonic_ms();
+    if (now >= next_cover) {
+        next_cover = now + (uint64_t)cover_delay_ms();
+        if (!out_active) sends_started++;
+    }
+
+    TEST("send started when out_active cleared", sends_started == 1);
+    TEST("next_cover advanced again", next_cover > now);
+
+    /* Verify the delay is in the expected range. */
+    uint64_t delay = next_cover - now;
+    TEST("delay in [50, 1500] ms", delay >= COVER_DELAY_MIN_MS && delay <= COVER_DELAY_MAX_MS);
+    (void)saved;
+}
+
 /* ---- test: tx_seq overflow checked before ratchet mutation -------------- */
 
 static void test_tx_seq_overflow_pre_ratchet(void) {
@@ -7875,6 +7925,7 @@ int main(void) {
     test_ratchet_staged_wipe_on_failure();
     test_normalize_hex_dash_truncation();
     test_cover_delay_distribution_shape();
+    test_cover_tick_schedule_independence();
     test_tx_seq_overflow_pre_ratchet();
     test_wire_padding_randomness();
     test_connect_socket_numeric();

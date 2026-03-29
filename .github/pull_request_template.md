@@ -4,7 +4,7 @@
 
 ## Checklist
 
-- [ ] `make test-all` passes (all 1037+ tests)
+- [ ] `make test-all` passes (all 1044+ tests)
 - [ ] Android builds: `cd android && ./gradlew assembleDebug`
 - [ ] No new permissions added (or justified in PR description)
 - [ ] No new dependencies added (or justified in PR description)
