@@ -168,8 +168,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
         }
 
         /* ----- Stale partial frame check ----- */
-        if (io.in_have > 0 &&
-            (monotonic_ms() - io.in_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
+        if (nb_io_recv_deadline_expired(&io)) {
             cli_clear_input_line(line_len);
             {
                 const char *msg = "[peer stalled mid-frame: disconnecting]\n";
@@ -178,8 +177,7 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
             }
             break;
         }
-        if (io.out_active &&
-            (monotonic_ms() - io.out_start_ms) > (uint64_t)FRAME_TIMEOUT_S * 1000) {
+        if (nb_io_send_deadline_expired(&io)) {
             cli_clear_input_line(line_len);
             {
                 const char *msg = "[send timeout]\n";
@@ -189,15 +187,10 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
             break;
         }
 
-        /* ----- Incoming bytes from peer (non-blocking accumulation) -----
-         *
-         * Read available bytes into in_wire.  When a full padded frame
-         * is assembled, decrypt and display it.  This never blocks —
-         * Ctrl+C stays responsive even if the peer dribbles bytes. */
+        /* ----- Incoming bytes from peer (non-blocking accumulation) ----- */
         if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
-            int r = nb_try_recv(fd, io.in_wire + io.in_have,
-                                io.in_need - io.in_have);
-            if (r < 0) {
+            int acc = nb_io_accumulate(&io, fd);
+            if (acc == NB_RECV_DISCONNECT) {
                 cli_clear_input_line(line_len);
                 {
                     const char *msg = "\n  [peer disconnected]\n";
@@ -206,31 +199,16 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                 }
                 break;
             }
-            if (r > 0) {
-                if (io.in_have == 0) io.in_start_ms = monotonic_ms();
-                io.in_have += (size_t)r;
-
-                /* Phase 1 complete: pad_len byte received. */
-                if (io.in_have >= io.in_need && io.in_need == WIRE_HDR) {
-                    io.in_need = WIRE_HDR + FRAME_SZ + (size_t)io.in_wire[0];
-                }
-
-                /* Phase 2 complete: full padded frame assembled. */
-                if (io.in_have >= io.in_need && io.in_need > WIRE_HDR) {
-                    /* Rate-limit before expensive AEAD + X25519 work. */
-                    uint64_t now_rl = monotonic_ms();
-                    if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
-                    else if (++rx_count > 50) {
-                        /* Drop silently — peer is flooding. */
-                        crypto_wipe(io.in_wire, sizeof io.in_wire);
-                        io.in_have = 0; io.in_need = WIRE_HDR; io.in_start_ms = 0;
-                        goto after_recv;
-                    }
-
+            if (acc == NB_RECV_FRAME) {
+                /* Rate-limit before expensive AEAD + X25519 work. */
+                uint64_t now_rl = monotonic_ms();
+                if (now_rl - rx_window >= 1000) { rx_count = 1; rx_window = now_rl; }
+                else if (++rx_count > 50) {
+                    nb_io_reset_recv(&io);    /* drop silently — peer is flooding */
+                } else {
                     plen = 0;
                     int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);
-                    crypto_wipe(io.in_wire, sizeof io.in_wire);
-                    io.in_have = 0; io.in_need = WIRE_HDR; io.in_start_ms = 0;
+                    nb_io_reset_recv(&io);
 
                     if (fo_rc != 0) {
                         crypto_wipe(plain, sizeof plain);
@@ -243,27 +221,25 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
                             }
                             break;
                         }
-                        goto after_recv;
+                    } else {
+                        auth_fails = 0;
+                        if (plen > 0) {
+                            plain[plen] = '\0';
+                            sanitize_peer_text(plain, plen);
+                            cli_clear_input_line(line_len);
+                            secure_chat_print("peer", (char *)plain);
+                            cli_redraw_input(line, line_len);
+                        }
+                        crypto_wipe(plain, sizeof plain);
                     }
-                    auth_fails = 0;
-                    if (plen > 0) {
-                        plain[plen] = '\0';
-                        sanitize_peer_text(plain, plen);
-                        cli_clear_input_line(line_len);
-                        secure_chat_print("peer", (char *)plain);
-                        cli_redraw_input(line, line_len);
-                    }
-                    crypto_wipe(plain, sizeof plain);
                 }
             }
         }
-after_recv:
 
         /* ----- Outbound send completion (non-blocking drain) ----- */
         if (io.out_active && (fds[0].revents & POLLOUT)) {
-            int s = nb_try_send(fd, io.out_wire + io.out_off,
-                                io.out_len - io.out_off);
-            if (s < 0) {
+            int dr = nb_io_drain(&io, fd);
+            if (dr == NB_SEND_ERROR) {
                 cli_clear_input_line(line_len);
                 {
                     const char *msg = "[send error]\n";
@@ -272,12 +248,7 @@ after_recv:
                 }
                 break;
             }
-            if (s > 0) io.out_off += (size_t)s;
-            if (io.out_off == io.out_len) {
-                /* Send complete — commit chain state. */
-                memcpy(sess->tx, io.out_next_tx, KEY);
-                sess->tx_seq++;
-                io.out_active = 0;
+            if (dr == NB_SEND_COMPLETE) {
                 if (pending_len > 0) {
                     crypto_wipe(pending_msg, sizeof pending_msg);
                     pending_len = 0;
@@ -286,9 +257,7 @@ after_recv:
                     secure_chat_print(" me", io.out_text);
                     cli_redraw_input(line, line_len);
                 }
-                crypto_wipe(io.out_wire, sizeof io.out_wire);
-                crypto_wipe(io.out_next_tx, sizeof io.out_next_tx);
-                crypto_wipe(io.out_text, sizeof io.out_text);
+                nb_io_complete_send(&io, sess);
                 if (cover)
                     next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
             }
@@ -369,41 +338,19 @@ after_recv:
                     continue;
                 }
 
-                {
-                    uint8_t out_frame[FRAME_SZ];
-                    if (frame_build(sess, (const uint8_t *)line, (uint16_t)line_len,
-                                    out_frame, io.out_next_tx) != 0) {
-                        crypto_wipe(out_frame, sizeof out_frame);
-                        break;
-                    }
-                    io.out_len = frame_wire_build(io.out_wire, out_frame);
-                    crypto_wipe(out_frame, sizeof out_frame);
-                }
-                memcpy(io.out_text, line, line_len);
-                io.out_text[line_len] = '\0';
-                crypto_wipe(line, sizeof line);
-                line_len       = 0;
-                io.out_off     = 0;
-                io.out_active  = 1;
-                io.out_start_ms = monotonic_ms();
-
-                /* Try to send immediately. */
-                int s = nb_try_send(fd, io.out_wire, io.out_len);
-                if (s < 0) {
+                if (nb_io_start_send(&io, sess, fd,
+                                     (const uint8_t *)line, (uint16_t)line_len,
+                                     line) < 0) {
                     const char *msg = "[send error]\n";
                     ssize_t     r;
                     do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
                     break;
                 }
-                if (s > 0) io.out_off += (size_t)s;
-                if (io.out_off == io.out_len) {
-                    memcpy(sess->tx, io.out_next_tx, KEY);
-                    sess->tx_seq++;
-                    io.out_active = 0;
+                crypto_wipe(line, sizeof line);
+                line_len = 0;
+                if (io.out_off >= io.out_len) {
                     secure_chat_print(" me", io.out_text);
-                    crypto_wipe(io.out_wire, sizeof io.out_wire);
-                    crypto_wipe(io.out_next_tx, sizeof io.out_next_tx);
-                    crypto_wipe(io.out_text, sizeof io.out_text);
+                    nb_io_complete_send(&io, sess);
                 }
                 cli_redraw_input(line, line_len);
                 continue;
@@ -427,35 +374,16 @@ after_recv:
         if (cover && g_running && !io.out_active && monotonic_ms() >= next_cover) {
             const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
             uint16_t       tx_len  = pending_len;
-            uint8_t        out_frame[FRAME_SZ];
-            if (frame_build(sess, payload, tx_len, out_frame, io.out_next_tx) != 0) {
-                crypto_wipe(out_frame, sizeof out_frame);
+            if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
                 secure_chat_print("system", "cover traffic error -- session ended");
                 break;
             }
-            io.out_len = frame_wire_build(io.out_wire, out_frame);
-            crypto_wipe(out_frame, sizeof out_frame);
-            io.out_off      = 0;
-            io.out_active   = 1;
-            io.out_start_ms = monotonic_ms();
-            io.out_text[0]  = '\0'; /* cover frame: no display on completion */
-
-            int s = nb_try_send(fd, io.out_wire, io.out_len);
-            if (s < 0) {
-                secure_chat_print("system", "cover traffic error -- session ended");
-                break;
-            }
-            if (s > 0) io.out_off += (size_t)s;
-            if (io.out_off == io.out_len) {
-                memcpy(sess->tx, io.out_next_tx, KEY);
-                sess->tx_seq++;
-                io.out_active = 0;
+            if (io.out_off >= io.out_len) {
                 if (pending_len > 0) {
                     crypto_wipe(pending_msg, sizeof pending_msg);
                     pending_len = 0;
                 }
-                crypto_wipe(io.out_wire, sizeof io.out_wire);
-                crypto_wipe(io.out_next_tx, sizeof io.out_next_tx);
+                nb_io_complete_send(&io, sess);
                 next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
             }
         }
