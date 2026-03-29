@@ -292,9 +292,9 @@ Every key and secret has a defined lifetime. Nothing persists beyond its purpose
 | SAS key            | expand(shared)    | after format_sas      | handshake only |
 | chain key (tx/rx)  | expand(shared)    | after next message    | one message    |
 | message key        | chain_step()      | after encrypt/decrypt | one frame      |
-| ratchet DH privkey | ratchet_step()    | after next ratchet    | one direction  |
+| ratchet DH privkey | ratchet_send() / ratchet_receive() | after next ratchet    | one direction  |
 | fingerprint hash   | domain_hash()     | after compare/format  | immediate      |
-| peer fingerprint   | nativeSetPeerFp() | after compare         | handshake only |
+| peer fingerprint   | verify_peer_fingerprint() | after compare         | handshake only |
 
 By default, nothing is stored to disk. The optional `keygen` command saves a passphrase-protected identity key file. On POSIX systems, `identity_save` writes to a temporary file and atomically renames it to the target path, preventing partial writes from corrupting an existing key file.
 
@@ -336,7 +336,8 @@ Recommended reading order:
 3. `crypto.h` — cryptographic building blocks ([KDF](GLOSSARY.md#kdf-key-derivation-function), ratchet, SAS)
 4. `ratchet.h` — DH ratchet for post-compromise security
 5. `network.h` — TCP socket I/O
-6. `tui.h` / `cli.h` — user interface event loops
-7. `platform.h` — OS abstraction (sockets, RNG, signals, sandboxing)
+6. `nb_io.h` — non-blocking I/O for the POSIX chat loop
+7. `tui.h` / `cli.h` — user interface event loops
+8. `platform.h` — OS abstraction (sockets, RNG, signals, sandboxing)
 
 Each module can be read and understood independently. Every header has a teaching-style comment block explaining what the module does, why it exists, and what to read next.

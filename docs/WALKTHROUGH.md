@@ -86,7 +86,7 @@ protocol.c → frame_build(session, plaintext, len, frame_out, next_chain)
 4. Encrypt with [XChaCha20-Poly1305](GLOSSARY.md#xchacha20-poly1305): `crypto_aead_lock(plaintext → ciphertext + MAC)`
 5. Output: exactly 512 bytes — always, regardless of message length
 
-The caller sends the frame via `frame_send()`, which wraps it in random padding on the wire (513-768 bytes total), then commits the chain advance (`tx = next_chain; tx_seq++`). If the send fails, the chain is not advanced — both sides stay in sync.
+The caller sends the frame via `frame_send()` during the handshake, or `nb_io_start_send()` (POSIX) / an inline event-driven state machine (Windows) during the chat phase. The frame is wrapped in random padding on the wire (513-768 bytes total), then the chain advance is committed (`tx = next_chain; tx_seq++`). If the send fails, the chain is not advanced — both sides stay in sync.
 
 ### Decrypting a message
 
@@ -136,12 +136,18 @@ The attacker's stolen chain key is now useless — the new chain depends on a DH
 
 ## Part 4: Network I/O (optional)
 
-**Files:** `network.h/c`
+**Files:** `network.h/c`, `nb_io.h/c`
 
-The network layer is simple:
+The network layer has two modes:
+
+**Blocking helpers (handshake only):**
 - `frame_send(fd, frame, deadline)` — send one 512-byte frame with random wire padding
 - `frame_recv(fd, frame, deadline)` — receive one padded frame, strip padding
 - `exchange(fd, initiator, out, in)` — handshake exchange (also padded)
+
+**Non-blocking I/O (chat phase):**
+- On POSIX, the chat loop uses `nb_io.h/c` — poll-based, non-blocking accumulation and drain. Frames are received byte-by-byte via `nb_try_recv()` and sent incrementally via `nb_try_send()`, with monotonic deadline checks throughout.
+- On Windows, the chat loop uses inline event-driven state machines with `WaitForMultipleObjects`.
 
 Each frame goes over the wire as `[pad_len(1)][frame(512)][random_pad(0-255)]`, so the wire size varies from 513 to 768 bytes. The `pad_len` byte is raw CSPRNG output — uniform random, indistinguishable from ciphertext. This defeats DPI rules that match on fixed byte counts. The low-level helpers (`read_exact`, `write_exact`, `read_exact_dl`, `write_exact_dl`) handle partial reads/writes and deadline enforcement — skip on first reading.
 
@@ -170,5 +176,6 @@ Skip all of this on first reading — the protocol is complete without it.
 
 - **PROTOCOL.md** — formal protocol specification with glossary
 - **HARDENING.md** — platform-specific security measures
+- **nb_io.h/c** — non-blocking I/O for the POSIX chat loop
 - **tests/test_p2p.c** — 1036 test assertions covering every code path
 - **[Monocypher](GLOSSARY.md#monocypher) documentation** — https://monocypher.org/ (the underlying crypto library)

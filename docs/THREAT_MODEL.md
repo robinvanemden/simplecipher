@@ -87,7 +87,7 @@ An authenticated peer who completes the handshake legitimately can:
 ### Verified by
 - 1062 automated tests (1036 P2P + 10 SOCKS5 + 16 CLI flag integration)
 - ASan + UBSan + MSan in CI
-- 5 libFuzzer targets (frame_open, sanitize, validate_port, socks5, fingerprint)
+- 6 libFuzzer targets (frame_open, sanitize, validate_port, socks5, fingerprint, identity_load)
 - dudect statistical timing tests (ct_compare, is_zero32)
 - CI on 6 platform/arch combinations: Linux x86_64+aarch64, Windows x86_64+aarch64, FreeBSD, OpenBSD (bare-metal)
 - Release builds fail-closed on missing bare-metal verification

@@ -135,8 +135,8 @@ Covers: crypto primitives, DH ratchet (roundtrip, rotation, PCS proof, simultane
 
 ### Fuzzing (CI smoke + weekly long runs)
 
-- libFuzzer + ASan + UBSan on: frame parsing, input sanitization, port validation, SOCKS5 request building
-- 5 fuzz targets in `tests/fuzz_*.c`
+- libFuzzer + ASan + UBSan on: frame parsing, input sanitization, port validation, SOCKS5 request building, fingerprint parsing, identity file loading
+- 6 fuzz targets in `tests/fuzz_*.c`
 
 ### Formal verification (manual)
 
