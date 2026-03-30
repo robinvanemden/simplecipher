@@ -190,7 +190,8 @@ For a complete guide to high-risk deployment with Tor (including onion services)
 |----------|-------------------|---------|
 | Key wiping | Deterministic (`crypto_wipe` on every buffer) | Deterministic in C; best-effort in Java (GC) |
 | Keyboard safety | Terminal handles input directly | Custom keyboard bypasses system [IME](GLOSSARY.md#ime-input-method-editor) |
-| Screenshot protection | Not applicable (terminal) | `FLAG_SECURE` blocks screenshots |
+| Screenshot protection | Not applicable (terminal) | `FLAG_SECURE` blocks screenshots and screen recording |
+| Accessibility exposure | Not applicable (terminal) | **Accessibility Services can read all on-screen text** (SAS, chat, fingerprint). `FLAG_SECURE` does not block accessibility. Blocking it would break screen readers for visually impaired users. On high-risk devices, review installed Accessibility Services in Android Settings. |
 | Memory locking | `mlockall` prevents swap-to-disk | Not available on Android |
 | [Seccomp](PROTOCOL.md#seccomp) sandboxing | Enabled (Linux only) | Not available on Android |
 | Binary size | ~80 KB, zero dependencies | Minimal: ~154 KB; Full: ~854 KB |
