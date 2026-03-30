@@ -10,6 +10,7 @@
  */
 
 #include "protocol.h"
+#include "network.h"
 #include "ratchet.h"
 #include <math.h> /* log() for exponential cover traffic distribution */
 
@@ -70,6 +71,85 @@ void sanitize_peer_text(uint8_t *buf, uint16_t len) {
     uint16_t i;
     for (i = 0; i < len; i++)
         if (buf[i] < 0x20 || buf[i] > 0x7E) buf[i] = '.';
+}
+
+/* ---- handshake exchange ------------------------------------------------- */
+
+/* Two-round handshake with ephemeral DH for passive-observer confidentiality.
+ *   Round 1: version || commitment || nonce || eph_pub  (97 bytes)
+ *   Round 2: AEAD_encrypt(pub_key, eph_shared_key)      (48 bytes)
+ *
+ * Returns 0 on success, -1 on I/O error, -2 on decryption failure.
+ * All ephemeral material is wiped on every path. */
+[[nodiscard]] int handshake_exchange(socket_t fd, int we_init, const uint8_t self_pub[KEY],
+                                     const uint8_t commit_self[KEY], const uint8_t self_nonce[KEY],
+                                     uint8_t peer_pub[KEY], uint8_t commit_peer[KEY], uint8_t peer_nonce[KEY],
+                                     uint8_t *peer_ver_out) {
+
+    /* Generate an ephemeral X25519 keypair for round 1.
+     * This is separate from the session keypair — used only to
+     * encrypt round 2, not for session keys. */
+    uint8_t eph_priv[KEY], eph_pub[KEY];
+    gen_keypair(eph_priv, eph_pub);
+
+    /* Round 1: send version + commitment + nonce + eph_pub. */
+    uint8_t out1[1 + KEY + KEY + KEY], in1[1 + KEY + KEY + KEY];
+    out1[0] = (uint8_t)PROTOCOL_VERSION;
+    memcpy(out1 + 1, commit_self, KEY);
+    memcpy(out1 + 1 + KEY, self_nonce, KEY);
+    memcpy(out1 + 1 + KEY + KEY, eph_pub, KEY);
+    if (exchange(fd, we_init, out1, sizeof out1, in1, sizeof in1) != 0) {
+        crypto_wipe(out1, sizeof out1);
+        crypto_wipe(in1, sizeof in1);
+        crypto_wipe(eph_priv, sizeof eph_priv);
+        crypto_wipe(eph_pub, sizeof eph_pub);
+        return -1;
+    }
+    *peer_ver_out = in1[0];
+    memcpy(commit_peer, in1 + 1, KEY);
+    memcpy(peer_nonce, in1 + 1 + KEY, KEY);
+    uint8_t peer_eph_pub[KEY];
+    memcpy(peer_eph_pub, in1 + 1 + KEY + KEY, KEY);
+    crypto_wipe(out1, sizeof out1);
+    crypto_wipe(in1, sizeof in1);
+
+    /* Derive ephemeral encryption key for round 2 confidentiality. */
+    uint8_t eph_shared[KEY], eph_key[KEY];
+    crypto_x25519(eph_shared, eph_priv, peer_eph_pub);
+    domain_hash(eph_key, "cipher eph reveal v1", eph_shared, KEY);
+    crypto_wipe(eph_priv, sizeof eph_priv);
+    crypto_wipe(eph_pub, sizeof eph_pub);
+    crypto_wipe(peer_eph_pub, sizeof peer_eph_pub);
+    crypto_wipe(eph_shared, sizeof eph_shared);
+
+    /* Round 2: encrypt our public key with the ephemeral key. */
+    uint8_t out2[KEY + MAC_SZ], in2[KEY + MAC_SZ];
+    uint8_t r2_nonce[NONCE_SZ];
+    memset(r2_nonce, 0, sizeof r2_nonce); /* zero nonce: single-use key */
+    crypto_aead_lock(out2, out2 + KEY, eph_key, r2_nonce, nullptr, 0, self_pub, KEY);
+
+    if (exchange(fd, we_init, out2, sizeof out2, in2, sizeof in2) != 0) {
+        crypto_wipe(out2, sizeof out2);
+        crypto_wipe(in2, sizeof in2);
+        crypto_wipe(eph_key, sizeof eph_key);
+        return -1;
+    }
+
+    /* Decrypt peer's public key from round 2. */
+    if (crypto_aead_unlock(peer_pub, in2 + KEY, eph_key, r2_nonce, nullptr, 0, in2, KEY) != 0) {
+        crypto_wipe(out2, sizeof out2);
+        crypto_wipe(in2, sizeof in2);
+        crypto_wipe(eph_key, sizeof eph_key);
+        crypto_wipe(peer_pub, KEY);
+        crypto_wipe(commit_peer, KEY);
+        crypto_wipe(peer_nonce, KEY);
+        return -2;
+    }
+    crypto_wipe(out2, sizeof out2);
+    crypto_wipe(in2, sizeof in2);
+    crypto_wipe(eph_key, sizeof eph_key);
+
+    return 0;
 }
 
 /* ---- protocol ----------------------------------------------------------- */

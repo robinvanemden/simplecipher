@@ -630,71 +630,20 @@ static void *session_thread(void *arg) {
 
         set_sock_timeout(fd, HANDSHAKE_TIMEOUT_S);
 
-        /* Two-round handshake with encrypted key reveal:
-         * Round 1: version + commitment + nonce + eph_pub (97 bytes)
-         * Round 2: AEAD(pub_key, eph_shared) (48 bytes)
+        /* Two-round handshake: exchange commitments and encrypted public keys.
          * Ephemeral DH protects public key from passive observers. */
         uint8_t peer_ver;
         {
-            uint8_t eph_priv[KEY], eph_pub_local[KEY];
-            gen_keypair(eph_priv, eph_pub_local);
-
-            uint8_t out1[1 + KEY + KEY + KEY], in1[1 + KEY + KEY + KEY];
-            out1[0] = (uint8_t)PROTOCOL_VERSION;
-            memcpy(out1 + 1, hs_commit_self, KEY);
-            memcpy(out1 + 1 + KEY, hs_self_nonce, KEY);
-            memcpy(out1 + 1 + KEY + KEY, eph_pub_local, KEY);
-            if (exchange(fd, we_init, out1, sizeof out1, in1, sizeof in1) != 0) {
-                LOGE("handshake error (round 1)");
-                crypto_wipe(out1, sizeof out1);
-                crypto_wipe(in1, sizeof in1);
-                crypto_wipe(eph_priv, sizeof eph_priv);
-                crypto_wipe(eph_pub_local, sizeof eph_pub_local);
-                jni_call_str(env, cb, mid_onHandshakeFailed, "Handshake failed", "hs_r1");
+            int hs_rc = handshake_exchange(fd, we_init, self_pub, hs_commit_self,
+                                           hs_self_nonce, peer_pub, hs_commit_peer,
+                                           hs_peer_nonce, &peer_ver);
+            if (hs_rc != 0) {
+                LOGE("handshake error (%s)", hs_rc == -2 ? "decrypt" : "I/O");
+                jni_call_str(env, cb, mid_onHandshakeFailed,
+                             hs_rc == -2 ? "Handshake failed (decrypt)" : "Handshake failed",
+                             hs_rc == -2 ? "hs_r2_dec" : "hs_r1");
                 goto cleanup_keys;
             }
-            peer_ver = in1[0];
-            memcpy(hs_commit_peer, in1 + 1, KEY);
-            memcpy(hs_peer_nonce, in1 + 1 + KEY, KEY);
-            uint8_t peer_eph[KEY];
-            memcpy(peer_eph, in1 + 1 + KEY + KEY, KEY);
-            crypto_wipe(out1, sizeof out1);
-            crypto_wipe(in1, sizeof in1);
-
-            /* Derive ephemeral key for round 2 encryption. */
-            uint8_t eph_shared[KEY], eph_key[KEY];
-            crypto_x25519(eph_shared, eph_priv, peer_eph);
-            domain_hash(eph_key, "cipher eph reveal v1", eph_shared, KEY);
-            crypto_wipe(eph_priv, sizeof eph_priv);
-            crypto_wipe(eph_pub_local, sizeof eph_pub_local);
-            crypto_wipe(peer_eph, sizeof peer_eph);
-            crypto_wipe(eph_shared, sizeof eph_shared);
-
-            /* Round 2: encrypt our public key. */
-            uint8_t out2[KEY + MAC_SZ], in2[KEY + MAC_SZ];
-            uint8_t r2_nonce[NONCE_SZ];
-            memset(r2_nonce, 0, sizeof r2_nonce);
-            crypto_aead_lock(out2, out2 + KEY, eph_key, r2_nonce, nullptr, 0, self_pub, KEY);
-            if (exchange(fd, we_init, out2, sizeof out2, in2, sizeof in2) != 0) {
-                LOGE("handshake error (round 2)");
-                crypto_wipe(out2, sizeof out2);
-                crypto_wipe(in2, sizeof in2);
-                crypto_wipe(eph_key, sizeof eph_key);
-                jni_call_str(env, cb, mid_onHandshakeFailed, "Handshake failed", "hs_r2");
-                goto cleanup_keys;
-            }
-            if (crypto_aead_unlock(peer_pub, in2 + KEY, eph_key, r2_nonce,
-                                   nullptr, 0, in2, KEY) != 0) {
-                LOGE("round 2 decryption failed");
-                crypto_wipe(out2, sizeof out2);
-                crypto_wipe(in2, sizeof in2);
-                crypto_wipe(eph_key, sizeof eph_key);
-                jni_call_str(env, cb, mid_onHandshakeFailed, "Handshake failed (decrypt)", "hs_r2_dec");
-                goto cleanup_keys;
-            }
-            crypto_wipe(out2, sizeof out2);
-            crypto_wipe(in2, sizeof in2);
-            crypto_wipe(eph_key, sizeof eph_key);
         }
 
         set_sock_timeout(fd, 0);

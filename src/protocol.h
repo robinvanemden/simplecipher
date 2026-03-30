@@ -156,6 +156,20 @@ void session_wipe(session_t *s);
  * All other bytes -- including ESC (0x1B) and tab (0x09) -- become '.'. */
 void sanitize_peer_text(uint8_t *buf, uint16_t len);
 
+/* Perform the two-round handshake: exchange commitments (round 1) and
+ * encrypted public keys (round 2).  Returns 0 on success, -1 on I/O
+ * error, -2 on decryption failure.
+ *
+ * On success: peer_pub, peer_nonce, commit_peer are populated.
+ * On error: all output buffers are wiped.
+ *
+ * Round 1 includes an ephemeral X25519 public key for passive-observer
+ * confidentiality of the key reveal in round 2. */
+[[nodiscard]] int handshake_exchange(socket_t fd, int we_init, const uint8_t self_pub[KEY],
+                                     const uint8_t commit_self[KEY], const uint8_t self_nonce[KEY],
+                                     uint8_t peer_pub[KEY], uint8_t commit_peer[KEY], uint8_t peer_nonce[KEY],
+                                     uint8_t *peer_ver_out);
+
 /* Random delay for cover traffic scheduling, drawn from a clamped
  * exponential distribution (mean 500 ms, clamped to [50, 1500] ms).
  * Exponential inter-arrivals mimic natural Poisson traffic (CV ≈ 1),
