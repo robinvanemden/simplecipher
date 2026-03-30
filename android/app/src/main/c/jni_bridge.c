@@ -782,6 +782,7 @@ static void jni_chat_loop(socket_t fd, session_t *sess, int cover,
          * Queued real messages replace the cover payload so every frame
          * follows the same timing distribution — defeating analysis. */
         if (cover && running && monotonic_ms() >= next_cover) {
+            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
             uint8_t        frame[FRAME_SZ], next_tx[KEY];
             const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
             uint16_t       tx_len  = pending_len;
@@ -805,7 +806,6 @@ static void jni_chat_loop(socket_t fd, session_t *sess, int cover,
             }
             crypto_wipe(frame, sizeof frame);
             crypto_wipe(next_tx, sizeof next_tx);
-            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
         }
     }
 
