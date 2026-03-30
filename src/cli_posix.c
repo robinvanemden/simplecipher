@@ -113,6 +113,132 @@ static void cli_redraw_input(const char *line, size_t line_len) {
     crypto_wipe(buf, sizeof buf);
 }
 
+/* ---- Shared helpers for raw/cooked loops --------------------------------
+ *
+ * These static functions extract the socket-side logic that is identical
+ * (or nearly identical) in both the raw-mode and cooked-mode chat loops.
+ * The `raw_mode` flag and `line_len` control display differences:
+ *   raw:    write() to STDOUT, clear/redraw the "> partial_input" prompt
+ *   cooked: fprintf/printf (no prompt management needed) */
+
+/* Write a diagnostic string.  In raw mode use write() to avoid stdio
+ * buffering; in cooked mode use fprintf(stderr). */
+static void cli_emit(int raw_mode, size_t line_len, const char *msg) {
+    if (raw_mode) {
+        cli_clear_input_line(line_len);
+        ssize_t r;
+        do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
+    } else {
+        fprintf(stderr, "%s", msg);
+    }
+}
+
+/* Process incoming bytes from the peer socket after POLLIN.
+ *
+ * Returns:  0 = continue loop
+ *          -1 = fatal error or disconnect (caller must break)
+ *           1 = peer message displayed (caller may need to redraw prompt) */
+static int cli_process_incoming(socket_t fd, session_t *sess, nb_io_t *io, uint8_t *plain, int *auth_fails,
+                                int *rx_count, uint64_t *rx_window, int raw_mode, size_t line_len) {
+    int acc = nb_io_accumulate(io, fd);
+    if (acc == NB_RECV_DISCONNECT) {
+        cli_emit(raw_mode, line_len, "\n  [peer disconnected]\n");
+        return -1;
+    }
+    if (acc != NB_RECV_FRAME) return 0;
+
+    /* Rate-limit before expensive AEAD + X25519 work.
+     * Window reset: start a new 1-second window and process
+     * the frame (it is the first in the new window).
+     * Over limit: drop silently. */
+    uint64_t now_rl = monotonic_ms();
+    if (now_rl - *rx_window >= 1000) {
+        *rx_count  = 1;
+        *rx_window = now_rl;
+    } else {
+        ++(*rx_count);
+    }
+
+    if (*rx_count > 50) {
+        nb_io_reset_recv(io);
+        return 0;
+    }
+
+    uint16_t plen  = 0;
+    int      fo_rc = frame_open(sess, io->in_wire + WIRE_HDR, plain, &plen);
+    nb_io_reset_recv(io);
+
+    if (fo_rc != 0) {
+        crypto_wipe(plain, MAX_MSG + 1);
+        if (fo_rc == -2 || ++(*auth_fails) >= MAX_AUTH_FAILURES) {
+            cli_emit(raw_mode, line_len, "[session error: authentication or sequence failure]\n");
+            return -1;
+        }
+        return 0;
+    }
+
+    *auth_fails = 0;
+    if (plen > 0) {
+        plain[plen] = '\0';
+        sanitize_peer_text(plain, plen);
+        if (raw_mode) cli_clear_input_line(line_len);
+        secure_chat_print("peer", (char *)plain);
+        /* Caller redraws prompt in raw mode. */
+    }
+    crypto_wipe(plain, MAX_MSG + 1);
+    return (plen > 0) ? 1 : 0;
+}
+
+/* Process outbound drain after POLLOUT.
+ *
+ * Returns:  0 = continue loop (send still in progress or completed)
+ *          -1 = send error (caller must break)
+ *           1 = send completed and message displayed */
+static int cli_process_drain(socket_t fd, session_t *sess, nb_io_t *io, uint8_t *pending_msg, uint16_t *pending_len,
+                             int raw_mode, size_t line_len) {
+    int dr = nb_io_drain(io, fd);
+    if (dr == NB_SEND_ERROR) {
+        cli_emit(raw_mode, line_len, "[send error]\n");
+        return -1;
+    }
+    if (dr == NB_SEND_COMPLETE) {
+        if (*pending_len > 0) {
+            crypto_wipe(pending_msg, MAX_MSG + 1);
+            *pending_len = 0;
+        }
+        if (io->out_text[0]) secure_chat_print(" me", io->out_text);
+        nb_io_complete_send(io, sess);
+        return 1;
+    }
+    return 0;
+}
+
+/* Fire a cover-traffic tick.  Sends a cover frame (or a queued real
+ * message piggy-backed on cover timing).
+ *
+ * Returns:  0 = continue loop
+ *          -1 = send error (caller must break) */
+static int cli_process_cover_tick(socket_t fd, session_t *sess, nb_io_t *io, uint8_t *pending_msg,
+                                  uint16_t *pending_len, uint64_t *next_cover) {
+    *next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+    if (io->out_active) return 0;
+
+    const uint8_t *payload = *pending_len > 0 ? pending_msg : NULL;
+    uint16_t       tx_len  = *pending_len;
+    if (nb_io_start_send(io, sess, fd, payload, tx_len, NULL) < 0) {
+        secure_chat_print("system", "cover traffic error -- session ended");
+        return -1;
+    }
+    if (io->out_off >= io->out_len) {
+        if (*pending_len > 0) {
+            crypto_wipe(pending_msg, MAX_MSG + 1);
+            *pending_len = 0;
+        }
+        nb_io_complete_send(io, sess);
+    }
+    return 0;
+}
+
 /* ---- Raw-mode chat loop -------------------------------------------------
  *
  * Reads one byte at a time from the terminal, manages its own line buffer,
@@ -125,7 +251,6 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
     char     line[MAX_MSG + 1];
     size_t   line_len = 0;
     uint8_t  plain[MAX_MSG + 1];
-    uint16_t plen;
     int      auth_fails = 0;
     int      rx_count   = 0; /* inbound frame rate limiter */
     uint64_t rx_window  = 0;
@@ -169,105 +294,26 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
 
         /* ----- Stale partial frame check ----- */
         if (nb_io_recv_deadline_expired(&io)) {
-            cli_clear_input_line(line_len);
-            {
-                const char *msg = "[peer stalled mid-frame: disconnecting]\n";
-                ssize_t     r;
-                do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
-            }
+            cli_emit(1, line_len, "[peer stalled mid-frame: disconnecting]\n");
             break;
         }
         if (nb_io_send_deadline_expired(&io)) {
-            cli_clear_input_line(line_len);
-            {
-                const char *msg = "[send timeout]\n";
-                ssize_t     r;
-                do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
-            }
+            cli_emit(1, line_len, "[send timeout]\n");
             break;
         }
 
         /* ----- Incoming bytes from peer (non-blocking accumulation) ----- */
         if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
-            int acc = nb_io_accumulate(&io, fd);
-            if (acc == NB_RECV_DISCONNECT) {
-                cli_clear_input_line(line_len);
-                {
-                    const char *msg = "\n  [peer disconnected]\n";
-                    ssize_t     wr;
-                    do { wr = write(STDOUT_FILENO, msg, strlen(msg)); } while (wr < 0 && errno == EINTR);
-                }
-                break;
-            }
-            if (acc == NB_RECV_FRAME) {
-                /* Rate-limit before expensive AEAD + X25519 work.
-                 * Window reset: start a new 1-second window and process
-                 * the frame (it is the first in the new window).
-                 * Over limit: drop silently. */
-                uint64_t now_rl = monotonic_ms();
-                if (now_rl - rx_window >= 1000) {
-                    rx_count  = 1;
-                    rx_window = now_rl;
-                } else {
-                    ++rx_count;
-                }
-
-                if (rx_count > 50) {
-                    nb_io_reset_recv(&io);
-                } else {
-                    plen      = 0;
-                    int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);
-                    nb_io_reset_recv(&io);
-
-                    if (fo_rc != 0) {
-                        crypto_wipe(plain, sizeof plain);
-                        if (fo_rc == -2 || ++auth_fails >= MAX_AUTH_FAILURES) {
-                            cli_clear_input_line(line_len);
-                            {
-                                const char *msg = "[session error: authentication or sequence failure]\n";
-                                ssize_t     wr;
-                                do { wr = write(STDOUT_FILENO, msg, strlen(msg)); } while (wr < 0 && errno == EINTR);
-                            }
-                            break;
-                        }
-                    } else {
-                        auth_fails = 0;
-                        if (plen > 0) {
-                            plain[plen] = '\0';
-                            sanitize_peer_text(plain, plen);
-                            cli_clear_input_line(line_len);
-                            secure_chat_print("peer", (char *)plain);
-                            cli_redraw_input(line, line_len);
-                        }
-                        crypto_wipe(plain, sizeof plain);
-                    }
-                }
-            }
+            int rc = cli_process_incoming(fd, sess, &io, plain, &auth_fails, &rx_count, &rx_window, 1, line_len);
+            if (rc < 0) break;
+            if (rc > 0) cli_redraw_input(line, line_len);
         }
 
         /* ----- Outbound send completion (non-blocking drain) ----- */
         if (io.out_active && (fds[0].revents & POLLOUT)) {
-            int dr = nb_io_drain(&io, fd);
-            if (dr == NB_SEND_ERROR) {
-                cli_clear_input_line(line_len);
-                {
-                    const char *msg = "[send error]\n";
-                    ssize_t     r;
-                    do { r = write(STDOUT_FILENO, msg, strlen(msg)); } while (r < 0 && errno == EINTR);
-                }
-                break;
-            }
-            if (dr == NB_SEND_COMPLETE) {
-                if (pending_len > 0) {
-                    crypto_wipe(pending_msg, sizeof pending_msg);
-                    pending_len = 0;
-                }
-                if (io.out_text[0]) {
-                    secure_chat_print(" me", io.out_text);
-                    cli_redraw_input(line, line_len);
-                }
-                nb_io_complete_send(&io, sess);
-            }
+            int rc = cli_process_drain(fd, sess, &io, pending_msg, &pending_len, 1, line_len);
+            if (rc < 0) break;
+            if (rc > 0) cli_redraw_input(line, line_len);
         }
 
         /* ----- Keyboard input (one byte at a time) -----
@@ -374,29 +420,9 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
             }
         }
 
-        /* ---- Cover traffic: single send point for all outgoing frames.
-         * Queued real messages replace the cover payload so every frame
-         * follows the same timing distribution — defeating analysis.
-         * next_cover is always advanced when the tick fires, even if a
-         * send is in flight.  This prevents TCP backpressure from
-         * creating detectable (short, long) inter-arrival pairs. */
+        /* ---- Cover traffic tick ----- */
         if (cover && g_running && monotonic_ms() >= next_cover) {
-            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
-            if (!io.out_active) {
-                const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
-                uint16_t       tx_len  = pending_len;
-                if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
-                    secure_chat_print("system", "cover traffic error -- session ended");
-                    break;
-                }
-                if (io.out_off >= io.out_len) {
-                    if (pending_len > 0) {
-                        crypto_wipe(pending_msg, sizeof pending_msg);
-                        pending_len = 0;
-                    }
-                    nb_io_complete_send(&io, sess);
-                }
-            }
+            if (cli_process_cover_tick(fd, sess, &io, pending_msg, &pending_len, &next_cover) < 0) break;
         }
     }
 
@@ -419,7 +445,6 @@ static void cli_chat_loop_raw(socket_t fd, session_t *sess, int cover) {
 static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
     uint8_t  plain[MAX_MSG + 1];
     char     line[MAX_MSG + 2];
-    uint16_t plen;
     int      auth_fails = 0;
     int      rx_count   = 0;
     uint64_t rx_window  = 0;
@@ -472,61 +497,14 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
 
         /* ----- Incoming bytes from peer (non-blocking accumulation) ----- */
         if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
-            int acc = nb_io_accumulate(&io, fd);
-            if (acc == NB_RECV_DISCONNECT) {
-                printf("\n  [peer disconnected]\n");
-                break;
-            }
-            if (acc == NB_RECV_FRAME) {
-                uint64_t now_rl = monotonic_ms();
-                if (now_rl - rx_window >= 1000) {
-                    rx_count  = 1;
-                    rx_window = now_rl;
-                } else {
-                    ++rx_count;
-                }
-
-                if (rx_count > 50) {
-                    nb_io_reset_recv(&io);
-                } else {
-                    plen      = 0;
-                    int fo_rc = frame_open(sess, io.in_wire + WIRE_HDR, plain, &plen);
-                    nb_io_reset_recv(&io);
-
-                    if (fo_rc != 0) {
-                        crypto_wipe(plain, sizeof plain);
-                        if (fo_rc == -2 || ++auth_fails >= MAX_AUTH_FAILURES) {
-                            fprintf(stderr, "[session error: authentication or sequence failure]\n");
-                            break;
-                        }
-                    } else {
-                        auth_fails = 0;
-                        if (plen > 0) {
-                            plain[plen] = '\0';
-                            sanitize_peer_text(plain, plen);
-                            secure_chat_print("peer", (char *)plain);
-                        }
-                        crypto_wipe(plain, sizeof plain);
-                    }
-                }
-            }
+            int rc = cli_process_incoming(fd, sess, &io, plain, &auth_fails, &rx_count, &rx_window, 0, 0);
+            if (rc < 0) break;
         }
 
         /* ----- Outbound send completion (non-blocking drain) ----- */
         if (io.out_active && (fds[0].revents & POLLOUT)) {
-            int dr = nb_io_drain(&io, fd);
-            if (dr == NB_SEND_ERROR) {
-                fprintf(stderr, "[send error]\n");
-                break;
-            }
-            if (dr == NB_SEND_COMPLETE) {
-                if (pending_len > 0) {
-                    crypto_wipe(pending_msg, sizeof pending_msg);
-                    pending_len = 0;
-                }
-                if (io.out_text[0]) secure_chat_print(" me", io.out_text);
-                nb_io_complete_send(&io, sess);
-            }
+            int rc = cli_process_drain(fd, sess, &io, pending_msg, &pending_len, 0, 0);
+            if (rc < 0) break;
         }
 
         /* ----- Outgoing message from piped/redirected stdin ----- */
@@ -600,26 +578,9 @@ static void cli_chat_loop_cooked(socket_t fd, session_t *sess, int cover) {
             if (send_failed) break;
         }
 
-        /* ---- Cover traffic: single send point for all outgoing frames.
-         * Queued real messages replace the cover payload so every frame
-         * follows the same timing distribution — defeating analysis. */
+        /* ---- Cover traffic tick ----- */
         if (cover && g_running && monotonic_ms() >= next_cover) {
-            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
-            if (!io.out_active) {
-                const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
-                uint16_t       tx_len  = pending_len;
-                if (nb_io_start_send(&io, sess, fd, payload, tx_len, NULL) < 0) {
-                    secure_chat_print("system", "cover traffic error -- session ended");
-                    break;
-                }
-                if (io.out_off >= io.out_len) {
-                    if (pending_len > 0) {
-                        crypto_wipe(pending_msg, sizeof pending_msg);
-                        pending_len = 0;
-                    }
-                    nb_io_complete_send(&io, sess);
-                }
-            }
+            if (cli_process_cover_tick(fd, sess, &io, pending_msg, &pending_len, &next_cover) < 0) break;
         }
     }
 
