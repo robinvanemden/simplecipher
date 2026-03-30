@@ -188,14 +188,14 @@ Time   Alice                 Mallory (MITM)              Bob
  |
  |     gen (sk_A, pk_A)      intercepts both sides
  |     gen nonce_A
- |     commit_A = H(pk_A||nonce_A)
+ |     commit_A = H(pk_A||nonce_A||ver)
  |        ----- commit_A + nonce_A ---->
  |                            must commit NOW
  |                            (hasn't seen pk_A yet!)
  |                               ---- commit_M1 + nonce_M1 ----->
  |                               <--- commit_B + nonce_B ------- gen (sk_B, pk_B)
  |        <--- commit_M2 + nonce_M2 --                          gen nonce_B
- |                            (hasn't seen pk_B yet!)            commit_B = H(pk_B||nonce_B)
+ |                            (hasn't seen pk_B yet!)            commit_B = H(pk_B||nonce_B||ver)
  |
  |     reveal pk_A ---------->
  |                            sees pk_A -- TOO LATE
@@ -209,7 +209,7 @@ Time   Alice                 Mallory (MITM)              Bob
  |     SAS_A = SAS_B only if Mallory guessed right (Pr <= 2^-32)
 ```
 
-Once `commit_M1 = H(pk_M1 || nonce_M1)` is sent, Mallory cannot find an alternative `pk_M1'` that produces the same commitment without breaking BLAKE2b collision resistance (Section 4.2). Her only strategy is guessing, over the 32-bit SAS output space.
+Once `commit_M1 = H(pk_M1 || nonce_M1 || ver)` is sent, Mallory cannot find an alternative `pk_M1'` that produces the same commitment without breaking BLAKE2b collision resistance (Section 4.2). Her only strategy is guessing, over the 32-bit SAS output space.
 
 **Why 32 bits is acceptable for interactive verification.** The SAS is verified by a human in real-time over an out-of-band channel (voice/video call). A 2<sup>-32</sup> &asymp; 2.3 &times; 10<sup>-10</sup> probability of success per session is negligible in the interactive setting. The adversary gets exactly one attempt per session (the commitment prevents retry after failure). Even at one session per second sustained for a year, the cumulative probability remains below 10<sup>-2</sup>. For automated/unattended verification where an adversary can attempt many sessions without human oversight, 32 bits is insufficient.
 
@@ -357,7 +357,7 @@ A harvest-now-decrypt-later adversary who records ciphertext today can decrypt i
 
 ### 7.3 No deniability
 
-The commitment scheme is binding: both parties can prove that a specific public key was committed to and revealed during the handshake. A transcript of `(H(pub || nonce), nonce, pub, SAS)` constitutes a non-repudiable proof that the key exchange occurred with that specific key.
+The commitment scheme is binding: both parties can prove that a specific public key was committed to and revealed during the handshake. A transcript of `(H(pub || nonce || version), nonce, pub, SAS)` constitutes a non-repudiable proof that the key exchange occurred with that specific key.
 
 In contrast, protocols like OTR provide deniability through MAC key revelation. SimpleCipher does not reveal MAC keys or use any deniability mechanism.
 

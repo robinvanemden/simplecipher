@@ -10,6 +10,7 @@
  */
 
 #include "crypto.h"
+#include "protocol.h" /* PROTOCOL_VERSION — bound into commitment hash */
 
 static const char *const DOMAIN_COMMIT = "cipher commit v3";
 
@@ -116,9 +117,10 @@ void chain_step(const uint8_t chain[32], uint8_t mk[32], uint8_t next[32]) {
  * With commitment, Mallory must commit to her fake keys before she sees
  * A or B.  She cannot adapt after the fact, so the search attack fails. */
 void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY], const uint8_t nonce[KEY]) {
-    uint8_t buf[KEY * 2];
+    uint8_t buf[KEY * 2 + 1]; /* pub || nonce || version_byte */
     memcpy(buf, pub, KEY);
     memcpy(buf + KEY, nonce, KEY);
+    buf[KEY * 2] = (uint8_t)PROTOCOL_VERSION;
     domain_hash(commit, DOMAIN_COMMIT, buf, sizeof buf);
     crypto_wipe(buf, sizeof buf);
 }
@@ -128,9 +130,10 @@ void make_commit(uint8_t commit[KEY], const uint8_t pub[KEY], const uint8_t nonc
  * Uses constant-time comparison (consistent policy; costs nothing). */
 [[nodiscard]] int verify_commit(const uint8_t commit[KEY], const uint8_t pub[KEY], const uint8_t nonce[KEY]) {
     uint8_t expected[KEY];
-    uint8_t buf[KEY * 2];
+    uint8_t buf[KEY * 2 + 1]; /* pub || nonce || version_byte */
     memcpy(buf, pub, KEY);
     memcpy(buf + KEY, nonce, KEY);
+    buf[KEY * 2] = (uint8_t)PROTOCOL_VERSION;
     domain_hash(expected, DOMAIN_COMMIT, buf, sizeof buf);
     int ok = (crypto_verify32(expected, commit) == 0);
     crypto_wipe(expected, sizeof expected);
