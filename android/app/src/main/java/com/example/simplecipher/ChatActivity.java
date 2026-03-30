@@ -10,12 +10,12 @@ import android.text.method.ScrollingMovementMethod;
 import android.text.style.ForegroundColorSpan;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.accessibility.AccessibilityManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.view.accessibility.AccessibilityManager;
 import java.io.UnsupportedEncodingException;
 import java.util.Date;
 import java.util.List;
@@ -105,11 +105,11 @@ public class ChatActivity extends Activity implements NativeCallback {
 
     /* Warn if third-party Accessibility Services are active — they can
      * read all on-screen text (SAS, chat, fingerprint) despite FLAG_SECURE. */
-    AccessibilityManager am =
-        (AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
+    AccessibilityManager am = (AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
     if (am != null && am.isEnabled()) {
-      List<?> services = am.getEnabledAccessibilityServiceList(
-          android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
+      List<?> services =
+          am.getEnabledAccessibilityServiceList(
+              android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
       if (services != null && !services.isEmpty()) {
         Toast.makeText(
                 this,
