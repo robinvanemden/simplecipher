@@ -274,6 +274,10 @@ int cli_sas_verify(const char *sas, socket_t fd) {
      * Both POSIX and Windows paths monitor the peer socket alongside
      * stdin so a peer disconnect during SAS verification is detected
      * immediately instead of leaving the user stuck. */
+#if !defined(_WIN32) && !defined(_WIN64)
+    int tty_fd = open("/dev/tty", O_RDONLY);
+    int sas_in = (tty_fd >= 0) ? tty_fd : STDIN_FILENO;
+#endif
     {
 #if defined(_WIN32) || defined(_WIN64)
         /* Loop with 1-second waits so Ctrl+C (which sets g_running=0
@@ -320,12 +324,13 @@ int cli_sas_verify(const char *sas, socket_t fd) {
 #else
         ssize_t rn = -1;
         {
-            struct pollfd sas_fds[2]   = {{STDIN_FILENO, POLLIN, 0}, {fd, POLLIN, 0}};
+            struct pollfd sas_fds[2]   = {{sas_in, POLLIN, 0}, {fd, POLLIN, 0}};
             uint64_t      sas_deadline = monotonic_ms() + SAS_TIMEOUT_MS;
             while (g_running) {
                 int64_t remain = (int64_t)(sas_deadline - monotonic_ms());
                 if (remain <= 0) {
                     printf("SAS verification timed out.\n");
+                    if (tty_fd >= 0) close(tty_fd);
                     crypto_wipe(typed_sas, sizeof typed_sas);
                     return EXIT_ABORT;
                 }
@@ -335,16 +340,18 @@ int cli_sas_verify(const char *sas, socket_t fd) {
                 if (pr < 0) break;
                 if (sas_fds[1].revents & (POLLHUP | POLLERR)) {
                     fprintf(stderr, "Peer disconnected during SAS verification.\n");
+                    if (tty_fd >= 0) close(tty_fd);
                     crypto_wipe(typed_sas, sizeof typed_sas);
                     return EXIT_NET;
                 }
                 if (sas_fds[0].revents & POLLIN) {
-                    do { rn = read(STDIN_FILENO, typed_sas, sizeof typed_sas - 1); } while (rn < 0 && errno == EINTR);
+                    do { rn = read(sas_in, typed_sas, sizeof typed_sas - 1); } while (rn < 0 && errno == EINTR);
                     break;
                 }
             }
             if (!g_running) { /* Ctrl+C or signal */
                 printf("Aborted.\n");
+                if (tty_fd >= 0) close(tty_fd);
                 crypto_wipe(typed_sas, sizeof typed_sas);
                 return EXIT_ABORT;
             }
@@ -352,6 +359,9 @@ int cli_sas_verify(const char *sas, socket_t fd) {
 #endif
         if (rn <= 0) {
             printf("Aborted.\n");
+#if !defined(_WIN32) && !defined(_WIN64)
+            if (tty_fd >= 0) close(tty_fd);
+#endif
             crypto_wipe(typed_sas, sizeof typed_sas);
             return EXIT_ABORT;
         }
@@ -367,9 +377,12 @@ int cli_sas_verify(const char *sas, socket_t fd) {
         do { dr = _read(0, &drain, 1); } while (dr == 1 && drain != '\n');
 #else
         ssize_t dr;
-        do { dr = read(STDIN_FILENO, &drain, 1); } while ((dr < 0 && errno == EINTR) || (dr == 1 && drain != '\n'));
+        do { dr = read(sas_in, &drain, 1); } while ((dr < 0 && errno == EINTR) || (dr == 1 && drain != '\n'));
 #endif
     }
+#if !defined(_WIN32) && !defined(_WIN64)
+    if (tty_fd >= 0) close(tty_fd);
+#endif
     /* Strip trailing newline, normalize (strip dashes, uppercase), then
      * compare.  Accepts "A3F2-91BC", "A3F291BC", "a3f291bc" etc.  Full
      * comparison ensures the user verifies all 32 bits, not just 16. */
