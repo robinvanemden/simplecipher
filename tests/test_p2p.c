@@ -2007,7 +2007,9 @@ static void test_secure_chat_print_output(void) {
 
     /* Verify format: [HH:MM:SS] peer: hello world\n */
     TEST("output starts with '['", captured[0] == '[');
-    TEST("output contains '] peer: hello world'", strstr(captured, "] peer: hello world\n") != nullptr);
+    /* The peer label is ANSI-colored (cyan): \033[36mpeer\033[0m */
+    TEST("output contains peer label with color",
+         strstr(captured, "] \033[36mpeer\033[0m: hello world\n") != nullptr);
     TEST("output has timestamp format", n >= 10 && captured[3] == ':' && captured[6] == ':' && captured[9] == ']');
 
     /* Verify output uses write() not printf (no trailing null issues) */

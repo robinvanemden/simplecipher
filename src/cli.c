@@ -19,10 +19,22 @@
  * The format is: [HH:MM:SS] label: message\n */
 void secure_chat_print(const char *label, const char *msg) {
     char t[TIMESTAMP_BUF];
-    char buf[MAX_MSG + 64]; /* message + timestamp + label + formatting */
+    char buf[MAX_MSG + 96]; /* message + timestamp + label + ANSI color codes */
     int  n;
+    /* Color-code labels so peer messages are visually distinct from local
+     * ones.  Peer text is sanitized (0x20-0x7E only) so a malicious peer
+     * cannot inject escape codes to spoof the color. */
+    const char *color_on  = "";
+    const char *color_off = "";
+    if (strncmp(label, "peer", 4) == 0) {
+        color_on  = "\033[36m";
+        color_off = "\033[0m";
+    } else if (strncmp(label, "sys", 3) == 0) {
+        color_on  = "\033[33m";
+        color_off = "\033[0m";
+    }
     format_timestamp(t, sizeof t);
-    n = snprintf(buf, sizeof buf, "[%s] %s: %s\n", t, label, msg);
+    n = snprintf(buf, sizeof buf, "[%s] %s%s%s: %s\n", t, color_on, label, color_off, msg);
     if (n < 0) n = 0;
     if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
 #if defined(_WIN32) || defined(_WIN64)
