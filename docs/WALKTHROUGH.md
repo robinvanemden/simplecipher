@@ -49,7 +49,7 @@ main.c:
   exchange(fd, we_init, AEAD_encrypt(self_pub, eph_key), ...)  ← Round 2 (48 bytes)
 ```
 
-Round 1 includes an ephemeral X25519 public key. Both sides compute a temporary shared secret from the ephemeral DH, then use it to encrypt the public key reveal in round 2. This prevents a passive network observer from seeing the public keys — important for `--identity` users whose key is stable across sessions. Both rounds complete before any verification, making failure modes indistinguishable on the wire.
+Round 1 includes an ephemeral X25519 public key. Both sides compute a temporary shared secret from the ephemeral Diffie-Hellman (DH) key exchange, then use it to encrypt the public key reveal in round 2. This prevents a passive network observer from seeing the public keys — important for `--identity` users whose key is stable across sessions. Both rounds complete before any verification, making failure modes indistinguishable on the wire.
 
 ### Step 4: Derive session keys
 
@@ -58,7 +58,7 @@ protocol.c → session_init()
 ```
 
 Both sides compute the same shared secret via X25519, then derive:
-- **[SAS](GLOSSARY.md#sas-short-authentication-string) key** — Short Authentication String for human verification (32 bits)
+- **[SAS](GLOSSARY.md#sas-short-authentication-string) key** — Short Authentication String for human verification (32 bits, displayed as `XXXX-XXXX`, e.g. `A3F2-91BC`)
 - **Root key** — persists across [DH ratchet](GLOSSARY.md#ratchet-dh) steps
 - **TX/RX chains** — per-direction, per-message forward secrecy
 
@@ -86,7 +86,7 @@ protocol.c → frame_build(session, plaintext, len, frame_out, next_chain)
 4. Encrypt with [XChaCha20-Poly1305](GLOSSARY.md#xchacha20-poly1305): `crypto_aead_lock(plaintext → ciphertext + MAC)`
 5. Output: exactly 512 bytes — always, regardless of message length
 
-The caller sends the frame via `frame_send()` during the handshake, or `nb_io_start_send()` (POSIX) / an inline event-driven state machine (Windows) during the chat phase. The frame is wrapped in random padding on the wire (513-768 bytes total), then the chain advance is committed (`tx = next_chain; tx_seq++`). If the send fails, the chain is not advanced — both sides stay in sync.
+The caller sends the frame over TCP. (During the handshake this uses `frame_send()`; during chat the POSIX loops use the non-blocking `nb_io` layer — see `nb_io.h` for details.) The frame is wrapped in random padding on the wire (513-768 bytes total), then the chain advance is committed (`tx = next_chain; tx_seq++`). If the send fails, the chain is not advanced — both sides stay in sync.
 
 ### Decrypting a message
 

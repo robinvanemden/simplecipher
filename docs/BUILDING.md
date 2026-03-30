@@ -8,11 +8,15 @@
 make
 ```
 
+This produces a `simplecipher` binary in the current directory. Verify with: `./simplecipher --help`
+
 Or explicitly:
 
 ```bash
 gcc -O2 -std=c23 -DCIPHER_HARDEN -Isrc -Ilib src/main.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/nb_io.c src/tui.c src/cli.c src/args.c src/verify.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
 ```
+
+*(This builds for Linux/macOS/BSD. Windows-specific files `cli_win.c` and `tui_win.c` are excluded — use CMake for Windows cross-compilation.)*
 
 On OpenBSD 7.7 (Clang 16), use `-std=c2x` instead of `-std=c23`. The codebase avoids `constexpr` entirely for portability — integer constants use `enum` (always a constant expression) and byte arrays use `static const`.
 

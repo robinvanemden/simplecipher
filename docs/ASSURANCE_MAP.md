@@ -6,6 +6,8 @@
 
 Every security property claimed in the README and PROTOCOL.md is listed here with the exact code that implements it and the exact test that verifies it. If a claim has no test, it is noted.
 
+Each row answers the question: *is this security claim backed by real code and real tests?* The Code column shows where the feature is implemented, and the Test column shows what verifies it.
+
 ## Cryptographic properties
 
 | Claim | Code | Test | Notes |

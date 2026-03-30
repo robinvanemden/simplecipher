@@ -10,6 +10,7 @@ make
 
 # Or explicitly:
 gcc -O2 -std=c23 -DCIPHER_HARDEN -Isrc -Ilib src/main.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/nb_io.c src/tui.c src/cli.c src/args.c src/verify.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
+# (Linux/macOS/BSD only — Windows files cli_win.c and tui_win.c excluded; use CMake for Windows)
 
 # Cross-compile (Linux/Windows, 4 presets)
 cmake --preset linux-x86_64 && cmake --build --preset linux-x86_64

@@ -81,7 +81,7 @@ Each side generates a random [X25519](#x25519) keypair for this session only. Th
 Before revealing public keys, each side sends a [hash](#blake2b) ([commitment](#commitment-scheme)) of their key and a random nonce. The commitment is `H(pub || nonce)` — binding the key to a fresh random value prevents a man-in-the-middle from seeing one key and then crafting a fake key that produces a matching safety code. The commitment locks both sides into their keys before the reveal. The version byte, commitment, and nonce are sent together in a single exchange so that version-mismatch and commitment-mismatch failures are timing-indistinguishable from the wire.
 
 ```
-Round 1:  Alice -> version || H(pub_A || nonce_A || ver) || nonce_A || eph_A    (commit + ephemeral DH)
+Round 1:  Alice -> version || H(pub_A || nonce_A || ver) || nonce_A || eph_A    (commit + ephemeral (eph = ephemeral, a one-time-use key) DH)
           Bob   -> version || H(pub_B || nonce_B || ver) || nonce_B || eph_B
 Round 2:  Alice -> AEAD_encrypt(pub_A, eph_key)                                 (encrypted reveal)
           Bob   -> AEAD_encrypt(pub_B, eph_key)

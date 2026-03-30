@@ -7,6 +7,8 @@
 
 ---
 
+**Note for students:** This section uses formal mathematical notation for cryptographers who need to verify security claims rigorously. You do not need to read this document to understand or use SimpleCipher — see [PROTOCOL.md](PROTOCOL.md) and [WALKTHROUGH.md](WALKTHROUGH.md) for accessible explanations.
+
 ## 1. Notation and conventions
 
 | Symbol | Meaning |
