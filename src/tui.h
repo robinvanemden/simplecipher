@@ -161,7 +161,7 @@ void tui_status_screen(const char *line1, const char *line2);
 
 /* Show the listen screen with port and local IP addresses.
  * ips is a newline-separated string of IP addresses (from get_local_ips). */
-void tui_listen_screen(const char *port, const char *ips);
+void tui_listen_screen(const char *port, const char *ips, const char *self_fp);
 
 /* Display the SAS verification screen and require user to type the full
  * code to confirm.  Returns 1 on match, 0 on user abort (Ctrl+C,

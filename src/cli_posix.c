@@ -225,7 +225,10 @@ static int cli_process_cover_tick(socket_t fd, session_t *sess, nb_io_t *io, uin
 
     const uint8_t *payload = *pending_len > 0 ? pending_msg : NULL;
     uint16_t       tx_len  = *pending_len;
-    if (nb_io_start_send(io, sess, fd, payload, tx_len, NULL) < 0) {
+    /* When a real message rides the cover tick, pass a marker so the
+     * drain-completion handler can confirm "sent" to the user. */
+    const char *msg_text = *pending_len > 0 ? "(sent)" : NULL;
+    if (nb_io_start_send(io, sess, fd, payload, tx_len, msg_text) < 0) {
         secure_chat_print("system", "cover traffic error -- session ended");
         return -1;
     }

@@ -352,7 +352,7 @@ void tui_status_screen(const char *line1, const char *line2) {
 
 /* Show the listen/waiting screen with local IP addresses so the user
  * can tell their peer which command to run. */
-void tui_listen_screen(const char *port, const char *ips) {
+void tui_listen_screen(const char *port, const char *ips, const char *self_fp) {
     int cy;
     tui_get_size(&tui_w, &tui_h);
     if (tui_w < TUI_MIN_WIDTH || tui_h < TUI_MIN_STATUS_HEIGHT) {
@@ -372,9 +372,10 @@ void tui_listen_screen(const char *port, const char *ips) {
     }
 
     /* Center vertically: title(1) + "Listening"(1) + blank(1) + "Tell peer"(1)
-     * + ip lines + blank(1) + "Waiting..." */
-    int block_h = 4 + nips + 1;
-    cy          = (tui_h - block_h) / 2;
+     * + ip lines + blank(1) + fingerprint(2) + blank(1) + "Waiting..." */
+    int fp_lines = (self_fp && self_fp[0]) ? 3 : 0;
+    int block_h  = 4 + nips + fp_lines + 1;
+    cy           = (tui_h - block_h) / 2;
     if (cy < 3) cy = 3;
 
     /* "Listening on port XXXX" */
@@ -407,6 +408,20 @@ void tui_listen_screen(const char *port, const char *ips) {
             p = *nl ? nl + 1 : nl;
         }
         cy++;
+    }
+
+    /* Local fingerprint (for paper pre-sharing) */
+    if (self_fp && self_fp[0]) {
+        char fp_line[80];
+        snprintf(fp_line, sizeof fp_line, "Your fingerprint: %s", self_fp);
+        TUI_GOTO(cy, (tui_w - (int)strlen(fp_line)) / 2);
+        printf("%s%s%s", TUI_COLOR_CYAN, fp_line, TUI_COLOR_RESET);
+        cy++;
+        const char *hint = "(share with your peer on paper or QR)";
+        TUI_GOTO(cy, (tui_w - (int)strlen(hint)) / 2);
+        printf("%s%s%s", TUI_COLOR_DIM, hint, TUI_COLOR_RESET);
+        crypto_wipe(fp_line, sizeof fp_line);
+        cy += 2;
     }
 
     /* "Waiting for connection..." */

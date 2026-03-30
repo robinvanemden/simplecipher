@@ -96,14 +96,14 @@ static session_t g_sess;
 struct listen_ctx {
     const char *port;
     const char *ips;
+    const char *fp;
 };
 
 static void tui_listen_idle(void *ctx) {
     struct listen_ctx *lc = (struct listen_ctx *)ctx;
-    /* Check if terminal size changed; if so, redraw. */
-    int w, h;
+    int                w, h;
     tui_get_size(&w, &h);
-    if (w != tui_w || h != tui_h) tui_listen_screen(lc->port, lc->ips);
+    if (w != tui_w || h != tui_h) tui_listen_screen(lc->port, lc->ips, lc->fp);
 }
 
 /* ---- helpers ------------------------------------------------------------ */
@@ -305,8 +305,8 @@ int main(int argc, char *argv[]) {
         if (cfg.tui_mode) {
             char ipbuf[LOCAL_IPS_BUF];
             get_local_ips(ipbuf, sizeof ipbuf);
-            tui_listen_screen(cfg.port, ipbuf);
-            struct listen_ctx lc = {cfg.port, ipbuf};
+            tui_listen_screen(cfg.port, ipbuf, self_fp);
+            struct listen_ctx lc = {cfg.port, ipbuf, self_fp};
             g_fd                 = listen_socket_cb(cfg.port, tui_listen_idle, &lc);
             crypto_wipe(ipbuf, sizeof ipbuf); /* wipe local IP addresses */
         } else {

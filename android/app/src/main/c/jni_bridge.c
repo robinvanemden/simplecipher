@@ -801,6 +801,12 @@ static void jni_chat_loop(socket_t fd, session_t *sess, int cover,
             memcpy(sess->tx, next_tx, KEY);
             sess->tx_seq++;
             if (pending_len > 0) {
+                /* The queued real message was sent on this cover tick.
+                 * Android uses blocking frame_send, so if we reach here,
+                 * the message was truly delivered to the TCP stack.
+                 * The UI already shows "me (queued)" — no upgrade to "sent"
+                 * is needed because the blocking send either succeeds (here)
+                 * or triggers onDisconnected (above). */
                 crypto_wipe(pending_msg, sizeof pending_msg);
                 pending_len = 0;
             }
