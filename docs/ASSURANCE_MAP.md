@@ -27,7 +27,7 @@ Every security property claimed in the README and PROTOCOL.md is listed here wit
 
 | Claim | Code | Test |
 |-------|------|------|
-| Private key wiped after session_init | `main.c`, `jni_bridge.c` | `test_p2p.c:test_session_init_wipes_intermediates` |
+| Handshake private key copied into `session_t.dh_priv` by `ratchet_init`; wiped on first `ratchet_send` after receiving. With `--identity`, the long-term key is retained in session state for the initial receive phase | `main.c`, `jni_bridge.c`, `ratchet.c` | `test_p2p.c:test_session_init_wipes_intermediates` |
 | Chain key wiped after each message | `crypto.c:chain_step()` overwrites | `test_p2p.c:test_chain_step_wipes_safe` |
 | Session state wiped on exit | `protocol.c:session_wipe()` | `test_p2p.c:test_session_wipe`, `test_p2p.c:test_global_session_wipe` |
 | Frame build wipes intermediates | `protocol.c:frame_build()` | `test_p2p.c:test_frame_build_wipes_intermediates` |
