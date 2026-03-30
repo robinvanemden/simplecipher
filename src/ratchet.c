@@ -56,6 +56,7 @@ void ratchet_init(session_t *s, const uint8_t self_priv[KEY], const uint8_t self
 
 void ratchet_prepare(session_t *s) {
     if (!s->need_send_ratchet) return;
+    if (s->ratchet_prepared) return;
 
     /* Wipe any previous staged state before overwriting. */
     crypto_wipe(s->staged_dh_priv, KEY);
@@ -203,6 +204,7 @@ int ratchet_receive(session_t *s, const uint8_t peer_new_pub[KEY]) {
 
     /* All validation passed -- commit state atomically. */
     memcpy(s->peer_dh, peer_new_pub, KEY);
+    s->ratchet_prepared = 0; /* peer_dh changed — force recomputation */
     memcpy(s->root, staged_root, KEY);
     memcpy(s->rx, staged_rx, KEY);
 

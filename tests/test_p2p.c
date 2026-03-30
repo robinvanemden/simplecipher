@@ -5888,6 +5888,7 @@ static void test_frame_build_wipe_on_ratchet_fail(void) {
      * poisoned peer_dh (in production, peer_dh would already be zero
      * when ratchet_prepare runs inside frame_open). */
     memset(sess.peer_dh, 0, KEY);
+    sess.ratchet_prepared = 0; /* peer_dh changed — force recomputation */
     ratchet_prepare(&sess);
 
     uint8_t frame[FRAME_SZ], next_tx[KEY];
@@ -6567,6 +6568,7 @@ static void test_ratchet_staged_wipe_on_failure(void) {
     /* Poison peer_dh and prepare ratchet — triggers all-zero DH */
     memset(sess.peer_dh, 0, KEY);
     sess.need_send_ratchet = 1;
+    sess.ratchet_prepared  = 0; /* peer_dh changed — force recomputation */
     ratchet_prepare(&sess);
 
     /* Inject non-zero sentinels into staged fields AFTER ratchet_prepare.
