@@ -59,7 +59,7 @@ Both type the code to confirm:
 
 **Learn:** [Code Walkthrough](docs/WALKTHROUGH.md) (guided tour, ~1 hour) &#183; [Protocol and Security](docs/PROTOCOL.md) (formal spec + glossary)
 
-**Deep dives:** [Platform Hardening](docs/HARDENING.md) &#183; [Building and Development](docs/BUILDING.md) &#183; [Android App](docs/ANDROID.md) &#183; [High-Risk Deployment](docs/DEPLOYMENT.md) &#183; [Design Boundaries](docs/DESIGN_BOUNDARIES.md) &#183; [Assurance Map](docs/ASSURANCE_MAP.md) &#183; [Security Policy](SECURITY.md)
+**Deep dives:** [Platform Hardening](docs/HARDENING.md) &#183; [Building and Development](docs/BUILDING.md) &#183; [Android App](docs/ANDROID.md) &#183; [High-Risk Deployment](docs/DEPLOYMENT.md) &#183; [Formal Security Analysis](docs/FORMAL_ANALYSIS.md) &#183; [Threat Model](docs/THREAT_MODEL.md) &#183; [Design Boundaries](docs/DESIGN_BOUNDARIES.md) &#183; [Assurance Map](docs/ASSURANCE_MAP.md) &#183; [Glossary](docs/GLOSSARY.md) &#183; [Security Policy](SECURITY.md)
 
 ## Download
 

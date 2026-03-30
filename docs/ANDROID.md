@@ -97,7 +97,7 @@ Before connecting, both sides generate a fingerprint — a 16-character code lik
 
 A fingerprint is derived from a public key — the same key that's exchanged openly during the handshake. There is zero secret information in a fingerprint. If someone finds your printed QR code or reads your fingerprint, they gain nothing. They cannot forge a key that produces the same fingerprint.
 
-Fingerprints are [ephemeral](PROTOCOL.md#ephemeral). They change every session. A printed code works exactly once — for the session it was generated in.
+Fingerprints are [ephemeral](PROTOCOL.md#ephemeral) on Android. They change every session. A printed code works exactly once — for the session it was generated in. (Desktop users with `--identity` have stable fingerprints across sessions — see the [desktop fingerprint workflow](../README.md#with-pre-shared-fingerprints-paper).)
 
 **Skip safety code (trust fingerprint):** When a peer fingerprint is entered (scanned or typed), a checkbox appears: "Skip safety code (fingerprint is enough)." When checked, the app skips the safety code screen and goes straight to chat if the fingerprint matches. The 64-bit fingerprint is cryptographically stronger than the 32-bit safety code, so this is safe when the fingerprint was exchanged in person.
 

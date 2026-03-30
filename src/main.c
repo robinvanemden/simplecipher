@@ -21,7 +21,7 @@
  *
  * READING PATHS BY AUDIENCE
  * =========================
- *   Undergrad (C + crypto):
+ *   Getting started (C + crypto):
  *     main.c → protocol.h → crypto.h/c → ratchet.h/c → network.h
  *     Skip: platform.c hardening, event loop internals, cover traffic
  *

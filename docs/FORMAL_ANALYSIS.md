@@ -349,7 +349,7 @@ MAX_AUTH_FAILURES = 3. An active network attacker can inject up to 3 forged fram
 The handshake and DH ratchet rely on CDH on Curve25519. Shor's algorithm running on a sufficiently powerful quantum computer solves the discrete logarithm problem on elliptic curves in polynomial time, breaking both:
 
 - Session key agreement (X25519 in `session_init`)
-- Post-compromise security (X25519 in `ratchet_step`)
+- Post-compromise security (X25519 in `ratchet_send` / `ratchet_receive`)
 
 The symmetric primitives (BLAKE2b, XChaCha20-Poly1305) retain approximately &lambda;/2 = 128 bits of security against Grover's algorithm, which is sufficient. However, the asymmetric components provide zero post-quantum security.
 

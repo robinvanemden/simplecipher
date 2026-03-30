@@ -6,17 +6,17 @@
 
 Imagine you and your friend want to pass secret notes in class, but a bully sits between you and can read or change anything you pass.
 
-**The trick:** You and your friend each pick a secret number. You do some special math with your numbers that lets you both figure out the same secret code — without ever writing that code down or passing it. The bully sees the math fly by but can't figure out the code. (This is [key exchange](#glossary).)
+**The trick:** You and your friend each pick a secret number. You do some special math with your numbers that lets you both figure out the same secret code — without ever writing that code down or passing it. The bully sees the math fly by but can't figure out the code. (This is [key exchange](#x25519).)
 
 **But wait** — what if the bully is clever? He could grab your math, throw it away, and send his own math to your friend, pretending to be you. Now he has a secret code with your friend AND a secret code with you. He reads everything in the middle.
 
-**The fix:** Before you show your math, you each seal a promise in an envelope: *"My math will be THIS."* You swap envelopes, THEN show your math. If the bully tried to swap in his own math, the promise won't match — and you both know something's wrong. (This is the [commitment scheme](#glossary).)
+**The fix:** Before you show your math, you each seal a promise in an envelope: *"My math will be THIS."* You swap envelopes, THEN show your math. If the bully tried to swap in his own math, the promise won't match — and you both know something's wrong. (This is the [commitment scheme](#commitment-scheme).)
 
-**One more check:** After the math, both your screens show a short code — like `A3F2-91BC`. You call your friend on the phone: *"What's your code?"* If it matches, nobody's in the middle. (This is the [SAS](#glossary).)
+**One more check:** After the math, both your screens show a short code — like `A3F2-91BC`. You call your friend on the phone: *"What's your code?"* If it matches, nobody's in the middle. (This is the [SAS](#sas).)
 
-**Now you chat.** Every message gets its own lock-and-key. After each message, you throw the key away. If someone steals a key later, they can only open that one message — not any of the others. (This is [forward secrecy](#glossary).) And every time you take turns talking, you make brand-new keys from scratch, so even if someone stole your current key, the next round of keys is safe. (This is [post-compromise security](#glossary).)
+**Now you chat.** Every message gets its own lock-and-key. After each message, you throw the key away. If someone steals a key later, they can only open that one message — not any of the others. (This is [forward secrecy](#forward-secrecy).) And every time you take turns talking, you make brand-new keys from scratch, so even if someone stole your current key, the next round of keys is safe. (This is [post-compromise security](#post-compromise-security).)
 
-**When you're done,** the keys vanish from memory. Nothing was ever written to the desk. There's nothing left to find. (This is [ephemeral](#glossary).)
+**When you're done,** the keys vanish from memory. Nothing was ever written to the desk. There's nothing left to find. (This is [ephemeral](#ephemeral).)
 
 That's SimpleCipher. The rest of this document explains exactly how each piece works, with the real math and the real code.
 
@@ -24,7 +24,7 @@ That's SimpleCipher. The rest of this document explains exactly how each piece w
 
 ## Glossary
 
-If you're new to cryptography, start here. Every term used in this document is explained in plain English with an analogy. Terms in the body text are [linked](#x25519) back here.
+If you're new to cryptography, start here. Every term used in this document is explained in plain English with an analogy. Terms in the body text are [linked](#x25519) back here. A standalone [Glossary](GLOSSARY.md) is also available with additional terms.
 
 <a id="x25519"></a>**X25519** — A key exchange algorithm. Two people each generate a random keypair (private + public). They exchange public keys, and both compute the same shared secret — without ever sending it over the wire. Based on elliptic-curve math (Curve25519).
 > *Analogy:* Two people each mix a secret paint color into a shared base. They swap results, then each mixes in their own secret again — both arrive at the same final color. Nobody watching can figure it out.
@@ -232,7 +232,7 @@ On the wire, every message (handshake and chat) is wrapped with random padding:
 
 `pad_len` is a raw CSPRNG byte (uniformly distributed 0-255) and is not encrypted — it is sent in cleartext so the receiver knows where the padding ends. The padding bytes are CSPRNG output. The random padding varies total message size from 513 to 768 bytes, which defeats naive fixed-size DPI rules but does not provide full traffic indistinguishability. The pad_len byte is a cleartext header, the 8-byte sequence number in the frame AD is also unencrypted, and the fixed 512-byte inner frame size is a distinguishing feature for a sophisticated observer.
 
-Chat frames produce 513-768 bytes per message. Handshake exchanges produce 34-289 bytes (commit) or 33-288 bytes (key reveal). All sizes vary randomly.
+All wire messages (handshake and chat) produce 513-768 bytes after padding.
 
 ## Threat model
 

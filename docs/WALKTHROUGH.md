@@ -15,7 +15,7 @@ If you only read 4 functions, read these:
 1. **`session_init()`** in `protocol.c` — derives all session keys from the [X25519](GLOSSARY.md#x25519) shared secret
 2. **`frame_build()`** in `protocol.c` — encrypts one message into a 512-byte frame
 3. **`frame_open()`** in `protocol.c` — decrypts and authenticates a received frame
-4. **`chain_step()`** in `crypto.c` — the symmetric ratchet ([forward secrecy](GLOSSARY.md#forward-secrecy) in 3 lines)
+4. **`chain_step()`** in `crypto.c` — the symmetric ratchet ([forward secrecy](GLOSSARY.md#forward-secrecy) in 3 steps)
 
 These 4 functions are the entire protocol. Everything else is I/O, UI, or hardening.
 
@@ -106,7 +106,7 @@ protocol.c → frame_open(session, frame_in, plaintext_out, len_out)
 crypto.c → chain_step(chain, &message_key, &next_chain)
 ```
 
-This is the symmetric ratchet in 3 lines:
+This is the symmetric ratchet in 3 steps:
 - Derive a one-time message key from the current chain
 - Derive the next chain value
 - The old chain is overwritten — past messages can't be decrypted even if the current chain is stolen

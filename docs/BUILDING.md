@@ -11,10 +11,10 @@ make
 Or explicitly:
 
 ```bash
-gcc -O2 -std=c23 -DCIPHER_HARDEN -Isrc -Ilib src/main.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/tui.c src/cli.c src/args.c src/verify.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
+gcc -O2 -std=c23 -DCIPHER_HARDEN -Isrc -Ilib src/main.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/nb_io.c src/tui.c src/cli.c src/args.c src/verify.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
 ```
 
-On OpenBSD 7.7 (Clang 16), use `-std=c2x` instead of `-std=c23`. A compatibility shim in `platform.h` maps the C23 `constexpr` keyword to `const` on older compilers.
+On OpenBSD 7.7 (Clang 16), use `-std=c2x` instead of `-std=c23`. The codebase avoids `constexpr` entirely for portability — integer constants use `enum` (always a constant expression) and byte arrays use `static const`.
 
 ## Cross-compile with CMake presets
 
@@ -100,6 +100,7 @@ Configuration files: `.clang-format` (C style rules), `.clang-tidy` (static anal
 │   ├── ratchet.h / ratchet.c     # DH ratchet for post-compromise security
 │   ├── protocol.h / protocol.c   # sessions, frame encrypt/decrypt, handshake helpers
 │   ├── network.h / network.c     # TCP connect, listen, send, receive
+│   ├── nb_io.h / nb_io.c         # non-blocking frame I/O state machine (POSIX chat loops)
 │   ├── tui.h / tui.c             # shared TUI: ring buffer, drawing, SAS screen
 │   ├── tui_posix.c               # POSIX TUI event loop (poll + raw termios)
 │   ├── tui_win.c                 # Windows TUI event loop (WaitForMultipleObjects)
@@ -120,7 +121,7 @@ Configuration files: `.clang-format` (C style rules), `.clang-tidy` (static anal
 │   ├── test_constant_time.c      # dudect timing side-channel verification
 │   ├── test_timecop.c            # Valgrind-based constant-time verification
 │   ├── cbmc_harness.py           # CBMC formal verification (57K properties)
-│   ├── fuzz_*.c                  # libFuzzer harnesses (5 targets)
+│   ├── fuzz_*.c                  # libFuzzer harnesses (6 targets)
 │   ├── gen_fuzz_corpus.c         # seed corpus generator
 │   └── test_*.sh / test_*.ps1   # platform binary analysis scripts
 ├── .clang-tidy                   # clang-tidy check configuration
@@ -140,6 +141,7 @@ src/ratchet.h/c           DH ratchet (post-compromise security)
         │
 src/protocol.h/c          sessions, frames, handshake helpers
 src/network.h/c           TCP connect / listen / send / receive
+src/nb_io.h/c             non-blocking frame I/O state machine
 src/args.h/c              CLI config struct, exit codes, parse_args()
 src/verify.h/c            passphrase input, keygen, fingerprint, SAS verify
 src/tui.h/c               shared TUI (ring buffer, SAS screen)

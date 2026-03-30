@@ -9,7 +9,7 @@ P2P encrypted chat. Modular C protocol, compiled to 7 targets.
 make
 
 # Or explicitly:
-gcc -O2 -std=c23 -DCIPHER_HARDEN -Isrc -Ilib src/main.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/tui.c src/cli.c src/args.c src/verify.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
+gcc -O2 -std=c23 -DCIPHER_HARDEN -Isrc -Ilib src/main.c src/platform.c src/crypto.c src/protocol.c src/ratchet.c src/network.c src/nb_io.c src/tui.c src/cli.c src/args.c src/verify.c src/tui_posix.c src/cli_posix.c lib/monocypher.c -lm -o simplecipher
 
 # Cross-compile (Linux/Windows, 4 presets)
 cmake --preset linux-x86_64 && cmake --build --preset linux-x86_64
