@@ -357,7 +357,7 @@ A harvest-now-decrypt-later adversary who records ciphertext today can decrypt i
 
 ### 7.3 No deniability
 
-The commitment scheme is binding: both parties can prove that a specific public key was committed to and revealed during the handshake. A transcript of `(H(pub || nonce || version), nonce, pub, SAS)` constitutes a non-repudiable proof that the key exchange occurred with that specific key.
+The commitment scheme is binding: both parties can demonstrate that a specific public key was committed to and revealed during the handshake. A transcript of `(H(pub || nonce || version), nonce, pub, SAS)` constitutes evidence that the key exchange occurred with that specific key. However, since the transcript uses ephemeral nonces, a party could plausibly deny the session by claiming the transcript was fabricated — the commitment is binding within the session but does not constitute cryptographic non-repudiation in the legal sense.
 
 In contrast, protocols like OTR provide deniability through MAC key revelation. SimpleCipher does not reveal MAC keys or use any deniability mechanism.
 
