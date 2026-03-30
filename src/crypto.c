@@ -321,7 +321,8 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
      * read-only attribute, not a real ACL.  We use SetNamedSecurityInfoA
      * to create a DACL with a single ACE granting the owner full control. */
     {
-        HANDLE token = NULL;
+        int    acl_ok = 0;
+        HANDLE token  = NULL;
         if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
             TOKEN_USER *tu      = NULL;
             DWORD       tu_size = 0;
@@ -336,15 +337,17 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
                 ea.Trustee.ptstrName    = (LPSTR)tu->User.Sid;
                 PACL acl                = NULL;
                 if (SetEntriesInAclA(1, &ea, NULL, &acl) == ERROR_SUCCESS) {
-                    SetNamedSecurityInfoA((LPSTR)path, SE_FILE_OBJECT,
-                                          DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL, NULL,
-                                          acl, NULL);
+                    if (SetNamedSecurityInfoA((LPSTR)path, SE_FILE_OBJECT,
+                                              DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL,
+                                              NULL, acl, NULL) == ERROR_SUCCESS)
+                        acl_ok = 1;
                     LocalFree(acl);
                 }
             }
             free(tu);
             CloseHandle(token);
         }
+        if (!acl_ok) fprintf(stderr, "warning: could not set owner-only permissions on %s\n", path);
     }
     crypto_wipe(mac, sizeof mac);
     crypto_wipe(salt, sizeof salt);
@@ -433,10 +436,11 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
 int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY], const char *pass, size_t pass_len) {
     /* O_NOFOLLOW prevents opening a symlink-planted identity file.
      * identity_save already uses O_NOFOLLOW; this closes the asymmetry.
-     * On FreeBSD /tmp is often a symlink to /var/tmp, so we only enforce
-     * O_NOFOLLOW on Linux where seccomp cannot block symlink-based attacks.
-     * FreeBSD (Capsicum) and OpenBSD (pledge) handle this at the OS level. */
-#if defined(__linux__)
+     * On Windows, symlink attacks are not a concern (requires SeCreateSymbolicLinkPrivilege). */
+#if defined(_WIN32) || defined(_WIN64)
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+#else
     int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) return -1;
     FILE *f = fdopen(fd, "rb");
@@ -444,9 +448,6 @@ int identity_load(const char *path, uint8_t priv[KEY], uint8_t pub[KEY], const c
         close(fd);
         return -1;
     }
-#else
-    FILE *f = fopen(path, "rb");
-    if (!f) return -1;
 #endif
 #if !defined(_WIN32) && !defined(_WIN64)
     {

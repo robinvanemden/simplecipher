@@ -146,7 +146,7 @@ Requires [CBMC](https://github.com/diffblue/cbmc).
 python3 tests/cbmc_harness.py
 ```
 
-Bounded model checking on 9 functions: `frame_open`, `frame_build`, `chain_step`, `ratchet_send`, `ratchet_receive`, `session_init`, `format_fingerprint`, `socks5_build_request`, `socks5_reply_skip`. Proves absence of buffer overflow, out-of-bounds access, null pointer dereference, and signed integer overflow for inputs up to loop bound K=5 (57,161 properties verified). This is bounded model checking — loops deeper than 5 iterations are not explored. Pass `--unwind N` for deeper bounds.
+CBMC bounded model checking on 9 functions: `frame_open`, `frame_build`, `chain_step`, `ratchet_send`, `ratchet_receive`, `session_init`, `format_fingerprint`, `socks5_build_request`, `socks5_reply_skip`. Verifies memory safety — no buffer overflow, no out-of-bounds access, no null pointer dereference, and no signed integer overflow — for inputs up to loop bound K=5 (57,161 properties checked). This is bounded model checking, not full formal verification of the protocol — loops deeper than 5 iterations are not explored. Pass `--unwind N` for deeper bounds.
 
 ### Constant-time verification (manual)
 

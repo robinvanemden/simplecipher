@@ -114,7 +114,7 @@ $goBtn.Add_Click({^
     if ($port -notmatch '^[0-9]+$') { [System.Windows.Forms.MessageBox]::Show('Invalid port: only digits are allowed.', 'SimpleCipher'); return };^
     $tui = '';^
     if ($tuiCheck.Checked) { $tui = '--tui' };^
-    $cipher = '%CIPHER%';^
+    $cipher = ('%CIPHER%' -replace \"'\", \"''\");^
     $argList = @($cipher);^
     if ($tui) { $argList += $tui };^
     if ($rbConnect.Checked) {^

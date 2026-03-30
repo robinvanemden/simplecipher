@@ -91,7 +91,7 @@ Each row answers the question: *is this security claim backed by real code and r
 
 | Property | Tool | Harness |
 |----------|------|---------|
-| 57,000+ properties (bounds, overflow, pointer safety) | CBMC | `tests/cbmc_harness.py` |
+| Memory safety in 9 core functions (no buffer overflow, no null deref, no signed overflow) | CBMC bounded model checking | `tests/cbmc_harness.py` |
 
 ## Known gaps (documented, not bugs)
 
