@@ -45,11 +45,11 @@ Before sending our public key, we send a *[commitment](GLOSSARY.md#commitment-sc
 
 ```
 main.c:
-  exchange(fd, we_init, [version + commit], ...)  ← Round 1
-  exchange(fd, we_init, self_pub, ...)             ← Round 2
+  exchange(fd, we_init, [ver + commit + nonce + eph_pub], ...)  ← Round 1 (97 bytes)
+  exchange(fd, we_init, AEAD_encrypt(self_pub, eph_key), ...)  ← Round 2 (48 bytes)
 ```
 
-Both rounds complete before any verification. This makes version-mismatch and commitment-mismatch failures indistinguishable on the wire — an observer can't fingerprint which check failed.
+Round 1 includes an ephemeral X25519 public key. Both sides compute a temporary shared secret from the ephemeral DH, then use it to encrypt the public key reveal in round 2. This prevents a passive network observer from seeing the public keys — important for `--identity` users whose key is stable across sessions. Both rounds complete before any verification, making failure modes indistinguishable on the wire.
 
 ### Step 4: Derive session keys
 
