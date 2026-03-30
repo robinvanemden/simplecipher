@@ -1348,13 +1348,13 @@ JNIEXPORT jint JNICALL Java_com_example_simplecipher_ChatActivity_nativeStart(JN
          * sleeps rather than pthread_timedjoin_np (not available on Bionic). */
         for (int i = 0; i < 20 && g_session_active; i++) { usleep(100000); /* 100ms × 20 = 2s max wait */ }
         if (g_session_active) {
-            LOGE("previous session thread did not exit in time — detaching");
-            /* Detach so the thread auto-cleans when it eventually exits.
-             * Without this, the joinable thread leaks its stack. */
-            pthread_detach(g_session_thread);
-        } else {
-            pthread_join(g_session_thread, NULL);
+            LOGE("previous session thread did not exit in time — refusing new session");
+            /* Do NOT detach and continue — the old thread may still hold JNI
+             * refs and access the JVM.  Starting a second thread risks UB.
+             * Return an error so the Java side can retry or show a message. */
+            return -1;
         }
+        pthread_join(g_session_thread, NULL);
         g_session_active = 0;
     }
 

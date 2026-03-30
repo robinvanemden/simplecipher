@@ -316,7 +316,35 @@ int identity_save(const char *path, const uint8_t priv[KEY], const char *pass, s
         return -1;
     }
 
-    chmod(path, 0600);
+    /* Set owner-only DACL.  _chmod(0600) on Windows only sets the DOS
+     * read-only attribute, not a real ACL.  We use SetNamedSecurityInfoA
+     * to create a DACL with a single ACE granting the owner full control. */
+    {
+        HANDLE token = NULL;
+        if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+            TOKEN_USER *tu      = NULL;
+            DWORD       tu_size = 0;
+            GetTokenInformation(token, TokenUser, NULL, 0, &tu_size);
+            tu = (TOKEN_USER *)malloc(tu_size);
+            if (tu && GetTokenInformation(token, TokenUser, tu, tu_size, &tu_size)) {
+                EXPLICIT_ACCESS_A ea    = {0};
+                ea.grfAccessPermissions = GENERIC_ALL;
+                ea.grfAccessMode        = SET_ACCESS;
+                ea.grfInheritance       = NO_INHERITANCE;
+                ea.Trustee.TrusteeForm  = TRUSTEE_IS_SID;
+                ea.Trustee.ptstrName    = (LPSTR)tu->User.Sid;
+                PACL acl                = NULL;
+                if (SetEntriesInAclA(1, &ea, NULL, &acl) == ERROR_SUCCESS) {
+                    SetNamedSecurityInfoA((LPSTR)path, SE_FILE_OBJECT,
+                                          DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL, NULL,
+                                          acl, NULL);
+                    LocalFree(acl);
+                }
+            }
+            free(tu);
+            CloseHandle(token);
+        }
+    }
     crypto_wipe(mac, sizeof mac);
     crypto_wipe(salt, sizeof salt);
     crypto_wipe(nonce, sizeof nonce);
