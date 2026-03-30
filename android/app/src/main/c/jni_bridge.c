@@ -309,6 +309,588 @@ static int jni_call_str(JNIEnv *env, jobject cb, jmethodID mid, const char *str,
     return jni_callback_ok(env);
 }
 
+/* ---- JNI callback context passed to phase helpers ----------------------- */
+
+typedef struct {
+    JNIEnv   *env;
+    jobject   cb;
+    jmethodID mid_onConnected;
+    jmethodID mid_onConnectionFailed;
+    jmethodID mid_onSasReady;
+    jmethodID mid_onHandshakeFailed;
+    jmethodID mid_onMessageReceived;
+    jmethodID mid_onSendResult;
+    jmethodID mid_onDisconnected;
+    jmethodID mid_onPeerFingerprintReady;
+} jni_ctx_t;
+
+/* ---- Phase 1: TCP connection -------------------------------------------- */
+
+/* Connect or listen for a peer.  Returns the connected socket fd, or
+ * INVALID_SOCK on failure.  *we_init is set to 1 for connect modes,
+ * 0 for listen.  *reported is set to 1 if the function already fired
+ * a JNI error/disconnect callback (so the caller should not send a
+ * redundant "connection failed" notification). */
+static socket_t jni_connect(int mode, const char *host, int port,
+                            const char *socks5_host, const char *socks5_port,
+                            int pipe_rd, int my_gen,
+                            const jni_ctx_t *jc, int *we_init, int *reported) {
+    JNIEnv *env = jc->env;
+    jobject cb  = jc->cb;
+    *reported   = 0;
+
+    char port_str[6];
+    snprintf(port_str, sizeof port_str, "%d", port);
+
+    if (mode == 1 && socks5_host) {
+        /* SOCKS5 proxy connect (e.g. Tor via Orbot on 127.0.0.1:9050).
+         *
+         * The TCP connect to the proxy is to localhost, so it completes
+         * instantly — no need for the non-blocking + poll() machinery.
+         * The SOCKS5 negotiation is a few round-trips over localhost.
+         * connect_socket_socks5() handles the full handshake. */
+        LOGI("connecting via SOCKS5 %s:%s to %s:%s", socks5_host, socks5_port, host ? host : "(null)", port_str);
+
+        socket_t fd = connect_socket_socks5(socks5_host, socks5_port, host, port_str);
+        if (fd == INVALID_SOCK) {
+            LOGE("SOCKS5 connect failed");
+            jni_call_str(env, cb, jc->mid_onConnectionFailed, "SOCKS5 proxy connect failed", "socks5_fail");
+            *reported = 1;
+            return INVALID_SOCK;
+        }
+        set_sock_opts(fd);
+        *we_init = 1;
+        return fd;
+    }
+
+    if (mode == 1) {
+        /* Direct connect mode — interruptible via nativeStop().
+         *
+         * We can't use connect_socket() directly because connect() can
+         * block for up to 127 seconds (kernel SYN timeout) with no way
+         * to interrupt it.  Instead, use non-blocking connect + poll()
+         * on both the socket and the pipe so nativeStop()'s pipe close
+         * (POLLHUP) is detected promptly. */
+        LOGI("connecting to %s:%s", host ? host : "(null)", port_str);
+        socket_t fd = INVALID_SOCK;
+
+        struct addrinfo hints, *res, *p;
+        memset(&hints, 0, sizeof hints);
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_family   = AF_UNSPEC;
+        hints.ai_flags    = AI_NUMERICHOST; /* no DNS — numeric IPs only */
+        if (getaddrinfo(host, port_str, &hints, &res) != 0) {
+            LOGE("getaddrinfo failed for %s:%s (numeric IPs only)", host ? host : "(null)", port_str);
+        } else {
+            for (p = res; p; p = p->ai_next) {
+                fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+                if (fd == INVALID_SOCK) continue;
+
+                /* Set non-blocking for interruptible connect */
+                int flags = fcntl((int)fd, F_GETFL);
+                if (flags != -1) fcntl((int)fd, F_SETFL, flags | O_NONBLOCK);
+
+                int rc = connect(fd, p->ai_addr, (socklen_t)p->ai_addrlen);
+                if (rc == 0) {
+                    /* Connected immediately — restore blocking */
+                    if (flags != -1) fcntl((int)fd, F_SETFL, flags);
+                    break;
+                }
+                if (errno != EINPROGRESS) {
+                    close_sock(fd);
+                    fd = INVALID_SOCK;
+                    continue;
+                }
+
+                /* Poll: wait for connect to complete or stop signal on pipe.
+                 * nativeStop() closes the write end, producing POLLHUP (not
+                 * POLLIN) on Linux — check both plus POLLERR for safety. */
+                struct pollfd cfds[2];
+                cfds[0].fd     = (int)fd;
+                cfds[0].events = POLLOUT;
+                cfds[1].fd     = pipe_rd;
+                cfds[1].events = POLLIN;
+
+                int connected = 0;
+                int ret       = poll(cfds, 2, HANDSHAKE_TIMEOUT_S * 1000);
+                if (ret > 0 && (cfds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
+                    /* nativeStop() closed the pipe (or CMD_QUIT fallback) — abort */
+                    LOGI("quit received during connect");
+                    close_sock(fd);
+                    freeaddrinfo(res);
+                    jni_call_str(env, cb, jc->mid_onDisconnected, "Session ended by user", "quit_connect");
+                    *reported = 1;
+                    return INVALID_SOCK;
+                }
+                if (ret > 0 && (cfds[0].revents & POLLOUT)) {
+                    int       err  = 0;
+                    socklen_t elen = sizeof err;
+                    getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &elen);
+                    if (err == 0) connected = 1;
+                }
+
+                /* Restore blocking mode */
+                if (flags != -1) fcntl((int)fd, F_SETFL, flags);
+
+                if (connected) break;
+                close_sock(fd);
+                fd = INVALID_SOCK;
+            }
+            freeaddrinfo(res);
+            if (fd != INVALID_SOCK) set_sock_opts(fd);
+        }
+        *we_init = 1;
+        return fd;
+    }
+
+    /* Listen mode — interruptible via nativeStop().
+     *
+     * We can't use listen_socket() directly because it blocks in
+     * accept() with no way to interrupt it.  Instead, use select()
+     * with a 250ms timeout so nativeStop()'s pipe close or listen
+     * socket close is detected promptly.  nativeStop() also closes
+     * g_listen_sock, which makes select() return with srv readable
+     * (accept then fails, breaking the loop).  This lets the user
+     * press Back and immediately re-listen on the same port. */
+    LOGI("listening on port %s", port_str);
+
+    /* Bind and listen using the same setup as listen_socket but
+     * keeping the server socket so we can select on it + the pipe. */
+    struct addrinfo hints, *res, *p;
+    socket_t        srv = INVALID_SOCK;
+    socket_t        fd  = INVALID_SOCK;
+    int             one = 1;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family   = AF_UNSPEC;
+    hints.ai_flags    = AI_PASSIVE;
+    if (getaddrinfo(NULL, port_str, &hints, &res) != 0) {
+        LOGE("getaddrinfo failed for port %s", port_str);
+        jni_call_str(env, cb, jc->mid_onConnectionFailed, "Listen failed (getaddrinfo)", "listen_gai");
+        *reported = 1;
+        return INVALID_SOCK;
+    }
+    for (p = res; p; p = p->ai_next) {
+        srv = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (srv == INVALID_SOCK) continue;
+        setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof one);
+        if (bind(srv, p->ai_addr, (socklen_t)p->ai_addrlen) == 0 && listen(srv, 1) == 0) break;
+        close_sock(srv);
+        srv = INVALID_SOCK;
+    }
+    freeaddrinfo(res);
+
+    if (srv == INVALID_SOCK) {
+        LOGE("bind/listen failed on port %s", port_str);
+        jni_call_str(env, cb, jc->mid_onConnectionFailed, "Listen failed (port in use?)", "listen_bind");
+        *reported = 1;
+        return INVALID_SOCK;
+    }
+
+    /* Select: wait for a peer connection or nativeStop() signal.
+     * When nativeStop() closes the pipe write end, select() marks
+     * pipe_rd readable; read() then returns EOF.  nativeStop() also
+     * closes g_listen_sock, making select() return on srv too. */
+    /* Publish under mutex: generation check + socket write are atomic. */
+    pthread_mutex_lock(&g_session_mtx);
+    if (g_session_gen == my_gen) g_listen_sock = srv;
+    pthread_mutex_unlock(&g_session_mtx);
+    while (fd == INVALID_SOCK) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(srv, &rfds);
+        FD_SET(pipe_rd, &rfds);
+        int maxfd = (srv > pipe_rd ? srv : pipe_rd) + 1;
+
+        struct timeval tv    = {.tv_sec = 0, .tv_usec = 250000}; /* 250ms */
+        int            ready = select(maxfd, &rfds, NULL, NULL, &tv);
+        if (ready < 0) break;
+
+        if (FD_ISSET(pipe_rd, &rfds)) {
+            /* nativeStop() closed pipe (or CMD_QUIT fallback) — abort */
+            LOGI("quit received during listen");
+            pthread_mutex_lock(&g_session_mtx);
+            if (g_listen_sock == srv) g_listen_sock = INVALID_SOCK;
+            pthread_mutex_unlock(&g_session_mtx);
+            close_sock(srv);
+            jni_call_str(env, cb, jc->mid_onDisconnected, "Session ended by user", "quit_listen");
+            *reported = 1;
+            return INVALID_SOCK;
+        }
+
+        if (FD_ISSET(srv, &rfds)) { fd = accept(srv, NULL, NULL); }
+    }
+    pthread_mutex_lock(&g_session_mtx);
+    if (g_listen_sock == srv) g_listen_sock = INVALID_SOCK;
+    pthread_mutex_unlock(&g_session_mtx);
+    close_sock(srv);
+    *we_init = 0;
+    return fd;
+}
+
+/* ---- Phase 4: Chat event loop ------------------------------------------- */
+
+/* Run the poll-based chat loop until the session ends.  All crypto state
+ * is owned by the caller (session_thread); this function only borrows it.
+ * Returns when the peer disconnects, the user quits, or an error occurs. */
+static void jni_chat_loop(socket_t fd, session_t *sess, int cover,
+                           int pipe_rd, const jni_ctx_t *jc) {
+    JNIEnv *env = jc->env;
+    jobject cb  = jc->cb;
+
+    /* Set frame timeout so a stalled partial frame doesn't hang forever.
+     * Unlike the handshake timeout, this only fires if a frame *starts*
+     * arriving but never completes.  Idle sessions are fine. */
+    set_sock_timeout(fd, FRAME_TIMEOUT_S);
+
+    uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
+    uint8_t  pending_msg[MAX_MSG + 1];
+    uint16_t pending_len = 0;
+    memset(pending_msg, 0, sizeof pending_msg);
+
+    struct pollfd fds[2];
+    fds[0].fd     = (int)fd;
+    fds[0].events = POLLIN;
+    fds[1].fd     = pipe_rd;
+    fds[1].events = POLLIN;
+
+    int running    = 1;
+    int auth_fails = 0;
+    /* Rate-limit incoming messages to prevent handler queue flooding.
+     * A malicious authenticated peer sending faster than this threshold
+     * would grow the Java handler queue and cause ANR/OOM. */
+    int      msg_count_window = 0;
+    uint64_t msg_window_start = monotonic_ms();
+    while (running) {
+        int timeout_ms = 250;
+        if (cover) {
+            int64_t remain = (int64_t)(next_cover - monotonic_ms());
+            if (remain <= 0) timeout_ms = 0;
+            else if (remain < timeout_ms) timeout_ms = (int)remain;
+        }
+        int ret = poll(fds, 2, timeout_ms);
+        if (ret < 0) {
+            if (errno == EINTR) continue;
+            LOGE("poll error: %s", strerror(errno));
+            break;
+        }
+
+        /* --- Socket readable: incoming encrypted frame --- */
+        if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
+            uint8_t  frame[FRAME_SZ];
+            uint8_t  plain[MAX_MSG + 1];
+            uint16_t plen = 0;
+
+            if (frame_recv(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                LOGI("peer disconnected (frame read failed)");
+                crypto_wipe(frame, sizeof frame);
+                jni_call_str(env, cb, jc->mid_onDisconnected, "Peer disconnected", "peer_dc");
+                break;
+            }
+
+            /* Rate-limit ALL incoming frames (not just messages) to
+             * prevent CPU exhaustion from cover/ratchet frame spam
+             * before expensive AEAD decryption + X25519 work. */
+            msg_count_window++;
+            uint64_t now_rl = monotonic_ms();
+            if (now_rl - msg_window_start >= 1000) {
+                msg_count_window = 1;
+                msg_window_start = now_rl;
+            } else if (msg_count_window > 50) {
+                /* Drop silently — the peer is flooding. */
+                crypto_wipe(frame, sizeof frame);
+                continue;
+            }
+
+            int fo_rc = frame_open(sess, frame, plain, &plen);
+            if (fo_rc != 0) {
+                crypto_wipe(frame, sizeof frame);
+                crypto_wipe(plain, sizeof plain);
+                if (fo_rc == -2) {
+                    LOGE("frame_open: malicious ratchet key — session torn down");
+                    jni_call_str(env, cb, jc->mid_onDisconnected, "Malicious ratchet key", "ratchet_fail");
+                    break;
+                }
+                if (++auth_fails >= MAX_AUTH_FAILURES) {
+                    LOGE("frame_open failed %d times — session torn down", auth_fails);
+                    jni_call_str(env, cb, jc->mid_onDisconnected, "Decryption failed", "decrypt_fail");
+                    break;
+                }
+                LOGI("frame_open failed (%d/%d), tolerating", auth_fails, MAX_AUTH_FAILURES);
+                continue;
+            }
+            auth_fails = 0;
+
+            if (plen > 0) { /* len==0 is a cover-traffic dummy — silently discard */
+                plain[plen] = '\0';
+                sanitize_peer_text(plain, plen);
+
+                jstring text = (*env)->NewStringUTF(env, (char *)plain);
+                if (!text) {
+                    LOGE("NewStringUTF(message) failed");
+                    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(plain, sizeof plain);
+                    break;
+                }
+                (*env)->CallVoidMethod(env, cb, jc->mid_onMessageReceived, text);
+                (*env)->DeleteLocalRef(env, text);
+                if (jni_callback_ok(env) != 0) {
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(plain, sizeof plain);
+                    break;
+                }
+            }
+
+            crypto_wipe(frame, sizeof frame);
+            crypto_wipe(plain, sizeof plain);
+        }
+
+        /* --- Pipe readable: command from Java, or nativeStop() ---
+         * POLLHUP/POLLERR: nativeStop() closed the write end;
+         * pipe_read_exact() returns EOF and we break out.
+         * POLLIN: normal command (CMD_SEND, CMD_CONFIRM_SAS,
+         * or CMD_QUIT fallback). */
+        if (fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
+            uint8_t hdr[3];
+            if (pipe_read_exact(pipe_rd, hdr, 3) != 0) {
+                /* EOF from nativeStop() pipe close, or read error */
+                break;
+            }
+
+            uint8_t  cmd  = hdr[0];
+            uint16_t plen = (uint16_t)(hdr[1] | (hdr[2] << 8));
+
+            if (cmd == CMD_QUIT) {
+                LOGI("CMD_QUIT received");
+                /* Drain any payload (CMD_QUIT shouldn't have one) */
+                if (plen > 0) {
+                    uint8_t discard[512];
+                    while (plen > 0) {
+                        size_t chunk = plen < sizeof discard ? plen : sizeof discard;
+                        if (pipe_read_exact(pipe_rd, discard, chunk) != 0) break;
+                        plen -= (uint16_t)chunk;
+                    }
+                }
+                jni_call_str(env, cb, jc->mid_onDisconnected, "Session ended", "quit_cmd");
+                running = 0;
+
+            } else if (cmd == CMD_SEND) {
+                /* Read the message payload */
+                uint8_t msg_buf[MAX_MSG + 1];
+                if (plen > MAX_MSG) {
+                    LOGE("CMD_SEND payload too large: %d", (int)plen);
+                    /* Drain oversized payload */
+                    uint8_t  discard[512];
+                    uint16_t remaining = plen;
+                    while (remaining > 0) {
+                        size_t chunk = remaining < sizeof discard ? remaining : sizeof discard;
+                        if (pipe_read_exact(pipe_rd, discard, chunk) != 0) break;
+                        remaining -= (uint16_t)chunk;
+                    }
+                    (*env)->CallVoidMethod(env, cb, jc->mid_onSendResult, (jboolean)0);
+                    if (jni_callback_ok(env) != 0) {
+                        running = 0;
+                        break;
+                    }
+                    continue;
+                }
+
+                if (plen > 0 && pipe_read_exact(pipe_rd, msg_buf, plen) != 0) {
+                    LOGE("pipe read error on CMD_SEND payload");
+                    break;
+                }
+
+                if (cover) {
+                    /* Queue for next cover tick — all outgoing frames
+                     * follow the same timing distribution. */
+                    if (pending_len > 0) {
+                        crypto_wipe(msg_buf, plen);
+                        (*env)->CallVoidMethod(env, cb, jc->mid_onSendResult, (jboolean)0);
+                        if (jni_callback_ok(env) != 0) {
+                            running = 0;
+                            break;
+                        }
+                        continue;
+                    }
+                    if (plen > 0) memcpy(pending_msg, msg_buf, plen);
+                    pending_len = plen;
+                    crypto_wipe(msg_buf, plen);
+                    (*env)->CallVoidMethod(env, cb, jc->mid_onSendResult, (jboolean)1);
+                    if (jni_callback_ok(env) != 0) {
+                        running = 0;
+                        break;
+                    }
+                    continue;
+                }
+
+                /* No cover: encrypt and send immediately */
+                uint8_t frame[FRAME_SZ], next_tx[KEY];
+                if (frame_build(sess, msg_buf, plen, frame, next_tx) != 0) {
+                    LOGE("frame_build failed");
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(next_tx, sizeof next_tx);
+                    crypto_wipe(msg_buf, plen);
+                    (*env)->CallVoidMethod(env, cb, jc->mid_onSendResult, (jboolean)0);
+                    if (jni_callback_ok(env) != 0) {
+                        running = 0;
+                        break;
+                    }
+                    continue;
+                }
+
+                if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                    LOGE("write_exact failed");
+                    crypto_wipe(frame, sizeof frame);
+                    crypto_wipe(next_tx, sizeof next_tx);
+                    crypto_wipe(msg_buf, plen);
+                    (*env)->CallVoidMethod(env, cb, jc->mid_onSendResult, (jboolean)0);
+                    if (jni_callback_ok(env) != 0) {
+                        running = 0;
+                        continue;
+                    }
+                    jni_call_str(env, cb, jc->mid_onDisconnected, "Send failed (connection lost)", "send_fail");
+                    running = 0;
+                    continue;
+                }
+
+                memcpy(sess->tx, next_tx, KEY);
+                sess->tx_seq++;
+
+                crypto_wipe(frame, sizeof frame);
+                crypto_wipe(next_tx, sizeof next_tx);
+                crypto_wipe(msg_buf, plen);
+
+                (*env)->CallVoidMethod(env, cb, jc->mid_onSendResult, (jboolean)1);
+                if (jni_callback_ok(env) != 0) {
+                    LOGE("onSendResult callback failed — session desynced");
+                    running = 0;
+                }
+
+            } else {
+                LOGE("unknown command 0x%02x, draining %d bytes", cmd, (int)plen);
+                uint8_t discard[512];
+                while (plen > 0) {
+                    size_t chunk = plen < sizeof discard ? plen : sizeof discard;
+                    if (pipe_read_exact(pipe_rd, discard, chunk) != 0) break;
+                    plen -= (uint16_t)chunk;
+                }
+            }
+        }
+
+        /* ---- Cover traffic: single send point for all outgoing frames.
+         * Queued real messages replace the cover payload so every frame
+         * follows the same timing distribution — defeating analysis. */
+        if (cover && running && monotonic_ms() >= next_cover) {
+            uint8_t        frame[FRAME_SZ], next_tx[KEY];
+            const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
+            uint16_t       tx_len  = pending_len;
+            if (frame_build(sess, payload, tx_len, frame, next_tx) != 0) {
+                crypto_wipe(frame, sizeof frame);
+                crypto_wipe(next_tx, sizeof next_tx);
+                jni_call_str(env, cb, jc->mid_onDisconnected, "Internal error", "cover_build");
+                break;
+            }
+            if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
+                crypto_wipe(frame, sizeof frame);
+                crypto_wipe(next_tx, sizeof next_tx);
+                jni_call_str(env, cb, jc->mid_onDisconnected, "Connection lost", "cover_send");
+                break;
+            }
+            memcpy(sess->tx, next_tx, KEY);
+            sess->tx_seq++;
+            if (pending_len > 0) {
+                crypto_wipe(pending_msg, sizeof pending_msg);
+                pending_len = 0;
+            }
+            crypto_wipe(frame, sizeof frame);
+            crypto_wipe(next_tx, sizeof next_tx);
+            next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
+        }
+    }
+
+    if (pending_len > 0) {
+        LOGE("queued message was not sent before disconnect");
+        jni_call_str(env, cb, jc->mid_onDisconnected,
+                     "[queued message was not sent]", "queued_lost");
+    }
+    crypto_wipe(pending_msg, sizeof pending_msg);
+}
+
+/* ---- Phase 3: SAS verification wait ------------------------------------- */
+
+/* Wait for the user to confirm the SAS code via the pipe command.
+ * Returns 0 on successful confirmation, -1 on error/quit/timeout.
+ * *cleanup_level is set to indicate which cleanup path to take:
+ *   1 = cleanup_keys, 2 = cleanup_session. */
+static int jni_wait_sas(socket_t fd, int pipe_rd, const jni_ctx_t *jc,
+                         int *cleanup_level) {
+    JNIEnv *env = jc->env;
+    jobject cb  = jc->cb;
+
+    /* Poll both the pipe (for SAS confirmation / quit from Java) and
+     * the peer socket (for disconnect).  Without the socket check, a
+     * peer disconnect during SAS verification would go unnoticed until
+     * the user tapped Confirm or Back. */
+    uint8_t hdr[3];
+    uint64_t sas_deadline = monotonic_ms() + SAS_TIMEOUT_MS;
+    for (;;) {
+        if (monotonic_ms() >= sas_deadline) {
+            LOGE("SAS verification timed out");
+            jni_call_str(env, cb, jc->mid_onHandshakeFailed, "SAS verification timed out", "sas_timeout");
+            *cleanup_level = 1;
+            return -1;
+        }
+        struct pollfd sas_fds[2] = {{pipe_rd, POLLIN, 0}, {(int)fd, POLLHUP, 0}};
+        int           pr         = poll(sas_fds, 2, 1000); /* 1-second poll */
+        if (pr < 0 && errno == EINTR) continue;
+        if (pr < 0) break;
+        if (sas_fds[1].revents & (POLLHUP | POLLERR)) {
+            LOGE("peer disconnected during SAS verification");
+            jni_call_str(env, cb, jc->mid_onHandshakeFailed, "Peer disconnected during verification", "sas_peer_dc");
+            *cleanup_level = 2;
+            return -1;
+        }
+        if (sas_fds[0].revents & (POLLIN | POLLHUP | POLLERR)) break; /* pipe ready — read the command below */
+    }
+    if (pipe_read_exact(pipe_rd, hdr, 3) != 0) {
+        LOGE("pipe read failed waiting for SAS confirm");
+        jni_call_str(env, cb, jc->mid_onDisconnected, "Internal error", "sas_pipe");
+        *cleanup_level = 2;
+        return -1;
+    }
+
+    uint8_t cmd = hdr[0];
+    if (cmd == CMD_QUIT) {
+        LOGI("quit received during SAS wait");
+        jni_call_str(env, cb, jc->mid_onDisconnected, "Session ended by user", "quit_sas");
+        *cleanup_level = 2;
+        return -1;
+    }
+    if (cmd != CMD_CONFIRM_SAS) {
+        LOGE("unexpected command 0x%02x during SAS wait", cmd);
+        jni_call_str(env, cb, jc->mid_onDisconnected, "Unexpected command", "sas_bad_cmd");
+        *cleanup_level = 2;
+        return -1;
+    }
+
+    /* Skip any payload (CMD_CONFIRM_SAS has none, but be safe) */
+    uint16_t plen = (uint16_t)(hdr[1] | (hdr[2] << 8));
+    if (plen > 0) {
+        uint8_t discard[512];
+        while (plen > 0) {
+            size_t chunk = plen < sizeof discard ? plen : sizeof discard;
+            if (pipe_read_exact(pipe_rd, discard, chunk) != 0) break;
+            plen -= (uint16_t)chunk;
+        }
+    }
+
+    LOGI("SAS confirmed, entering chat loop");
+    return 0;
+}
+
+/* ---- session_thread: orchestrator --------------------------------------- */
+
 static void *session_thread(void *arg) {
     thread_arg_t *ta = (thread_arg_t *)arg;
 
@@ -387,6 +969,20 @@ static void *session_thread(void *arg) {
         return NULL;
     }
 
+    /* Build JNI callback context for phase helpers */
+    jni_ctx_t jc = {
+        .env                      = env,
+        .cb                       = cb,
+        .mid_onConnected          = mid_onConnected,
+        .mid_onConnectionFailed   = mid_onConnectionFailed,
+        .mid_onSasReady           = mid_onSasReady,
+        .mid_onHandshakeFailed    = mid_onHandshakeFailed,
+        .mid_onMessageReceived    = mid_onMessageReceived,
+        .mid_onSendResult         = mid_onSendResult,
+        .mid_onDisconnected       = mid_onDisconnected,
+        .mid_onPeerFingerprintReady = mid_onPeerFingerprintReady,
+    };
+
     /* All session state lives on the stack — no globals, no races. */
     socket_t  fd = INVALID_SOCK;
     session_t sess;
@@ -409,190 +1005,19 @@ static void *session_thread(void *arg) {
      * Phase 1: TCP connection
      * ================================================================ */
 
-    char port_str[6];
-    snprintf(port_str, sizeof port_str, "%d", port);
-
-    if (mode == 1 && socks5_host) {
-        /* SOCKS5 proxy connect (e.g. Tor via Orbot on 127.0.0.1:9050).
-         *
-         * The TCP connect to the proxy is to localhost, so it completes
-         * instantly — no need for the non-blocking + poll() machinery.
-         * The SOCKS5 negotiation is a few round-trips over localhost.
-         * connect_socket_socks5() handles the full handshake. */
-        LOGI("connecting via SOCKS5 %s:%s to %s:%s", socks5_host, socks5_port, host ? host : "(null)", port_str);
-
-        fd = connect_socket_socks5(socks5_host, socks5_port, host, port_str);
-        if (fd == INVALID_SOCK) {
-            LOGE("SOCKS5 connect failed");
-            jni_call_str(env, cb, mid_onConnectionFailed, "SOCKS5 proxy connect failed", "socks5_fail");
-            goto cleanup;
-        }
-        set_sock_opts(fd);
-        we_init = 1;
-    } else if (mode == 1) {
-        /* Direct connect mode — interruptible via nativeStop().
-         *
-         * We can't use connect_socket() directly because connect() can
-         * block for up to 127 seconds (kernel SYN timeout) with no way
-         * to interrupt it.  Instead, use non-blocking connect + poll()
-         * on both the socket and the pipe so nativeStop()'s pipe close
-         * (POLLHUP) is detected promptly. */
-        LOGI("connecting to %s:%s", host ? host : "(null)", port_str);
-
-        struct addrinfo hints, *res, *p;
-        memset(&hints, 0, sizeof hints);
-        hints.ai_socktype = SOCK_STREAM;
-        hints.ai_family   = AF_UNSPEC;
-        hints.ai_flags    = AI_NUMERICHOST; /* no DNS — numeric IPs only */
-        if (getaddrinfo(host, port_str, &hints, &res) != 0) {
-            LOGE("getaddrinfo failed for %s:%s (numeric IPs only)", host ? host : "(null)", port_str);
-        } else {
-            for (p = res; p; p = p->ai_next) {
-                fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-                if (fd == INVALID_SOCK) continue;
-
-                /* Set non-blocking for interruptible connect */
-                int flags = fcntl((int)fd, F_GETFL);
-                if (flags != -1) fcntl((int)fd, F_SETFL, flags | O_NONBLOCK);
-
-                int rc = connect(fd, p->ai_addr, (socklen_t)p->ai_addrlen);
-                if (rc == 0) {
-                    /* Connected immediately — restore blocking */
-                    if (flags != -1) fcntl((int)fd, F_SETFL, flags);
-                    break;
-                }
-                if (errno != EINPROGRESS) {
-                    close_sock(fd);
-                    fd = INVALID_SOCK;
-                    continue;
-                }
-
-                /* Poll: wait for connect to complete or stop signal on pipe.
-                 * nativeStop() closes the write end, producing POLLHUP (not
-                 * POLLIN) on Linux — check both plus POLLERR for safety. */
-                struct pollfd cfds[2];
-                cfds[0].fd     = (int)fd;
-                cfds[0].events = POLLOUT;
-                cfds[1].fd     = pipe_rd;
-                cfds[1].events = POLLIN;
-
-                int connected = 0;
-                int ret       = poll(cfds, 2, HANDSHAKE_TIMEOUT_S * 1000);
-                if (ret > 0 && (cfds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
-                    /* nativeStop() closed the pipe (or CMD_QUIT fallback) — abort */
-                    LOGI("quit received during connect");
-                    close_sock(fd);
-                    fd = INVALID_SOCK;
-                    freeaddrinfo(res);
-                    jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_connect");
-                    goto cleanup;
-                }
-                if (ret > 0 && (cfds[0].revents & POLLOUT)) {
-                    int       err  = 0;
-                    socklen_t elen = sizeof err;
-                    getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &elen);
-                    if (err == 0) connected = 1;
-                }
-
-                /* Restore blocking mode */
-                if (flags != -1) fcntl((int)fd, F_SETFL, flags);
-
-                if (connected) break;
-                close_sock(fd);
-                fd = INVALID_SOCK;
-            }
-            freeaddrinfo(res);
-            if (fd != INVALID_SOCK) set_sock_opts(fd);
-        }
-        we_init = 1;
-    } else {
-        /* Listen mode — interruptible via nativeStop().
-         *
-         * We can't use listen_socket() directly because it blocks in
-         * accept() with no way to interrupt it.  Instead, use select()
-         * with a 250ms timeout so nativeStop()'s pipe close or listen
-         * socket close is detected promptly.  nativeStop() also closes
-         * g_listen_sock, which makes select() return with srv readable
-         * (accept then fails, breaking the loop).  This lets the user
-         * press Back and immediately re-listen on the same port. */
-        LOGI("listening on port %s", port_str);
-
-        /* Bind and listen using the same setup as listen_socket but
-         * keeping the server socket so we can select on it + the pipe. */
-        struct addrinfo hints, *res, *p;
-        socket_t        srv = INVALID_SOCK;
-        int             one = 1;
-        memset(&hints, 0, sizeof hints);
-        hints.ai_socktype = SOCK_STREAM;
-        hints.ai_family   = AF_UNSPEC;
-        hints.ai_flags    = AI_PASSIVE;
-        if (getaddrinfo(NULL, port_str, &hints, &res) != 0) {
-            LOGE("getaddrinfo failed for port %s", port_str);
-            jni_call_str(env, cb, mid_onConnectionFailed, "Listen failed (getaddrinfo)", "listen_gai");
-            goto cleanup;
-        }
-        for (p = res; p; p = p->ai_next) {
-            srv = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-            if (srv == INVALID_SOCK) continue;
-            setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof one);
-            if (bind(srv, p->ai_addr, (socklen_t)p->ai_addrlen) == 0 && listen(srv, 1) == 0) break;
-            close_sock(srv);
-            srv = INVALID_SOCK;
-        }
-        freeaddrinfo(res);
-
-        if (srv == INVALID_SOCK) {
-            LOGE("bind/listen failed on port %s", port_str);
-            jni_call_str(env, cb, mid_onConnectionFailed, "Listen failed (port in use?)", "listen_bind");
-            goto cleanup;
-        }
-
-        /* Select: wait for a peer connection or nativeStop() signal.
-         * When nativeStop() closes the pipe write end, select() marks
-         * pipe_rd readable; read() then returns EOF.  nativeStop() also
-         * closes g_listen_sock, making select() return on srv too. */
-        /* Publish under mutex: generation check + socket write are atomic. */
-        pthread_mutex_lock(&g_session_mtx);
-        if (g_session_gen == my_gen) g_listen_sock = srv;
-        pthread_mutex_unlock(&g_session_mtx);
-        while (fd == INVALID_SOCK) {
-            fd_set rfds;
-            FD_ZERO(&rfds);
-            FD_SET(srv, &rfds);
-            FD_SET(pipe_rd, &rfds);
-            int maxfd = (srv > pipe_rd ? srv : pipe_rd) + 1;
-
-            struct timeval tv    = {.tv_sec = 0, .tv_usec = 250000}; /* 250ms */
-            int            ready = select(maxfd, &rfds, NULL, NULL, &tv);
-            if (ready < 0) break;
-
-            if (FD_ISSET(pipe_rd, &rfds)) {
-                /* nativeStop() closed pipe (or CMD_QUIT fallback) — abort */
-                LOGI("quit received during listen");
-                pthread_mutex_lock(&g_session_mtx);
-                if (g_listen_sock == srv) g_listen_sock = INVALID_SOCK;
-                pthread_mutex_unlock(&g_session_mtx);
-                close_sock(srv);
-                jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_listen");
-                goto cleanup;
-            }
-
-            if (FD_ISSET(srv, &rfds)) { fd = accept(srv, NULL, NULL); }
-        }
-        pthread_mutex_lock(&g_session_mtx);
-        if (g_listen_sock == srv) g_listen_sock = INVALID_SOCK;
-        pthread_mutex_unlock(&g_session_mtx);
-        close_sock(srv);
-        we_init = 0;
-    }
+    int reported = 0;
+    fd = jni_connect(mode, host, port, socks5_host, socks5_port,
+                     pipe_rd, my_gen, &jc, &we_init, &reported);
 
     /* Capture SOCKS5 state BEFORE freeing the strings — needed for
      * cover traffic decision in the event loop. */
     int used_socks5 = (socks5_host != NULL);
 
     if (fd == INVALID_SOCK) {
-        LOGE("connection failed");
-        jni_call_str(env, cb, mid_onConnectionFailed, "Connection failed", "conn_fail");
+        if (!reported) {
+            LOGE("connection failed");
+            jni_call_str(env, cb, mid_onConnectionFailed, "Connection failed", "conn_fail");
+        }
         goto cleanup;
     }
 
@@ -744,355 +1169,24 @@ static void *session_thread(void *arg) {
 
     /* ================================================================
      * Phase 3: Wait for SAS confirmation from Java (via pipe)
-     *
-     * Blocking read on pipe.  If nativeStop() closes the write end,
-     * read() returns 0 (EOF) and pipe_read_exact() returns -1, which
-     * we catch here.  CMD_QUIT is still handled below as a fallback.
      * ================================================================ */
 
     {
-        /* Poll both the pipe (for SAS confirmation / quit from Java) and
-         * the peer socket (for disconnect).  Without the socket check, a
-         * peer disconnect during SAS verification would go unnoticed until
-         * the user tapped Confirm or Back. */
-        uint8_t hdr[3];
-        uint64_t sas_deadline = monotonic_ms() + SAS_TIMEOUT_MS;
-        for (;;) {
-            if (monotonic_ms() >= sas_deadline) {
-                LOGE("SAS verification timed out");
-                jni_call_str(env, cb, mid_onHandshakeFailed, "SAS verification timed out", "sas_timeout");
-                goto cleanup_keys;
-            }
-            struct pollfd sas_fds[2] = {{pipe_rd, POLLIN, 0}, {(int)fd, POLLHUP, 0}};
-            int           pr         = poll(sas_fds, 2, 1000); /* 1-second poll */
-            if (pr < 0 && errno == EINTR) continue;
-            if (pr < 0) break;
-            if (sas_fds[1].revents & (POLLHUP | POLLERR)) {
-                LOGE("peer disconnected during SAS verification");
-                jni_call_str(env, cb, mid_onHandshakeFailed, "Peer disconnected during verification", "sas_peer_dc");
-                goto cleanup_session;
-            }
-            if (sas_fds[0].revents & (POLLIN | POLLHUP | POLLERR)) break; /* pipe ready — read the command below */
-        }
-        if (pipe_read_exact(pipe_rd, hdr, 3) != 0) {
-            LOGE("pipe read failed waiting for SAS confirm");
-            jni_call_str(env, cb, mid_onDisconnected, "Internal error", "sas_pipe");
+        int cleanup_level = 0;
+        if (jni_wait_sas(fd, pipe_rd, &jc, &cleanup_level) != 0) {
+            if (cleanup_level == 1) goto cleanup_keys;
             goto cleanup_session;
         }
-
-        uint8_t cmd = hdr[0];
-        if (cmd == CMD_QUIT) {
-            LOGI("quit received during SAS wait");
-            jni_call_str(env, cb, mid_onDisconnected, "Session ended by user", "quit_sas");
-            goto cleanup_session;
-        }
-        if (cmd != CMD_CONFIRM_SAS) {
-            LOGE("unexpected command 0x%02x during SAS wait", cmd);
-            jni_call_str(env, cb, mid_onDisconnected, "Unexpected command", "sas_bad_cmd");
-            goto cleanup_session;
-        }
-
-        /* Skip any payload (CMD_CONFIRM_SAS has none, but be safe) */
-        uint16_t plen = (uint16_t)(hdr[1] | (hdr[2] << 8));
-        if (plen > 0) {
-            uint8_t discard[512];
-            while (plen > 0) {
-                size_t chunk = plen < sizeof discard ? plen : sizeof discard;
-                if (pipe_read_exact(pipe_rd, discard, chunk) != 0) break;
-                plen -= (uint16_t)chunk;
-            }
-        }
-
-        LOGI("SAS confirmed, entering chat loop");
     }
 
     /* ================================================================
      * Phase 4: Event loop — poll on socket + pipe
      * ================================================================ */
 
-    /* Set frame timeout so a stalled partial frame doesn't hang forever.
-     * Unlike the handshake timeout, this only fires if a frame *starts*
-     * arriving but never completes.  Idle sessions are fine. */
-    set_sock_timeout(fd, FRAME_TIMEOUT_S);
-
     /* Cover traffic: when connecting through SOCKS5 (Tor), send encrypted
      * dummy frames at random intervals to defeat timing correlation.
      * Same mechanism as the desktop --socks5 / --cover-traffic flag. */
-    int      cover      = used_socks5;
-    uint64_t next_cover = cover ? monotonic_ms() + (uint64_t)cover_delay_ms() : 0;
-    uint8_t  pending_msg[MAX_MSG + 1];
-    uint16_t pending_len = 0;
-    memset(pending_msg, 0, sizeof pending_msg);
-
-    {
-        struct pollfd fds[2];
-        fds[0].fd     = (int)fd;
-        fds[0].events = POLLIN;
-        fds[1].fd     = pipe_rd;
-        fds[1].events = POLLIN;
-
-        int running    = 1;
-        int auth_fails = 0;
-        /* Rate-limit incoming messages to prevent handler queue flooding.
-         * A malicious authenticated peer sending faster than this threshold
-         * would grow the Java handler queue and cause ANR/OOM. */
-        int      msg_count_window = 0;
-        uint64_t msg_window_start = monotonic_ms();
-        while (running) {
-            int timeout_ms = 250;
-            if (cover) {
-                int64_t remain = (int64_t)(next_cover - monotonic_ms());
-                if (remain <= 0) timeout_ms = 0;
-                else if (remain < timeout_ms) timeout_ms = (int)remain;
-            }
-            int ret = poll(fds, 2, timeout_ms);
-            if (ret < 0) {
-                if (errno == EINTR) continue;
-                LOGE("poll error: %s", strerror(errno));
-                break;
-            }
-
-            /* --- Socket readable: incoming encrypted frame --- */
-            if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
-                uint8_t  frame[FRAME_SZ];
-                uint8_t  plain[MAX_MSG + 1];
-                uint16_t plen = 0;
-
-                if (frame_recv(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
-                    LOGI("peer disconnected (frame read failed)");
-                    crypto_wipe(frame, sizeof frame);
-                    jni_call_str(env, cb, mid_onDisconnected, "Peer disconnected", "peer_dc");
-                    break;
-                }
-
-                /* Rate-limit ALL incoming frames (not just messages) to
-                 * prevent CPU exhaustion from cover/ratchet frame spam
-                 * before expensive AEAD decryption + X25519 work. */
-                msg_count_window++;
-                uint64_t now_rl = monotonic_ms();
-                if (now_rl - msg_window_start >= 1000) {
-                    msg_count_window = 1;
-                    msg_window_start = now_rl;
-                } else if (msg_count_window > 50) {
-                    /* Drop silently — the peer is flooding. */
-                    crypto_wipe(frame, sizeof frame);
-                    continue;
-                }
-
-                int fo_rc = frame_open(&sess, frame, plain, &plen);
-                if (fo_rc != 0) {
-                    crypto_wipe(frame, sizeof frame);
-                    crypto_wipe(plain, sizeof plain);
-                    if (fo_rc == -2) {
-                        LOGE("frame_open: malicious ratchet key — session torn down");
-                        jni_call_str(env, cb, mid_onDisconnected, "Malicious ratchet key", "ratchet_fail");
-                        break;
-                    }
-                    if (++auth_fails >= MAX_AUTH_FAILURES) {
-                        LOGE("frame_open failed %d times — session torn down", auth_fails);
-                        jni_call_str(env, cb, mid_onDisconnected, "Decryption failed", "decrypt_fail");
-                        break;
-                    }
-                    LOGI("frame_open failed (%d/%d), tolerating", auth_fails, MAX_AUTH_FAILURES);
-                    continue;
-                }
-                auth_fails = 0;
-
-                if (plen > 0) { /* len==0 is a cover-traffic dummy — silently discard */
-                    plain[plen] = '\0';
-                    sanitize_peer_text(plain, plen);
-
-                    jstring text = (*env)->NewStringUTF(env, (char *)plain);
-                    if (!text) {
-                        LOGE("NewStringUTF(message) failed");
-                        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
-                        crypto_wipe(frame, sizeof frame);
-                        crypto_wipe(plain, sizeof plain);
-                        break;
-                    }
-                    (*env)->CallVoidMethod(env, cb, mid_onMessageReceived, text);
-                    (*env)->DeleteLocalRef(env, text);
-                    if (jni_callback_ok(env) != 0) {
-                        crypto_wipe(frame, sizeof frame);
-                        crypto_wipe(plain, sizeof plain);
-                        break;
-                    }
-                }
-
-                crypto_wipe(frame, sizeof frame);
-                crypto_wipe(plain, sizeof plain);
-            }
-
-            /* --- Pipe readable: command from Java, or nativeStop() ---
-             * POLLHUP/POLLERR: nativeStop() closed the write end;
-             * pipe_read_exact() returns EOF and we break out.
-             * POLLIN: normal command (CMD_SEND, CMD_CONFIRM_SAS,
-             * or CMD_QUIT fallback). */
-            if (fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
-                uint8_t hdr[3];
-                if (pipe_read_exact(pipe_rd, hdr, 3) != 0) {
-                    /* EOF from nativeStop() pipe close, or read error */
-                    break;
-                }
-
-                uint8_t  cmd  = hdr[0];
-                uint16_t plen = (uint16_t)(hdr[1] | (hdr[2] << 8));
-
-                if (cmd == CMD_QUIT) {
-                    LOGI("CMD_QUIT received");
-                    /* Drain any payload (CMD_QUIT shouldn't have one) */
-                    if (plen > 0) {
-                        uint8_t discard[512];
-                        while (plen > 0) {
-                            size_t chunk = plen < sizeof discard ? plen : sizeof discard;
-                            if (pipe_read_exact(pipe_rd, discard, chunk) != 0) break;
-                            plen -= (uint16_t)chunk;
-                        }
-                    }
-                    jni_call_str(env, cb, mid_onDisconnected, "Session ended", "quit_cmd");
-                    running = 0;
-
-                } else if (cmd == CMD_SEND) {
-                    /* Read the message payload */
-                    uint8_t msg_buf[MAX_MSG + 1];
-                    if (plen > MAX_MSG) {
-                        LOGE("CMD_SEND payload too large: %d", (int)plen);
-                        /* Drain oversized payload */
-                        uint8_t  discard[512];
-                        uint16_t remaining = plen;
-                        while (remaining > 0) {
-                            size_t chunk = remaining < sizeof discard ? remaining : sizeof discard;
-                            if (pipe_read_exact(pipe_rd, discard, chunk) != 0) break;
-                            remaining -= (uint16_t)chunk;
-                        }
-                        (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        if (jni_callback_ok(env) != 0) {
-                            running = 0;
-                            break;
-                        }
-                        continue;
-                    }
-
-                    if (plen > 0 && pipe_read_exact(pipe_rd, msg_buf, plen) != 0) {
-                        LOGE("pipe read error on CMD_SEND payload");
-                        break;
-                    }
-
-                    if (cover) {
-                        /* Queue for next cover tick — all outgoing frames
-                         * follow the same timing distribution. */
-                        if (pending_len > 0) {
-                            crypto_wipe(msg_buf, plen);
-                            (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                            if (jni_callback_ok(env) != 0) {
-                                running = 0;
-                                break;
-                            }
-                            continue;
-                        }
-                        if (plen > 0) memcpy(pending_msg, msg_buf, plen);
-                        pending_len = plen;
-                        crypto_wipe(msg_buf, plen);
-                        (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)1);
-                        if (jni_callback_ok(env) != 0) {
-                            running = 0;
-                            break;
-                        }
-                        continue;
-                    }
-
-                    /* No cover: encrypt and send immediately */
-                    uint8_t frame[FRAME_SZ], next_tx[KEY];
-                    if (frame_build(&sess, msg_buf, plen, frame, next_tx) != 0) {
-                        LOGE("frame_build failed");
-                        crypto_wipe(frame, sizeof frame);
-                        crypto_wipe(next_tx, sizeof next_tx);
-                        crypto_wipe(msg_buf, plen);
-                        (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        if (jni_callback_ok(env) != 0) {
-                            running = 0;
-                            break;
-                        }
-                        continue;
-                    }
-
-                    if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
-                        LOGE("write_exact failed");
-                        crypto_wipe(frame, sizeof frame);
-                        crypto_wipe(next_tx, sizeof next_tx);
-                        crypto_wipe(msg_buf, plen);
-                        (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)0);
-                        if (jni_callback_ok(env) != 0) {
-                            running = 0;
-                            continue;
-                        }
-                        jni_call_str(env, cb, mid_onDisconnected, "Send failed (connection lost)", "send_fail");
-                        running = 0;
-                        continue;
-                    }
-
-                    memcpy(sess.tx, next_tx, KEY);
-                    sess.tx_seq++;
-
-                    crypto_wipe(frame, sizeof frame);
-                    crypto_wipe(next_tx, sizeof next_tx);
-                    crypto_wipe(msg_buf, plen);
-
-                    (*env)->CallVoidMethod(env, cb, mid_onSendResult, (jboolean)1);
-                    if (jni_callback_ok(env) != 0) {
-                        LOGE("onSendResult callback failed — session desynced");
-                        running = 0;
-                    }
-
-                } else {
-                    LOGE("unknown command 0x%02x, draining %d bytes", cmd, (int)plen);
-                    uint8_t discard[512];
-                    while (plen > 0) {
-                        size_t chunk = plen < sizeof discard ? plen : sizeof discard;
-                        if (pipe_read_exact(pipe_rd, discard, chunk) != 0) break;
-                        plen -= (uint16_t)chunk;
-                    }
-                }
-            }
-
-            /* ---- Cover traffic: single send point for all outgoing frames.
-             * Queued real messages replace the cover payload so every frame
-             * follows the same timing distribution — defeating analysis. */
-            if (cover && running && monotonic_ms() >= next_cover) {
-                uint8_t        frame[FRAME_SZ], next_tx[KEY];
-                const uint8_t *payload = pending_len > 0 ? pending_msg : NULL;
-                uint16_t       tx_len  = pending_len;
-                if (frame_build(&sess, payload, tx_len, frame, next_tx) != 0) {
-                    crypto_wipe(frame, sizeof frame);
-                    crypto_wipe(next_tx, sizeof next_tx);
-                    jni_call_str(env, cb, mid_onDisconnected, "Internal error", "cover_build");
-                    break;
-                }
-                if (frame_send(fd, frame, monotonic_ms() + (uint64_t)FRAME_TIMEOUT_S * 1000) != 0) {
-                    crypto_wipe(frame, sizeof frame);
-                    crypto_wipe(next_tx, sizeof next_tx);
-                    jni_call_str(env, cb, mid_onDisconnected, "Connection lost", "cover_send");
-                    break;
-                }
-                memcpy(sess.tx, next_tx, KEY);
-                sess.tx_seq++;
-                if (pending_len > 0) {
-                    crypto_wipe(pending_msg, sizeof pending_msg);
-                    pending_len = 0;
-                }
-                crypto_wipe(frame, sizeof frame);
-                crypto_wipe(next_tx, sizeof next_tx);
-                next_cover = monotonic_ms() + (uint64_t)cover_delay_ms();
-            }
-        }
-    }
-
-    if (pending_len > 0) {
-        LOGE("queued message was not sent before disconnect");
-        jni_call_str(env, cb, mid_onDisconnected,
-                     "[queued message was not sent]", "queued_lost");
-    }
-    crypto_wipe(pending_msg, sizeof pending_msg);
+    jni_chat_loop(fd, &sess, used_socks5, pipe_rd, &jc);
     goto cleanup_session;
 
     /* ================================================================
