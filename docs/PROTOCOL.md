@@ -81,9 +81,12 @@ Each side generates a random [X25519](#x25519) keypair for this session only. Th
 Before revealing public keys, each side sends a [hash](#blake2b) ([commitment](#commitment-scheme)) of their key and a random nonce. The commitment is `H(pub || nonce)` — binding the key to a fresh random value prevents a man-in-the-middle from seeing one key and then crafting a fake key that produces a matching safety code. The commitment locks both sides into their keys before the reveal. The version byte, commitment, and nonce are sent together in a single exchange so that version-mismatch and commitment-mismatch failures are timing-indistinguishable from the wire.
 
 ```
-Round 1:  Alice -> version || H(pub_A || nonce_A || version) || nonce_A    Bob -> version || H(pub_B || nonce_B || version) || nonce_B    (commit)
-Round 2:  Alice -> pub_A                                        Bob -> pub_B                                        (reveal)
-Verify:   H(revealed_pub || nonce || version) == commitment                                (both sides)
+Round 1:  Alice -> version || H(pub_A || nonce_A || ver) || nonce_A || eph_A    (commit + ephemeral DH)
+          Bob   -> version || H(pub_B || nonce_B || ver) || nonce_B || eph_B
+Round 2:  Alice -> AEAD_encrypt(pub_A, eph_key)                                 (encrypted reveal)
+          Bob   -> AEAD_encrypt(pub_B, eph_key)
+          eph_key = KDF(X25519(eph_priv, peer_eph_pub))
+Verify:   decrypt peer's pub, then H(revealed_pub || nonce || ver) == commitment
 ```
 
 ### Full handshake sequence
@@ -93,13 +96,16 @@ This is what goes over the wire. Each arrow is one exchange round. Payload sizes
 ```
         Alice                              Bob
           |                                  |
-          |--- version + H(pub_A||nonce_A||ver) + nonce_A [65B] --->|  commit
-          |<-- version + H(pub_B||nonce_B||ver) + nonce_B [65B] ----|  (locked in)
+          |--- ver + H(pub_A||nonce_A||ver) + nonce_A + eph_A [97B] -->|  commit + eph DH
+          |<-- ver + H(pub_B||nonce_B||ver) + nonce_B + eph_B [97B] -|  (locked in)
           |                                  |
-          |--- pub_A [32B] ---------------->|  reveal
-          |<-- pub_B [32B] -----------------|
+          |  eph_key = KDF(X25519(eph_priv, peer_eph))    |  both compute
           |                                  |
-          |  verify version matches          |  both sides
+          |--- AEAD(pub_A, eph_key) [48B] -->|  encrypted reveal
+          |<-- AEAD(pub_B, eph_key) [48B] ---|
+          |                                  |
+          |  decrypt peer_pub                |  both sides
+          |  verify version matches          |
           |  verify H(pub_B||nonce_B||ver) == commitment   |  (Bob's key)
           |  verify H(pub_A||nonce_A||ver) == commitment   |  (Alice's key)
           |                                  |

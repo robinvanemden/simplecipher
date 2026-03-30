@@ -71,11 +71,11 @@ enum {
     WIRE_PAD_MAX = 255,                                /* max random padding      */
     WIRE_MAX     = WIRE_HDR + FRAME_SZ + WIRE_PAD_MAX, /* 768 bytes   */
 
-    /* Maximum handshake exchange payload: version(1) + commit(KEY) + nonce(KEY).
-     * exchange_send sizes its buffer from this.  If the handshake payload
-     * grows, update this constant -- the static_assert in network.c will
-     * catch any mismatch. */
-    EXCHANGE_PAYLOAD_MAX = 1 + KEY + KEY, /* 65 bytes    */
+    /* Maximum handshake exchange payload (round 1):
+     * version(1) + commit(KEY) + nonce(KEY) + eph_pub(KEY) = 97 bytes.
+     * Round 2 payload: AEAD_encrypt(pub(KEY)) = KEY + MAC_SZ = 48 bytes. */
+    EXCHANGE_PAYLOAD_MAX = 1 + KEY + KEY + KEY, /* 97 bytes (round 1) */
+    EXCHANGE_R2_SZ       = KEY + MAC_SZ,        /* 48 bytes (round 2) */
 
     /* ---- timing constants ------------------------------------------------ */
     POLL_INTERVAL_MS     = 250,    /* event loop poll/wait granularity        */
@@ -94,7 +94,7 @@ static_assert(KEY == 32);
 static_assert(NONCE_SZ == 24);
 static_assert(MAC_SZ == 16);
 static_assert(WIRE_MAX == 768);
-static_assert(EXCHANGE_PAYLOAD_MAX == 65);
+static_assert(EXCHANGE_PAYLOAD_MAX == 97);
 
 /* ---- protocol function declarations ------------------------------------ */
 

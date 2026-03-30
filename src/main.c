@@ -372,27 +372,35 @@ int main(int argc, char *argv[]) {
      * ------------------------------------------------------------------ */
 
     /* Two-round handshake:
-     *   Round 1: version || commitment || session_nonce  (65 bytes each way)
-     *   Round 2: public key                              (32 bytes each way)
+     *   Round 1: version || commitment || nonce || eph_pub  (97 bytes)
+     *   Round 2: AEAD_encrypt(pub_key, eph_shared_key)    (48 bytes)
+     *
+     * The ephemeral DH in round 1 provides passive-observer confidentiality
+     * for the public key reveal in round 2.  A network observer who cannot
+     * compute the ephemeral DH shared secret cannot extract the public key,
+     * preventing cross-session correlation of --identity users.
      *
      * Both rounds always complete before any verification.  This makes
      * version-mismatch and commitment-mismatch failures indistinguishable
-     * from the wire (same number of bytes exchanged, same timing pattern),
-     * preventing a network observer from fingerprinting the failure mode.
-     *
-     * The commitment scheme is preserved: both sides commit (round 1)
-     * before either reveals (round 2). */
-    /* Generate a session nonce — mixed into IKM to ensure each session
-     * produces unique keys even with the same identity keypair. */
+     * from the wire, preventing fingerprinting of failure modes. */
     {
-        uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
+        /* Generate an ephemeral X25519 keypair for round 1.
+         * This is separate from the session keypair — used only to
+         * encrypt round 2, not for session keys. */
+        uint8_t eph_priv[KEY], eph_pub[KEY];
+        gen_keypair(eph_priv, eph_pub);
+
+        uint8_t out1[1 + KEY + KEY + KEY], in1[1 + KEY + KEY + KEY];
         out1[0] = (uint8_t)PROTOCOL_VERSION;
         memcpy(out1 + 1, commit_self, KEY);
         memcpy(out1 + 1 + KEY, self_nonce, KEY);
+        memcpy(out1 + 1 + KEY + KEY, eph_pub, KEY);
         if (exchange(g_fd, cfg.we_init, out1, sizeof out1, in1, sizeof in1) != 0) {
-            fprintf(stderr, "handshake error (round 1: version + commitment + nonce)\n");
+            fprintf(stderr, "handshake error (round 1)\n");
             crypto_wipe(out1, sizeof out1);
             crypto_wipe(in1, sizeof in1);
+            crypto_wipe(eph_priv, sizeof eph_priv);
+            crypto_wipe(eph_pub, sizeof eph_pub);
             crypto_wipe(self_nonce, sizeof self_nonce);
             rc = EXIT_HANDSHAKE;
             goto out;
@@ -400,14 +408,48 @@ int main(int argc, char *argv[]) {
         uint8_t peer_ver = in1[0];
         memcpy(commit_peer, in1 + 1, KEY);
         memcpy(peer_nonce, in1 + 1 + KEY, KEY);
+        uint8_t peer_eph_pub[KEY];
+        memcpy(peer_eph_pub, in1 + 1 + KEY + KEY, KEY);
         crypto_wipe(out1, sizeof out1);
         crypto_wipe(in1, sizeof in1);
 
-        if (exchange(g_fd, cfg.we_init, self_pub, KEY, peer_pub, KEY) != 0) {
-            fprintf(stderr, "handshake error (round 2: keys)\n");
+        /* Derive ephemeral encryption key for round 2 confidentiality.
+         * This protects the public key reveal from passive observers. */
+        uint8_t eph_shared[KEY], eph_key[KEY];
+        crypto_x25519(eph_shared, eph_priv, peer_eph_pub);
+        domain_hash(eph_key, "cipher eph reveal v1", eph_shared, KEY);
+        crypto_wipe(eph_priv, sizeof eph_priv);
+        crypto_wipe(eph_pub, sizeof eph_pub);
+        crypto_wipe(peer_eph_pub, sizeof peer_eph_pub);
+        crypto_wipe(eph_shared, sizeof eph_shared);
+
+        /* Round 2: encrypt our public key with the ephemeral key. */
+        uint8_t out2[KEY + MAC_SZ], in2[KEY + MAC_SZ];
+        uint8_t r2_nonce[NONCE_SZ];
+        memset(r2_nonce, 0, sizeof r2_nonce); /* zero nonce: single-use key */
+        crypto_aead_lock(out2, out2 + KEY, eph_key, r2_nonce, nullptr, 0, self_pub, KEY);
+
+        if (exchange(g_fd, cfg.we_init, out2, sizeof out2, in2, sizeof in2) != 0) {
+            fprintf(stderr, "handshake error (round 2)\n");
+            crypto_wipe(out2, sizeof out2);
+            crypto_wipe(in2, sizeof in2);
+            crypto_wipe(eph_key, sizeof eph_key);
             rc = EXIT_HANDSHAKE;
             goto out;
         }
+
+        /* Decrypt peer's public key from round 2. */
+        if (crypto_aead_unlock(peer_pub, in2 + KEY, eph_key, r2_nonce, nullptr, 0, in2, KEY) != 0) {
+            fprintf(stderr, "round 2 decryption failed (possible MITM or version mismatch)\n");
+            crypto_wipe(out2, sizeof out2);
+            crypto_wipe(in2, sizeof in2);
+            crypto_wipe(eph_key, sizeof eph_key);
+            rc = EXIT_HANDSHAKE;
+            goto out;
+        }
+        crypto_wipe(out2, sizeof out2);
+        crypto_wipe(in2, sizeof in2);
+        crypto_wipe(eph_key, sizeof eph_key);
 
         if (peer_ver != PROTOCOL_VERSION) {
             fprintf(stderr, "version mismatch: we are v%d, peer is v%d\n", PROTOCOL_VERSION, (int)peer_ver);

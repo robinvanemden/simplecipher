@@ -160,14 +160,34 @@ static void *server_thread(void *arg) {
     fill_random(self_nonce, KEY);
     make_commit(commit_self, pub, self_nonce);
 
-    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
+    uint8_t eph_priv[KEY], eph_pub_local[KEY];
+    gen_keypair(eph_priv, eph_pub_local);
+
+    uint8_t out1[1 + KEY + KEY + KEY], in1[1 + KEY + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
     memcpy(out1 + 1 + KEY, self_nonce, KEY);
+    memcpy(out1 + 1 + KEY + KEY, eph_pub_local, KEY);
     if (exchange(ctx->fd, 0, out1, sizeof out1, in1, sizeof in1) != 0) goto done;
     memcpy(commit_peer, in1 + 1, KEY);
     memcpy(peer_nonce, in1 + 1 + KEY, KEY);
-    if (exchange(ctx->fd, 0, pub, KEY, peer_pub, KEY) != 0) goto done;
+    uint8_t peer_eph[KEY];
+    memcpy(peer_eph, in1 + 1 + KEY + KEY, KEY);
+
+    uint8_t eph_shared[KEY], eph_key[KEY];
+    crypto_x25519(eph_shared, eph_priv, peer_eph);
+    domain_hash(eph_key, "cipher eph reveal v1", eph_shared, KEY);
+    crypto_wipe(eph_priv, sizeof eph_priv);
+    crypto_wipe(eph_shared, sizeof eph_shared);
+
+    uint8_t out2[KEY + MAC_SZ], in2[KEY + MAC_SZ];
+    uint8_t r2_nonce[NONCE_SZ];
+    memset(r2_nonce, 0, sizeof r2_nonce);
+    crypto_aead_lock(out2, out2 + KEY, eph_key, r2_nonce, nullptr, 0, pub, KEY);
+    if (exchange(ctx->fd, 0, out2, sizeof out2, in2, sizeof in2) != 0) goto done;
+    if (crypto_aead_unlock(peer_pub, in2 + KEY, eph_key, r2_nonce, nullptr, 0, in2, KEY) != 0) goto done;
+    crypto_wipe(eph_key, sizeof eph_key);
+
     if (in1[0] != PROTOCOL_VERSION) goto done;
     if (!verify_commit(commit_peer, peer_pub, peer_nonce)) goto done;
     if (session_init(&ctx->sess, 0, priv, pub, peer_pub, self_nonce, peer_nonce, ctx->sas_key) != 0) goto done;
@@ -249,15 +269,35 @@ int main(void) {
     fill_random(s5_self_nonce, KEY);
     make_commit(commit_self, pub, s5_self_nonce);
 
-    uint8_t out1[1 + KEY + KEY], in1[1 + KEY + KEY];
+    uint8_t eph_priv[KEY], eph_pub_local[KEY];
+    gen_keypair(eph_priv, eph_pub_local);
+
+    uint8_t out1[1 + KEY + KEY + KEY], in1[1 + KEY + KEY + KEY];
     out1[0] = (uint8_t)PROTOCOL_VERSION;
     memcpy(out1 + 1, commit_self, KEY);
     memcpy(out1 + 1 + KEY, s5_self_nonce, KEY);
+    memcpy(out1 + 1 + KEY + KEY, eph_pub_local, KEY);
 
     int hs_ok = (exchange(client, 1, out1, sizeof out1, in1, sizeof in1) == 0);
     memcpy(commit_peer, in1 + 1, KEY);
     memcpy(s5_peer_nonce, in1 + 1 + KEY, KEY);
-    hs_ok = hs_ok && (exchange(client, 1, pub, KEY, peer_pub, KEY) == 0);
+    uint8_t c_peer_eph[KEY];
+    memcpy(c_peer_eph, in1 + 1 + KEY + KEY, KEY);
+
+    uint8_t c_eph_shared[KEY], c_eph_key[KEY];
+    crypto_x25519(c_eph_shared, eph_priv, c_peer_eph);
+    domain_hash(c_eph_key, "cipher eph reveal v1", c_eph_shared, KEY);
+    crypto_wipe(eph_priv, sizeof eph_priv);
+    crypto_wipe(c_eph_shared, sizeof c_eph_shared);
+
+    uint8_t out2[KEY + MAC_SZ], in2[KEY + MAC_SZ];
+    uint8_t r2_nonce[NONCE_SZ];
+    memset(r2_nonce, 0, sizeof r2_nonce);
+    crypto_aead_lock(out2, out2 + KEY, c_eph_key, r2_nonce, nullptr, 0, pub, KEY);
+    hs_ok = hs_ok && (exchange(client, 1, out2, sizeof out2, in2, sizeof in2) == 0);
+    hs_ok = hs_ok && (crypto_aead_unlock(peer_pub, in2 + KEY, c_eph_key, r2_nonce, nullptr, 0, in2, KEY) == 0);
+    crypto_wipe(c_eph_key, sizeof c_eph_key);
+
     hs_ok = hs_ok && (in1[0] == PROTOCOL_VERSION);
     hs_ok = hs_ok && verify_commit(commit_peer, peer_pub, s5_peer_nonce);
     TEST("client handshake", hs_ok);
