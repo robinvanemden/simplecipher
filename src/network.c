@@ -189,35 +189,49 @@ void set_sock_opts(socket_t fd) {
  * Wire format: [pad_len(1)][payload][random_padding].
  * pad_len is a raw CSPRNG byte — uniform random, no detectable pattern. */
 static int exchange_send(socket_t fd, const uint8_t *payload, size_t payload_n, uint64_t deadline) {
-    /* Buffer: pad_len(1) + max_payload + max_padding.
-     * EXCHANGE_PAYLOAD_MAX is defined in protocol.h and tracks the largest
-     * handshake payload (version + commit + nonce = 65 bytes). */
-    uint8_t buf[1 + EXCHANGE_PAYLOAD_MAX + WIRE_PAD_MAX];
-    static_assert(1 + EXCHANGE_PAYLOAD_MAX + WIRE_PAD_MAX == 321);
-    if (1 + payload_n + WIRE_PAD_MAX > sizeof buf) return -1; /* defensive: payload must fit */
+    /* Pad handshake messages to match chat frame wire sizes (513-768 bytes)
+     * to prevent DPI from fingerprinting the handshake by message size.
+     *
+     * Strategy: zero-pad the payload to FRAME_SZ (512 bytes), then wrap
+     * with the same [pad_len(1)][body(512)][random_pad(0-255)] format
+     * used by chat frames.  The receiver knows the actual payload size
+     * and ignores the zero-padding within the 512-byte body. */
+    uint8_t buf[WIRE_MAX]; /* same max as chat frames (768 bytes) */
+    static_assert(EXCHANGE_PAYLOAD_MAX <= FRAME_SZ);
+    if (payload_n > FRAME_SZ) return -1;
     uint8_t r;
     fill_random(&r, 1);
-    if (1 + payload_n + r > sizeof buf) r = (uint8_t)(sizeof buf - 1 - payload_n);
     buf[0] = r;
-    memcpy(buf + 1, payload, payload_n);
-    if (r > 0) fill_random(buf + 1 + payload_n, r);
+    memset(buf + WIRE_HDR, 0, FRAME_SZ);                  /* zero-pad body */
+    memcpy(buf + WIRE_HDR, payload, payload_n);           /* payload at start */
+    if (r > 0) fill_random(buf + WIRE_HDR + FRAME_SZ, r); /* random tail */
 
-    int rc = write_exact_dl(fd, buf, 1 + payload_n + (size_t)r, deadline);
+    int rc = write_exact_dl(fd, buf, WIRE_HDR + FRAME_SZ + (size_t)r, deadline);
     crypto_wipe(buf, sizeof buf);
     return rc;
 }
 
 /* Receive a padded exchange message.  Reads 1-byte pad_len, then
- * expected_n bytes of payload, then drains pad_len bytes of padding. */
+ * FRAME_SZ bytes of body (payload + zero padding), then drains
+ * pad_len bytes of random padding.  Matches the chat frame wire format. */
 static int exchange_recv(socket_t fd, uint8_t *payload, size_t expected_n, uint64_t deadline) {
     uint8_t pad_len;
     if (read_exact_dl(fd, &pad_len, 1, deadline) != 0) return -1;
-    if (read_exact_dl(fd, payload, expected_n, deadline) != 0) return -1;
+
+    uint8_t body[FRAME_SZ];
+    if (read_exact_dl(fd, body, FRAME_SZ, deadline) != 0) {
+        crypto_wipe(body, sizeof body);
+        return -1;
+    }
+    if (expected_n <= FRAME_SZ) memcpy(payload, body, expected_n);
+    crypto_wipe(body, sizeof body);
 
     if (pad_len > 0) {
         uint8_t drain[WIRE_PAD_MAX];
-        static_assert(WIRE_PAD_MAX == 255); /* pad_len is uint8_t, max 255 */
-        if (read_exact_dl(fd, drain, pad_len, deadline) != 0) return -1;
+        if (read_exact_dl(fd, drain, pad_len, deadline) != 0) {
+            crypto_wipe(drain, sizeof drain);
+            return -1;
+        }
         crypto_wipe(drain, sizeof drain);
     }
     return 0;
