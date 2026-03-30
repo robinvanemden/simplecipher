@@ -17,6 +17,8 @@ set -uo pipefail
 . "$(dirname "$0")/test_helpers.sh"
 
 BIN="${1:-./simplecipher}"
+# Reject paths with shell metacharacters to prevent eval injection.
+case "$BIN" in *[\'\"\`\$\;\&\|\!\(\)\{\}\[\]]*) echo "ERROR: binary path contains shell metacharacters" >&2; exit 1;; esac
 PORT=$(random_port)
 SESSION_L="sc_tui_listen"
 SESSION_C="sc_tui_connect"
