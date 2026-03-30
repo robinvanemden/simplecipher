@@ -284,16 +284,17 @@ See the [Tor onion services documentation](https://community.torproject.org/onio
 
 **Steps:**
 
-1. Exchange fingerprints on paper when you meet in person.
-2. Set up Tor (see [Over Tor](#over-tor) above for the full Tor setup).
-3. Use both `--peer-fingerprint` and Tor together.
+1. Both sides generate a persistent identity: `simplecipher keygen` (creates a passphrase-protected key file).
+2. Exchange fingerprints on paper when you meet in person. Fingerprints are only stable across sessions when using `keygen` + `--identity`; without them, ephemeral keys change every session.
+3. Set up Tor (see [Over Tor](#over-tor) above for the full Tor setup).
+4. Use `--identity`, `--peer-fingerprint`, and Tor together.
 
 ```bash
 # You: listen as a Tor onion service with your friend's fingerprint
-simplecipher listen --cover-traffic --peer-fingerprint B7E2-04AC-F931-8D56
+simplecipher listen --identity ~/.simplecipher/key --cover-traffic --peer-fingerprint B7E2-04AC-F931-8D56
 
 # Your friend: connect through Tor with your fingerprint
-simplecipher connect --socks5 127.0.0.1:9050 --peer-fingerprint A3F2-91BC-D4E5-F678
+simplecipher connect --identity ~/.simplecipher/key --socks5 127.0.0.1:9050 --peer-fingerprint A3F2-91BC-D4E5-F678
 ```
 
 You can also add `--trust-fingerprint` on both sides to skip the safety code entirely, making the connection fully automatic.
