@@ -15,6 +15,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.view.accessibility.AccessibilityManager;
 import java.io.UnsupportedEncodingException;
 import java.util.Date;
 import java.util.List;
@@ -101,6 +102,22 @@ public class ChatActivity extends Activity implements NativeCallback {
     /* HIDE_OVERLAY_WINDOWS prevents other apps from drawing on top of
      * this activity (tapjacking, screen recording overlays). */
     if (android.os.Build.VERSION.SDK_INT >= 31) getWindow().setHideOverlayWindows(true);
+
+    /* Warn if third-party Accessibility Services are active — they can
+     * read all on-screen text (SAS, chat, fingerprint) despite FLAG_SECURE. */
+    AccessibilityManager am =
+        (AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
+    if (am != null && am.isEnabled()) {
+      List<?> services = am.getEnabledAccessibilityServiceList(
+          android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
+      if (services != null && !services.isEmpty()) {
+        Toast.makeText(
+                this,
+                "Warning: Accessibility Services are active and can read chat text",
+                Toast.LENGTH_LONG)
+            .show();
+      }
+    }
 
     setContentView(R.layout.activity_chat);
 
