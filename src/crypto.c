@@ -15,7 +15,8 @@
 static const char *const DOMAIN_COMMIT = "cipher commit v3";
 
 #if defined(_WIN32) || defined(_WIN64)
-#    include <sys/stat.h> /* chmod() for key file permissions on MinGW/MSVC */
+#    include <sys/stat.h> /* chmod() fallback for key file permissions */
+#    include <aclapi.h>   /* SetNamedSecurityInfoA, SetEntriesInAclA — owner-only DACL */
 #else
 #    include <fcntl.h>    /* open() with O_CREAT for 0600 key file permissions */
 #    include <limits.h>   /* PATH_MAX */

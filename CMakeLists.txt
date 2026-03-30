@@ -127,7 +127,7 @@ add_executable(simplecipher src/main.c ${CORE_SRC} ${PLATFORM_SRC})
 target_include_directories(simplecipher PRIVATE src lib)
 
 if(WIN32)
-    target_link_libraries(simplecipher ws2_32 bcrypt iphlpapi)
+    target_link_libraries(simplecipher ws2_32 bcrypt iphlpapi advapi32)
 else()
     target_link_libraries(simplecipher m)
 endif()

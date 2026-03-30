@@ -57,7 +57,7 @@ else ifeq ($(UNAME),FreeBSD)
 else
   PLAT_SRC = src/tui_win.c src/cli_win.c
   LDFLAGS ?= -flto -Wl,--gc-sections -s
-  LDFLAGS += -lws2_32 -lbcrypt -liphlpapi
+  LDFLAGS += -lws2_32 -lbcrypt -liphlpapi -ladvapi32
 endif
 
 SRC = src/main.c $(CORE_SRC) $(PLAT_SRC)
